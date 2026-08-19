@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eldermyr sprite editor</title>
+<style>
+  :root{
+    --bg:#131519; --panel:#191c22; --panel2:#1f232b; --line:#2b313b;
+    --text:#c9cfd8; --dim:#7d8794; --hot:#e6ecf5;
+    --sel:#3c4d68; --selText:#e9eff8;
+    --bad:#d1685a; --warn:#c9a24a; --good:#71a35c;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font:12px/1.4 -apple-system,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+    overflow:hidden; user-select:none; -webkit-user-select:none;
+  }
+  button,input,select{font:inherit; color:inherit}
+  button{
+    background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    padding:4px 8px; cursor:pointer; border-radius:2px;
+  }
+  button:hover{background:#262c36; color:var(--hot)}
+  button:active{background:#2e3644}
+  button.on{background:var(--sel); border-color:#4d6386; color:var(--selText)}
+  button:disabled{opacity:.4; cursor:default}
+  button:disabled:hover{background:var(--panel2); color:var(--text)}
+  input[type=text],input[type=number]{
+    background:#0f1116; border:1px solid var(--line); padding:3px 5px; border-radius:2px;
+  }
+  input[type=text]:focus,input[type=number]:focus{outline:1px solid #4d6386; border-color:#4d6386}
+  input[type=color]{
+    background:#0f1116; border:1px solid var(--line); width:34px; height:24px;
+    padding:1px; cursor:pointer; border-radius:2px;
+  }
+  input[type=range]{width:100%; accent-color:#6b86ad}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .dim{color:var(--dim)}
+  .k{color:var(--dim); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:10px}
+
+  /* layout */
+  #app{display:flex; flex-direction:column; height:100%}
+  header{
+    display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+    padding:6px 8px; background:var(--panel); border-bottom:1px solid var(--line);
+  }
+  header .name{color:var(--hot); font-weight:600; letter-spacing:.02em; margin-right:6px}
+  header .sep{width:1px; height:20px; background:var(--line); margin:0 3px}
+  #status{margin-left:auto; color:var(--dim); max-width:46%; text-align:right;
+          overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  #status.bad{color:var(--bad)} #status.good{color:var(--good)}
+
+  main{display:flex; flex:1; min-height:0}
+  .col{display:flex; flex-direction:column; min-height:0}
+  #strip{width:132px; background:var(--panel); border-right:1px solid var(--line); overflow:auto}
+  #stage{flex:1; min-width:0; background:var(--bg)}
+  #side{width:292px; background:var(--panel); border-left:1px solid var(--line); overflow:auto}
+
+  .hd{
+    padding:5px 8px; color:var(--dim); background:var(--panel2);
+    border-bottom:1px solid var(--line); border-top:1px solid var(--line);
+    text-transform:uppercase; letter-spacing:.06em; font-size:10px;
+  }
+  #strip .hd:first-child,#side .hd:first-child{border-top:0}
+  .pad{padding:8px}
+
+  /* sprite strip */
+  .item{
+    display:flex; align-items:center; gap:6px; padding:4px 6px; cursor:pointer;
+    border-bottom:1px solid #20242c;
+  }
+  .item:hover{background:#20242c}
+  .item.on{background:var(--sel); color:var(--selText)}
+  .item canvas{
+    width:32px; height:32px; flex:0 0 32px; image-rendering:pixelated;
+    background:#0d0f13; border:1px solid var(--line);
+  }
+  .item .t{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px}
+  .item .t b{display:block; font-weight:500}
+  .item .t span{color:var(--dim); font-size:10px}
+  .item.on .t span{color:#b8c6da}
+
+  /* stage */
+  #alphabar{
+    display:none; align-items:center; gap:8px; padding:6px 10px;
+    background:#33231f; border-bottom:1px solid #563a33; color:#eab8ad;
+  }
+  #alphabar.show{display:flex}
+  #canvasWrap{
+    flex:1; min-height:0; overflow:auto; padding:16px;
+    display:flex; align-items:flex-start; justify-content:center;
+  }
+  #cv{
+    image-rendering:pixelated; background:#0d0f13; cursor:crosshair;
+    box-shadow:0 0 0 1px var(--line); touch-action:none;
+  }
+  #stagebar{
+    display:flex; align-items:center; gap:6px; padding:5px 8px;
+    background:var(--panel); border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+  }
+  #frames{display:flex; align-items:center; gap:6px; padding:6px 8px; background:var(--panel);
+          overflow-x:auto; min-height:62px}
+  .fr{position:relative; flex:0 0 auto; cursor:pointer; text-align:center}
+  .fr canvas{
+    width:44px; height:44px; image-rendering:pixelated; display:block;
+    background:#0d0f13; border:1px solid var(--line);
+  }
+  .fr.on canvas{border-color:#7d9dd0; box-shadow:0 0 0 1px #7d9dd0}
+  .fr div{font-size:10px; color:var(--dim); margin-top:1px}
+  .fr.on div{color:var(--hot)}
+
+  /* side panels */
+  .row{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+  .row+.row{margin-top:6px}
+  .grid5{display:grid; grid-template-columns:repeat(5,1fr); gap:4px}
+  .tool{display:flex; flex-direction:column; align-items:center; gap:1px; padding:5px 2px}
+  .tool span{font-size:10px}
+
+  #preview{background:#0d0f13; display:block; width:100%; border:1px solid var(--line)}
+  .bgs{display:flex; gap:4px}
+  .bgs b{width:18px; height:18px; border:1px solid var(--line); cursor:pointer; display:block}
+  .bgs b.on{box-shadow:0 0 0 1px #cfd8e6; border-color:#cfd8e6}
+
+  #palette{display:flex; flex-wrap:wrap; gap:3px}
+  #palette .sw{width:20px; height:20px; border:1px solid #0d0f13; cursor:pointer; position:relative}
+  #palette .sw.on{box-shadow:0 0 0 2px #cfd8e6}
+  #palette .sw i{position:absolute; inset:0; border:1px solid rgba(255,255,255,.14)}
+
+  .chk{display:flex; align-items:flex-start; gap:6px; padding:3px 0; line-height:1.35}
+  .chk i{width:8px; height:8px; margin-top:4px; flex:0 0 8px; background:var(--good)}
+  .chk.warn i{background:var(--warn)} .chk.bad i{background:var(--bad)}
+  .chk.warn{color:#e0c68a} .chk.bad{color:#eda99c}
+  .chk b{font-weight:600}
+
+  #empty{
+    flex:1; display:flex; align-items:center; justify-content:center; text-align:center;
+    color:var(--dim); padding:24px; line-height:1.8;
+  }
+  #empty b{color:var(--text); font-weight:600; display:block; margin-bottom:6px}
+  #drop{
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(12,14,18,.86); color:var(--hot); font-size:16px; z-index:20;
+    border:2px dashed #4d6386;
+  }
+  #drop.show{display:flex}
+  .hint{color:var(--dim); font-size:10px; line-height:1.6}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <span class="name">Eldermyr sprite editor</span>
+    <button id="bOpen">Open PNGs</button>
+    <span class="sep"></span>
+    <button id="bNew">New sprite</button>
+    <input id="newSize" type="number" min="4" max="128" value="16" style="width:48px" title="Size in pixels, square">
+    <span class="dim">px</span>
+    <span class="sep"></span>
+    <span class="dim">Name</span>
+    <input id="key" type="text" class="mono" style="width:130px" placeholder="treeent" title="Export name. Files are saved as name-0.png, name-1.png">
+    <span class="sep"></span>
+    <button id="bExport">Export frames</button>
+    <button id="bExport1">This frame</button>
+    <span class="sep"></span>
+    <button id="bClose" title="Close the open sprite">Close</button>
+    <span id="status"></span>
+  </header>
+
+  <main>
+    <div class="col" id="strip">
+      <div class="hd">Open sprites</div>
+      <div id="stripList"></div>
+    </div>
+
+    <div class="col" id="stage">
+      <div id="alphabar">
+        <span id="alphaText"></span>
+        <button id="bSnap">Snap them</button>
+        <button id="bDismiss">Leave for now</button>
+      </div>
+
+      <div id="empty">
+        <div>
+          <b>Nothing open</b>
+          Drop PNG files anywhere on this window, or press Open PNGs.<br>
+          Files named name-0.png and name-1.png open as one sprite with two frames.<br>
+          Or press New sprite to start from blank.
+        </div>
+      </div>
+
+      <div id="canvasWrap" style="display:none"><canvas id="cv"></canvas></div>
+
+      <div id="stagebar" style="display:none">
+        <span class="dim">Zoom</span>
+        <button id="zOut">-</button>
+        <span id="zoomLabel" class="mono" style="width:34px; text-align:center">16x</span>
+        <button id="zIn">+</button>
+        <button id="zFit">Fit</button>
+        <span class="sep"></span>
+        <button id="bGrid" class="on">Grid</button>
+        <button id="bGuides" class="on">Guides</button>
+        <button id="bOnion" class="on">Onion skin</button>
+        <span class="sep"></span>
+        <span id="posLabel" class="mono dim" style="width:70px"></span>
+        <span class="sep"></span>
+        <span id="sizeLabel" class="mono dim"></span>
+      </div>
+
+      <div class="hd" id="framesHd" style="display:none">Frames</div>
+      <div id="frames" style="display:none"></div>
+    </div>
+
+    <div class="col" id="side">
+      <div class="hd">Preview at game size</div>
+      <div class="pad">
+        <canvas id="preview" height="88"></canvas>
+        <div class="row" style="margin-top:6px; flex-wrap:nowrap">
+          <button id="bPlay" style="width:56px; flex:0 0 auto">Play</button>
+          <input id="fps" type="range" min="1" max="20" value="6" style="flex:1; min-width:0">
+          <span id="fpsLabel" class="mono dim" style="flex:0 0 76px; text-align:right; font-size:11px">6 a second</span>
+        </div>
+        <div class="row">
+          <span class="dim">Ground</span>
+          <span class="bgs" id="bgs"></span>
+        </div>
+      </div>
+
+      <div class="hd">Tools</div>
+      <div class="pad">
+        <div class="grid5" id="tools"></div>
+        <div class="row" style="margin-top:6px">
+          <button id="bUndo" style="flex:1">Undo</button>
+          <button id="bRedo" style="flex:1">Redo</button>
+        </div>
+        <div class="row hint" id="selHint" style="display:none">
+          Drag inside the box to move those pixels. Arrow keys nudge. Delete clears. Esc drops the box.
+        </div>
+      </div>
+
+      <div class="hd">Colour</div>
+      <div class="pad">
+        <div class="row">
+          <input id="pick" type="color" value="#8bc250">
+          <input id="hex" type="text" class="mono" style="width:82px" value="#8bc250">
+          <button id="bAdd">Add</button>
+        </div>
+        <div class="row" style="margin-top:8px"><div id="palette"></div></div>
+        <div class="row hint" id="palHint"></div>
+      </div>
+
+      <div class="hd">Checks</div>
+      <div class="pad" id="checks"></div>
+
+      <div class="hd">Keys</div>
+      <div class="pad hint mono">
+        B pencil &nbsp; E eraser &nbsp; F fill &nbsp; I pick &nbsp; V select<br>
+        Cmd or Ctrl + Z undo &nbsp; Shift + Z redo<br>
+        - and + zoom &nbsp; O onion &nbsp; G grid &nbsp; Space play
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="drop">Drop PNG files to open them</div>
+<input id="file" type="file" accept=".png,image/png" multiple style="display:none">
+<input id="fileFrame" type="file" accept=".png,image/png" multiple style="display:none">
+
+<script>
+'use strict';
+// =====================================================================================
+// Eldermyr sprite editor. One file, no build, no server, no libraries.
+// What you draw is what ships: the game loads real PNGs, so this is a plain image editor
+// with the game's own rules built into the checks panel.
+// =====================================================================================
+
+var $ = function (id) { return document.getElementById(id); };
+
+var GRASS = ['#487a38', '#3f6e30', '#8a6a3a', '#8f9099', '#15171c'];
+
+var S = {
+  sprites: [],      // { key, w, h, frames:[Uint8ClampedArray], cur, hist, hi, soft }
+  si: -1,
+  tool: 'pencil',
+  color: [139, 194, 80],
+  zoom: 16,
+  grid: true, guides: true, onion: true,
+  sel: null,        // { x, y, w, h }
+  bg: GRASS[0],
+  fps: 6, playing: false, playFrame: 0
+};
+
+var cv = $('cv'), ctx = cv.getContext('2d');
+var pv = $('preview'), pctx = pv.getContext('2d');
+var off = document.createElement('canvas'), octx = off.getContext('2d', { willReadFrequently: true });
+
+function spr() { return S.si >= 0 ? S.sprites[S.si] : null; }
+function frm() { var s = spr(); return s ? s.frames[s.cur] : null; }
+
+// ---------- colour helpers ----------
+function hex2rgb(h) {
+  h = String(h).trim().replace(/^#/, '');
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+function rgb2hex(c) {
+  return '#' + c.map(function (v) { return ('0' + v.toString(16)).slice(-2); }).join('');
+}
+
+function say(msg, kind) {
+  var el = $('status');
+  el.textContent = msg || '';
+  el.className = kind || '';
+}
+
+// ---------- document ----------
+function blank(w, h) { return new Uint8ClampedArray(w * h * 4); }
+
+function makeSprite(key, w, h, frames) {
+  var s = { key: key, w: w, h: h, frames: frames || [blank(w, h)], cur: 0, hist: [], hi: -1, soft: 0 };
+  s.hist = [snapshot(s)];
+  s.hi = 0;
+  return s;
+}
+function snapshot(s) {
+  return {
+    w: s.w, h: s.h, cur: s.cur,
+    frames: s.frames.map(function (f) { return f.slice(); })
+  };
+}
+function sameAsHead(s) {
+  var a = s.hist[s.hi];
+  if (!a || a.w !== s.w || a.h !== s.h || a.frames.length !== s.frames.length) return false;
+  for (var i = 0; i < s.frames.length; i++) {
+    var x = s.frames[i], y = a.frames[i];
+    if (x.length !== y.length) return false;
+    for (var j = 0; j < x.length; j++) if (x[j] !== y[j]) return false;
+  }
+  return true;
+}
+function commit() {
+  var s = spr(); if (!s) return;
+  if (sameAsHead(s)) return;
+  s.hist.length = s.hi + 1;
+  s.hist.push(snapshot(s));
+  if (s.hist.length > 200) s.hist.shift();
+  s.hi = s.hist.length - 1;
+  redraw();
+}
+function restore(snap) {
+  var s = spr();
+  s.w = snap.w; s.h = snap.h; s.cur = Math.min(snap.cur, snap.frames.length - 1);
+  s.frames = snap.frames.map(function (f) { return f.slice(); });
+}
+function undo() {
+  var s = spr(); if (!s || s.hi <= 0) return;
+  dropSelection(true);
+  s.hi--; restore(s.hist[s.hi]); redraw(); say('Undone');
+}
+function redo() {
+  var s = spr(); if (!s || s.hi >= s.hist.length - 1) return;
+  dropSelection(true);
+  s.hi++; restore(s.hist[s.hi]); redraw(); say('Redone');
+}
+
+// ---------- pixel ops ----------
+function get(f, w, x, y) { var i = (y * w + x) * 4; return [f[i], f[i + 1], f[i + 2], f[i + 3]]; }
+function set(f, w, x, y, r, g, b, a) {
+  var i = (y * w + x) * 4;
+  if (a === 0) { f[i] = 0; f[i + 1] = 0; f[i + 2] = 0; f[i + 3] = 0; return; }
+  f[i] = r; f[i + 1] = g; f[i + 2] = b; f[i + 3] = 255;   // alpha is only ever 0 or 255
+}
+function inside(s, x, y) { return x >= 0 && y >= 0 && x < s.w && y < s.h; }
+
+function paint(x, y, erase) {
+  var s = spr(), f = frm();
+  if (!inside(s, x, y)) return;
+  if (S.sel && !ptInSel(x, y)) return;   // a box in place limits where paint lands
+  if (erase) set(f, s.w, x, y, 0, 0, 0, 0);
+  else set(f, s.w, x, y, S.color[0], S.color[1], S.color[2], 255);
+}
+function line(x0, y0, x1, y1, erase) {
+  var dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+  var sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, e = dx - dy;
+  for (;;) {
+    paint(x0, y0, erase);
+    if (x0 === x1 && y0 === y1) break;
+    var e2 = 2 * e;
+    if (e2 > -dy) { e -= dy; x0 += sx; }
+    if (e2 < dx) { e += dx; y0 += sy; }
+  }
+}
+function fill(x, y) {
+  var s = spr(), f = frm();
+  if (!inside(s, x, y)) return;
+  var t = get(f, s.w, x, y);
+  var want = [S.color[0], S.color[1], S.color[2], 255];
+  if (t[3] === want[3] && t[0] === want[0] && t[1] === want[1] && t[2] === want[2]) return;
+  var lo = S.sel ? S.sel : { x: 0, y: 0, w: s.w, h: s.h };
+  var st = [[x, y]], seen = new Uint8Array(s.w * s.h);
+  while (st.length) {
+    var p = st.pop(), px = p[0], py = p[1];
+    if (px < lo.x || py < lo.y || px >= lo.x + lo.w || py >= lo.y + lo.h) continue;
+    if (seen[py * s.w + px]) continue;
+    var c = get(f, s.w, px, py);
+    if (c[3] !== t[3]) continue;
+    if (t[3] !== 0 && (c[0] !== t[0] || c[1] !== t[1] || c[2] !== t[2])) continue;
+    seen[py * s.w + px] = 1;
+    set(f, s.w, px, py, want[0], want[1], want[2], 255);
+    st.push([px + 1, py], [px - 1, py], [px, py + 1], [px, py - 1]);
+  }
+}
+function eyedrop(x, y) {
+  var s = spr(), f = frm();
+  if (!inside(s, x, y)) return;
+  var c = get(f, s.w, x, y);
+  if (c[3] === 0) { say('That pixel is clear, nothing to pick up'); return; }
+  setColor([c[0], c[1], c[2]]);
+  setTool('pencil');
+}
+
+// ---------- selection ----------
+var lift = null; // { buf, w, h, base, ox, oy }
+function ptInSel(x, y) {
+  var s = S.sel;
+  return s && x >= s.x && y >= s.y && x < s.x + s.w && y < s.y + s.h;
+}
+function beginLift() {
+  var s = spr(), f = frm(), b = S.sel;
+  var buf = new Uint8ClampedArray(b.w * b.h * 4);
+  for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
+    var si = ((b.y + y) * s.w + (b.x + x)) * 4, di = (y * b.w + x) * 4;
+    buf[di] = f[si]; buf[di + 1] = f[si + 1]; buf[di + 2] = f[si + 2]; buf[di + 3] = f[si + 3];
+  }
+  var base = f.slice();
+  for (var y2 = 0; y2 < b.h; y2++) for (var x2 = 0; x2 < b.w; x2++) {
+    var i = ((b.y + y2) * s.w + (b.x + x2)) * 4;
+    base[i] = 0; base[i + 1] = 0; base[i + 2] = 0; base[i + 3] = 0;
+  }
+  lift = { buf: buf, w: b.w, h: b.h, base: base };
+}
+function stampLift(nx, ny) {
+  var s = spr();
+  s.frames[s.cur] = lift.base.slice();
+  var f = s.frames[s.cur];
+  for (var y = 0; y < lift.h; y++) for (var x = 0; x < lift.w; x++) {
+    var tx = nx + x, ty = ny + y;
+    if (!inside(s, tx, ty)) continue;
+    var si = (y * lift.w + x) * 4;
+    if (lift.buf[si + 3] === 0) continue;
+    var di = (ty * s.w + tx) * 4;
+    f[di] = lift.buf[si]; f[di + 1] = lift.buf[si + 1]; f[di + 2] = lift.buf[si + 2]; f[di + 3] = 255;
+  }
+  S.sel.x = nx; S.sel.y = ny;
+}
+function dropSelection(quiet) {
+  if (lift) { lift = null; if (!quiet) commit(); }
+  S.sel = null;
+  $('selHint').style.display = 'none';
+}
+function clearSelection() {
+  var s = spr(), f = frm(), b = S.sel; if (!b) return;
+  for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
+    var i = ((b.y + y) * s.w + (b.x + x)) * 4;
+    f[i] = 0; f[i + 1] = 0; f[i + 2] = 0; f[i + 3] = 0;
+  }
+  if (lift) lift.base = f.slice();
+  commit(); redraw();
+}
+function nudge(dx, dy) {
+  var s = spr(); if (!s) return;
+  if (!S.sel) { S.sel = { x: 0, y: 0, w: s.w, h: s.h }; }
+  if (!lift) beginLift();
+  stampLift(S.sel.x + dx, S.sel.y + dy);
+  redraw();
+}
+
+// ---------- drawing the big canvas ----------
+function blit(f, w, h) {
+  off.width = w; off.height = h;
+  var id = octx.createImageData(w, h);
+  id.data.set(f);
+  octx.putImageData(id, 0, 0);
+  return off;
+}
+function redraw() {
+  var s = spr();
+  $('empty').style.display = s ? 'none' : 'flex';
+  $('canvasWrap').style.display = s ? 'flex' : 'none';
+  $('stagebar').style.display = s ? 'flex' : 'none';
+  $('frames').style.display = s ? 'flex' : 'none';
+  $('framesHd').style.display = s ? 'block' : 'none';
+  if (!s) { drawStrip(); drawPreview(); drawChecks(); drawPalette(); return; }
+
+  var z = S.zoom, dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  var W = s.w * z, H = s.h * z;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, W, H);
+
+  // checkerboard under the sprite so clear pixels are unmistakable
+  var c = 8;
+  for (var yy = 0; yy * c < H; yy++) for (var xx = 0; xx * c < W; xx++) {
+    ctx.fillStyle = (xx + yy) % 2 ? '#171a20' : '#12141a';
+    ctx.fillRect(xx * c, yy * c, c, c);
+  }
+
+  // onion skin: the frame before this one, faint
+  if (S.onion && s.frames.length > 1) {
+    var prev = (s.cur - 1 + s.frames.length) % s.frames.length;
+    ctx.globalAlpha = 0.22;
+    ctx.drawImage(blit(s.frames[prev], s.w, s.h), 0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+  ctx.drawImage(blit(s.frames[s.cur], s.w, s.h), 0, 0, W, H);
+
+  // gridlines
+  if (S.grid && z >= 4) {
+    ctx.lineWidth = 1;
+    for (var x = 0; x <= s.w; x++) {
+      ctx.strokeStyle = (x % 8 === 0) ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.07)';
+      ctx.beginPath(); ctx.moveTo(x * z + .5, 0); ctx.lineTo(x * z + .5, H); ctx.stroke();
+    }
+    for (var y = 0; y <= s.h; y++) {
+      ctx.strokeStyle = (y % 8 === 0) ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.07)';
+      ctx.beginPath(); ctx.moveTo(0, y * z + .5); ctx.lineTo(W, y * z + .5); ctx.stroke();
+    }
+  }
+
+  // guides: the feet line and the centre line
+  if (S.guides) {
+    var footOk = bottomRowPainted(s, s.frames[s.cur]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = footOk ? 'rgba(210,170,70,.85)' : 'rgba(209,104,90,.95)';
+    ctx.beginPath(); ctx.moveTo(0, H - z); ctx.lineTo(W, H - z); ctx.stroke();
+    ctx.strokeStyle = 'rgba(120,160,220,.6)';
+    ctx.lineWidth = 1;
+    var cxp = Math.round(s.w / 2) * z;
+    ctx.beginPath(); ctx.moveTo(cxp + .5, 0); ctx.lineTo(cxp + .5, H); ctx.stroke();
+  }
+
+  // selection box
+  if (S.sel) {
+    var b = S.sel;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#0d0f13';
+    ctx.strokeRect(b.x * z + .5, b.y * z + .5, b.w * z - 1, b.h * z - 1);
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = '#e6ecf5';
+    ctx.strokeRect(b.x * z + .5, b.y * z + .5, b.w * z - 1, b.h * z - 1);
+    ctx.setLineDash([]);
+  }
+
+  $('zoomLabel').textContent = z + 'x';
+  $('sizeLabel').textContent = s.w + ' x ' + s.h;
+  $('bUndo').disabled = s.hi <= 0;
+  $('bRedo').disabled = s.hi >= s.hist.length - 1;
+  drawStrip(); drawFrames(); drawPreview(); drawChecks(); drawPalette();
+}
+
+// ---------- side panels ----------
+function drawStrip() {
+  var list = $('stripList');
+  list.innerHTML = '';
+  S.sprites.forEach(function (s, i) {
+    var d = document.createElement('div');
+    d.className = 'item' + (i === S.si ? ' on' : '');
+    var c = document.createElement('canvas');
+    c.width = s.w; c.height = s.h;
+    c.getContext('2d').drawImage(blit(s.frames[0], s.w, s.h), 0, 0);
+    var t = document.createElement('div');
+    t.className = 't';
+    t.innerHTML = '<b></b><span></span>';
+    t.querySelector('b').textContent = s.key;
+    t.querySelector('span').textContent = s.w + 'x' + s.h + ', ' + s.frames.length + (s.frames.length === 1 ? ' frame' : ' frames');
+    d.appendChild(c); d.appendChild(t);
+    d.onclick = function () { selectSprite(i); };
+    list.appendChild(d);
+  });
+}
+function drawFrames() {
+  var s = spr(), wrap = $('frames');
+  wrap.innerHTML = '';
+  if (!s) return;
+  s.frames.forEach(function (f, i) {
+    var d = document.createElement('div');
+    d.className = 'fr' + (i === s.cur ? ' on' : '');
+    var c = document.createElement('canvas');
+    c.width = s.w; c.height = s.h;
+    var cc = c.getContext('2d');
+    cc.fillStyle = S.bg; cc.fillRect(0, 0, s.w, s.h);
+    cc.drawImage(blit(f, s.w, s.h), 0, 0);
+    var lab = document.createElement('div');
+    lab.textContent = i;
+    d.appendChild(c); d.appendChild(lab);
+    d.onclick = function () { dropSelection(); s.cur = i; redraw(); };
+    wrap.appendChild(d);
+  });
+  var mk = function (label, fn, title) {
+    var b = document.createElement('button');
+    b.textContent = label; b.onclick = fn; if (title) b.title = title;
+    b.style.marginLeft = '4px';
+    wrap.appendChild(b);
+  };
+  mk('Add', function () { dropSelection(); s.frames.push(blank(s.w, s.h)); s.cur = s.frames.length - 1; commit(); redraw(); });
+  mk('Copy', function () { dropSelection(); s.frames.splice(s.cur + 1, 0, s.frames[s.cur].slice()); s.cur++; commit(); redraw(); });
+  mk('Delete', function () {
+    if (s.frames.length < 2) { say('A sprite needs at least one frame', 'bad'); return; }
+    dropSelection(); s.frames.splice(s.cur, 1); s.cur = Math.min(s.cur, s.frames.length - 1); commit(); redraw();
+  });
+  mk('Add from file', function () { $('fileFrame').click(); }, 'Load a PNG as another frame of this sprite');
+}
+
+function colourList(s, which) {
+  var m = new Map();
+  var fs = which === 'all' ? s.frames : [s.frames[s.cur]];
+  fs.forEach(function (f) {
+    for (var i = 0; i < f.length; i += 4) {
+      if (f[i + 3] < 128) continue;
+      var k = (f[i] << 16) | (f[i + 1] << 8) | f[i + 2];
+      m.set(k, (m.get(k) || 0) + 1);
+    }
+  });
+  return Array.from(m.entries()).sort(function (a, b) { return b[1] - a[1]; })
+    .map(function (e) { return [(e[0] >> 16) & 255, (e[0] >> 8) & 255, e[0] & 255]; });
+}
+function drawPalette() {
+  var p = $('palette'), s = spr();
+  p.innerHTML = '';
+  var cols = s ? colourList(s, 'all') : [];
+  var cur = rgb2hex(S.color);
+  var seen = {};
+  cols.forEach(function (c) { seen[rgb2hex(c)] = 1; });
+  if (!seen[cur]) cols.unshift(S.color.slice());
+  cols.forEach(function (c) {
+    var h = rgb2hex(c);
+    var d = document.createElement('div');
+    d.className = 'sw' + (h === cur ? ' on' : '');
+    d.style.background = h;
+    d.title = h;
+    d.innerHTML = '<i></i>';
+    d.onclick = function () { setColor(c); };
+    p.appendChild(d);
+  });
+  $('palHint').textContent = s
+    ? (cols.length + ' in the palette. Click one to draw with it.')
+    : 'The palette fills up from the colours in the open sprite.';
+}
+
+function bottomRowPainted(s, f) {
+  for (var x = 0; x < s.w; x++) if (f[((s.h - 1) * s.w + x) * 4 + 3] >= 128) return true;
+  return false;
+}
+function countSoft(s) {
+  var n = 0;
+  s.frames.forEach(function (f) {
+    for (var i = 3; i < f.length; i += 4) if (f[i] !== 0 && f[i] !== 255) n++;
+  });
+  return n;
+}
+function drawChecks() {
+  var box = $('checks'), s = spr();
+  box.innerHTML = '';
+  if (!s) { box.innerHTML = '<div class="hint">Open or start a sprite to see its checks.</div>'; return; }
+  var out = [];
+  var here = colourList(s, 'cur').length, all = colourList(s, 'all').length;
+  out.push([all > 32 ? 'bad' : (all > 16 ? 'warn' : 'ok'),
+    '<b>' + here + ' colours</b> in this frame, ' + all + ' across all frames.' +
+    (all > 32 ? ' The packer refuses more than 32.' : (all > 12 ? ' The brief asks for 8 to 12.' : ''))]);
+
+  var foot = bottomRowPainted(s, s.frames[s.cur]);
+  out.push([foot ? 'ok' : 'bad', foot
+    ? 'The bottom row is painted, so the feet sit on the ground.'
+    : '<b>Nothing on the bottom row.</b> This creature will hover. Move it down, keep the empty rows at the top.']);
+
+  var soft = countSoft(s);
+  out.push([soft ? 'bad' : 'ok', soft
+    ? '<b>' + soft + ' part see-through pixels.</b> Every pixel must be fully solid or fully clear.'
+    : 'Every pixel is fully solid or fully clear.']);
+
+  out.push([s.w === s.h ? 'ok' : 'bad', s.w === s.h
+    ? 'Square, ' + s.w + ' by ' + s.h + '.'
+    : '<b>Not square</b> (' + s.w + ' by ' + s.h + '). The game squashes it.']);
+
+  var sizesOk = s.frames.every(function (f) { return f.length === s.w * s.h * 4; });
+  out.push([s.frames.length >= 2 ? 'ok' : 'warn', s.frames.length >= 2
+    ? s.frames.length + ' frames, all the same size.'
+    : 'Only one frame. The game wants two, a standing one and a stepping one.']);
+  if (!sizesOk) out.push(['bad', 'Frames are not all the same size.']);
+
+  var anyInk = false;
+  for (var i = 3; i < s.frames[s.cur].length; i += 4) if (s.frames[s.cur][i] >= 128) { anyInk = true; break; }
+  if (!anyInk) out.push(['bad', 'This frame is empty.']);
+
+  var anyClear = false;
+  for (var j = 3; j < s.frames[s.cur].length; j += 4) if (s.frames[s.cur][j] === 0) { anyClear = true; break; }
+  if (!anyClear) out.push(['warn', 'No clear pixels at all. The background looks painted in.']);
+
+  if (s.frames.length > 1) {
+    var base = {}, extra = 0;
+    colourList({ frames: [s.frames[0]], cur: 0 }, 'all').forEach(function (c) { base[rgb2hex(c)] = 1; });
+    for (var k = 1; k < s.frames.length; k++) {
+      colourList({ frames: [s.frames[k]], cur: 0 }, 'all').forEach(function (c) {
+        if (!base[rgb2hex(c)]) extra++;
+      });
+    }
+    if (extra) out.push(['warn', extra + ' colours show up in a later frame that frame 0 does not have. Frames should share one palette.']);
+  }
+
+  out.forEach(function (o) {
+    var d = document.createElement('div');
+    d.className = 'chk' + (o[0] === 'ok' ? '' : ' ' + o[0]);
+    d.innerHTML = '<i></i><span>' + o[1] + '</span>';
+    box.appendChild(d);
+  });
+}
+
+// ---------- preview ----------
+function drawPreview() {
+  var s = spr();
+  var W = pv.clientWidth || 244;
+  var dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  pv.width = Math.round(W * dpr); pv.height = Math.round(88 * dpr);
+  pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  pctx.imageSmoothingEnabled = false;
+  pctx.fillStyle = S.bg;
+  pctx.fillRect(0, 0, W, 88);
+  if (!s) return;
+  var f = s.frames[S.playing ? (S.playFrame % s.frames.length) : s.cur];
+  var img = blit(f, s.w, s.h);
+  var scales = [1, 2, 3, 4], x = 8;
+  pctx.font = '9px ui-monospace, Menlo, monospace';
+  for (var i = 0; i < scales.length; i++) {
+    var k = scales[i], w = s.w * k, h = s.h * k;
+    if (x + w > W - 6) break;
+    pctx.drawImage(img, x, 74 - h, w, h);
+    pctx.fillStyle = 'rgba(255,255,255,.55)';
+    pctx.fillText(k + 'x', x, 84);
+    x += w + 10;
+  }
+}
+var playTimer = null;
+function setPlaying(on) {
+  var s = spr();
+  S.playing = on && !!s && s.frames.length > 1;
+  $('bPlay').textContent = S.playing ? 'Stop' : 'Play';
+  $('bPlay').className = S.playing ? 'on' : '';
+  if (playTimer) { clearInterval(playTimer); playTimer = null; }
+  if (S.playing) {
+    S.playFrame = 0;
+    playTimer = setInterval(function () { S.playFrame++; drawPreview(); }, 1000 / S.fps);
+  }
+  drawPreview();
+}
+
+// ---------- tools ----------
+var TOOLS = [
+  ['pencil', 'Pencil', 'B'], ['eraser', 'Eraser', 'E'], ['fill', 'Fill', 'F'],
+  ['pick', 'Pick', 'I'], ['select', 'Select', 'V']
+];
+function buildTools() {
+  var g = $('tools');
+  g.innerHTML = '';
+  TOOLS.forEach(function (t) {
+    var b = document.createElement('button');
+    b.className = 'tool' + (S.tool === t[0] ? ' on' : '');
+    b.innerHTML = '<span></span><span class="k"></span>';
+    b.children[0].textContent = t[1];
+    b.children[1].textContent = t[2];
+    b.onclick = function () { setTool(t[0]); };
+    g.appendChild(b);
+  });
+}
+function setTool(t) {
+  if (t !== 'select') dropSelection();
+  S.tool = t;
+  buildTools();
+  $('selHint').style.display = t === 'select' ? 'flex' : 'none';
+  cv.style.cursor = t === 'pick' ? 'copy' : (t === 'select' ? 'cell' : 'crosshair');
+}
+function setColor(c) {
+  S.color = c.slice();
+  var h = rgb2hex(c);
+  $('pick').value = h; $('hex').value = h;
+  drawPalette();
+}
+
+// ---------- pointer ----------
+var drag = null;
+function pxAt(e) {
+  var s = spr(), r = cv.getBoundingClientRect();
+  return {
+    x: Math.floor((e.clientX - r.left) / (r.width / s.w)),
+    y: Math.floor((e.clientY - r.top) / (r.height / s.h))
+  };
+}
+cv.addEventListener('pointerdown', function (e) {
+  var s = spr(); if (!s) return;
+  cv.setPointerCapture(e.pointerId);
+  var p = pxAt(e);
+  if (S.tool === 'pick') { eyedrop(p.x, p.y); return; }
+  if (S.tool === 'fill') { fill(p.x, p.y); commit(); redraw(); return; }
+  if (S.tool === 'select') {
+    if (S.sel && ptInSel(p.x, p.y)) {
+      if (!lift) beginLift();
+      drag = { mode: 'move', gx: p.x - S.sel.x, gy: p.y - S.sel.y };
+    } else {
+      dropSelection();
+      drag = { mode: 'box', x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y)) };
+      S.sel = { x: drag.x0, y: drag.y0, w: 1, h: 1 };
+      $('selHint').style.display = 'flex';
+    }
+    redraw();
+    return;
+  }
+  drag = { mode: 'draw', erase: S.tool === 'eraser' || e.button === 2, lx: p.x, ly: p.y };
+  paint(p.x, p.y, drag.erase);
+  redraw();
+});
+cv.addEventListener('pointermove', function (e) {
+  var s = spr(); if (!s) return;
+  var p = pxAt(e);
+  $('posLabel').textContent = (p.x >= 0 && p.y >= 0 && p.x < s.w && p.y < s.h) ? (p.x + ', ' + p.y) : '';
+  if (!drag) return;
+  if (drag.mode === 'draw') {
+    line(drag.lx, drag.ly, p.x, p.y, drag.erase);
+    drag.lx = p.x; drag.ly = p.y;
+  } else if (drag.mode === 'box') {
+    var x1 = Math.max(0, Math.min(s.w - 1, p.x)), y1 = Math.max(0, Math.min(s.h - 1, p.y));
+    S.sel = {
+      x: Math.min(drag.x0, x1), y: Math.min(drag.y0, y1),
+      w: Math.abs(x1 - drag.x0) + 1, h: Math.abs(y1 - drag.y0) + 1
+    };
+  } else if (drag.mode === 'move') {
+    stampLift(p.x - drag.gx, p.y - drag.gy);
+  }
+  redraw();
+});
+function endDrag() {
+  if (!drag) return;
+  var was = drag.mode; drag = null;
+  if (was === 'draw' || was === 'move') commit();
+  redraw();
+}
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+cv.addEventListener('pointerleave', function () { $('posLabel').textContent = ''; });
+
+// ---------- loading files ----------
+function baseName(n) { return n.replace(/\.[^.]+$/, ''); }
+function decode(file) {
+  if (window.createImageBitmap) {
+    return createImageBitmap(file).catch(function () { return viaImg(file); });
+  }
+  return viaImg(file);
+}
+function viaImg(file) {
+  return new Promise(function (res, rej) {
+    var u = URL.createObjectURL(file), im = new Image();
+    im.onload = function () { res(im); };
+    im.onerror = function () { rej(new Error('could not read ' + file.name)); };
+    im.src = u;
+  });
+}
+function toPixels(img) {
+  var w = img.width, h = img.height;
+  var c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  var cc = c.getContext('2d', { willReadFrequently: true });
+  cc.imageSmoothingEnabled = false;
+  cc.drawImage(img, 0, 0);
+  try {
+    return { w: w, h: h, px: new Uint8ClampedArray(cc.getImageData(0, 0, w, h).data) };
+  } catch (err) {
+    throw new Error('This browser will not let the page read that image. Open the file with the Open PNGs button.');
+  }
+}
+
+function openFiles(files) {
+  var list = Array.prototype.slice.call(files).filter(function (f) { return /\.png$/i.test(f.name) || /image/.test(f.type); });
+  if (!list.length) { say('No PNG files in that drop', 'bad'); return; }
+  Promise.all(list.map(function (f) {
+    return decode(f).then(function (img) {
+      var d = toPixels(img);
+      d.name = baseName(f.name);
+      return d;
+    });
+  })).then(function (all) {
+    // name-0.png and name-1.png become one sprite with two frames
+    var groups = new Map();
+    all.forEach(function (d) {
+      var m = /^(.*[^-])-(\d+)$/.exec(d.name);
+      var key = m ? m[1] : d.name, idx = m ? parseInt(m[2], 10) : 0;
+      var g = groups.get(key);
+      if (!g) { g = []; groups.set(key, g); }
+      g.push({ idx: idx, d: d });
+    });
+    var made = 0, split = 0, softTotal = 0;
+    groups.forEach(function (g, key) {
+      g.sort(function (a, b) { return a.idx - b.idx; });
+      var w = g[0].d.w, h = g[0].d.h;
+      var same = g.filter(function (e) { return e.d.w === w && e.d.h === h; });
+      var other = g.filter(function (e) { return e.d.w !== w || e.d.h !== h; });
+      var s = makeSprite(key, w, h, same.map(function (e) { return e.d.px; }));
+      s.hist = [snapshot(s)]; s.hi = 0;
+      S.sprites.push(s); made++;
+      other.forEach(function (e) {
+        var s2 = makeSprite(key + '-' + e.idx, e.d.w, e.d.h, [e.d.px]);
+        S.sprites.push(s2); split++;
+      });
+    });
+    selectSprite(S.sprites.length - 1);
+    S.sprites.forEach(function (s) { softTotal += countSoft(s); });
+    say('Opened ' + made + (made === 1 ? ' sprite' : ' sprites') +
+      (split ? ', ' + split + ' put aside because the sizes did not match' : ''), 'good');
+    checkAlpha();
+  }).catch(function (err) {
+    say(String(err && err.message || err), 'bad');
+  });
+}
+function checkAlpha() {
+  var s = spr();
+  var bar = $('alphabar');
+  if (!s) { bar.className = ''; return; }
+  var n = countSoft(s);
+  if (!n || s.softDismissed) { bar.className = ''; return; }
+  $('alphaText').textContent = 'This sprite has ' + n + ' pixels that are only part see-through. ' +
+    'The game needs every pixel fully solid or fully clear, so it will refuse this as it is.';
+  bar.className = 'show';
+}
+function snapAlpha() {
+  var s = spr(); if (!s) return;
+  var n = 0;
+  s.frames.forEach(function (f) {
+    for (var i = 3; i < f.length; i += 4) {
+      if (f[i] === 0 || f[i] === 255) continue;
+      n++;
+      if (f[i] >= 128) { f[i] = 255; }
+      else { f[i - 3] = 0; f[i - 2] = 0; f[i - 1] = 0; f[i] = 0; }
+    }
+  });
+  commit(); checkAlpha(); redraw();
+  say('Snapped ' + n + ' pixels to solid or clear', 'good');
+}
+
+function selectSprite(i) {
+  dropSelection(true);
+  S.si = i;
+  var s = spr();
+  if (s) { $('key').value = s.key; s.softDismissed = false; }
+  setPlaying(false);
+  checkAlpha();
+  redraw();              // this is what gives the canvas area a real size
+  if (s) { fitZoom(); redraw(); }
+}
+function fitZoom() {
+  var s = spr(); if (!s) return;
+  var box = $('canvasWrap').clientHeight - 40;
+  var boxw = $('canvasWrap').clientWidth - 40;
+  if (box < 8 || boxw < 8) { S.zoom = 16; return; }
+  var z = Math.floor(Math.min(box / s.h, boxw / s.w));
+  S.zoom = Math.max(1, Math.min(48, z || 16));
+}
+
+// ---------- export ----------
+function frameCanvas(s, i) {
+  var c = document.createElement('canvas');
+  c.width = s.w; c.height = s.h;
+  var cc = c.getContext('2d');
+  var id = cc.createImageData(s.w, s.h);
+  var src = s.frames[i];
+  // last line of defence: nothing leaves here part see-through
+  for (var j = 0; j < src.length; j += 4) {
+    var a = src[j + 3] >= 128 ? 255 : 0;
+    id.data[j] = a ? src[j] : 0;
+    id.data[j + 1] = a ? src[j + 1] : 0;
+    id.data[j + 2] = a ? src[j + 2] : 0;
+    id.data[j + 3] = a;
+  }
+  cc.putImageData(id, 0, 0);
+  return c;
+}
+function saveFrame(s, i) {
+  return new Promise(function (res) {
+    frameCanvas(s, i).toBlob(function (b) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(b);
+      a.download = s.key + '-' + i + '.png';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); res(); }, 400);
+    }, 'image/png');
+  });
+}
+function exportAll(oneOnly) {
+  var s = spr(); if (!s) return;
+  s.key = ($('key').value || 'sprite').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if (!s.key) s.key = 'sprite';
+  $('key').value = s.key;
+  var idx = oneOnly ? [s.cur] : s.frames.map(function (_, i) { return i; });
+  var soft = countSoft(s);
+  var chain = Promise.resolve();
+  idx.forEach(function (i) { chain = chain.then(function () { return saveFrame(s, i); }); });
+  chain.then(function () {
+    say('Saved ' + idx.map(function (i) { return s.key + '-' + i + '.png'; }).join(', ') +
+      (soft ? '. ' + soft + ' part see-through pixels were snapped on the way out.' : ''), 'good');
+    drawStrip();
+  });
+}
+
+// ---------- wiring ----------
+buildTools();
+setTool('pencil');
+setColor(S.color);
+GRASS.forEach(function (g) {
+  var b = document.createElement('b');
+  b.style.background = g;
+  b.className = g === S.bg ? 'on' : '';
+  b.title = g;
+  b.onclick = function () {
+    S.bg = g;
+    Array.prototype.forEach.call($('bgs').children, function (n) { n.className = ''; });
+    b.className = 'on';
+    drawPreview(); drawFrames();
+  };
+  $('bgs').appendChild(b);
+});
+
+$('bOpen').onclick = function () { $('file').click(); };
+$('file').onchange = function (e) { openFiles(e.target.files); e.target.value = ''; };
+$('fileFrame').onchange = function (e) {
+  var s = spr(), files = Array.prototype.slice.call(e.target.files);
+  e.target.value = '';
+  if (!s || !files.length) return;
+  Promise.all(files.map(function (f) { return decode(f).then(toPixels); })).then(function (all) {
+    var bad = 0;
+    all.forEach(function (d) {
+      if (d.w !== s.w || d.h !== s.h) { bad++; return; }
+      s.frames.push(d.px);
+    });
+    s.cur = s.frames.length - 1;
+    commit(); checkAlpha(); redraw();
+    say(bad ? bad + ' file(s) were a different size and were skipped' : 'Added ' + all.length + ' frame(s)', bad ? 'bad' : 'good');
+  });
+};
+$('bNew').onclick = function () {
+  var n = Math.max(4, Math.min(128, parseInt($('newSize').value, 10) || 16));
+  var name = 'sprite' + (S.sprites.length + 1);
+  S.sprites.push(makeSprite(name, n, n, [blank(n, n)]));
+  selectSprite(S.sprites.length - 1);
+  say('New blank sprite, ' + n + ' by ' + n);
+};
+$('bClose').onclick = function () {
+  if (S.si < 0) return;
+  S.sprites.splice(S.si, 1);
+  S.si = Math.min(S.si, S.sprites.length - 1);
+  selectSprite(S.si);
+};
+$('bExport').onclick = function () { exportAll(false); };
+$('bExport1').onclick = function () { exportAll(true); };
+$('key').onchange = function () {
+  var s = spr(); if (!s) return;
+  s.key = ($('key').value || 'sprite').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+  $('key').value = s.key;
+  drawStrip();
+};
+$('bSnap').onclick = snapAlpha;
+$('bDismiss').onclick = function () { var s = spr(); if (s) s.softDismissed = true; checkAlpha(); };
+$('bUndo').onclick = undo;
+$('bRedo').onclick = redo;
+$('zIn').onclick = function () { S.zoom = Math.min(48, S.zoom + (S.zoom < 8 ? 1 : 4)); redraw(); };
+$('zOut').onclick = function () { S.zoom = Math.max(1, S.zoom - (S.zoom <= 8 ? 1 : 4)); redraw(); };
+$('zFit').onclick = function () { fitZoom(); redraw(); };
+$('bGrid').onclick = function () { S.grid = !S.grid; this.className = S.grid ? 'on' : ''; redraw(); };
+$('bGuides').onclick = function () { S.guides = !S.guides; this.className = S.guides ? 'on' : ''; redraw(); };
+$('bOnion').onclick = function () { S.onion = !S.onion; this.className = S.onion ? 'on' : ''; redraw(); };
+$('bPlay').onclick = function () { setPlaying(!S.playing); };
+$('fps').oninput = function () {
+  S.fps = parseInt(this.value, 10);
+  $('fpsLabel').textContent = S.fps + ' a second';
+  if (S.playing) setPlaying(true);
+};
+$('pick').oninput = function () { setColor(hex2rgb(this.value)); };
+$('hex').onchange = function () {
+  var c = hex2rgb(this.value);
+  if (c) setColor(c); else { say('That is not a colour like #8bc250', 'bad'); this.value = rgb2hex(S.color); }
+};
+$('bAdd').onclick = function () { setColor(S.color); say('Colour ' + rgb2hex(S.color) + ' ready to draw with'); };
+
+// drag and drop, anywhere on the window
+var dragDepth = 0;
+window.addEventListener('dragenter', function (e) { e.preventDefault(); dragDepth++; $('drop').className = 'show'; });
+window.addEventListener('dragover', function (e) { e.preventDefault(); });
+window.addEventListener('dragleave', function () { if (--dragDepth <= 0) { dragDepth = 0; $('drop').className = ''; } });
+window.addEventListener('drop', function (e) {
+  e.preventDefault(); dragDepth = 0; $('drop').className = '';
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) openFiles(e.dataTransfer.files);
+});
+
+// keys
+window.addEventListener('keydown', function (e) {
+  var t = e.target.tagName;
+  if (t === 'INPUT' || t === 'TEXTAREA') return;
+  var meta = e.metaKey || e.ctrlKey;
+  if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (meta && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  switch (e.key) {
+    case 'b': case 'B': setTool('pencil'); break;
+    case 'e': case 'E': setTool('eraser'); break;
+    case 'f': case 'F': setTool('fill'); break;
+    case 'i': case 'I': setTool('pick'); break;
+    case 'v': case 'V': setTool('select'); break;
+    case 'z': case 'Z': if (e.shiftKey) { redo(); } break;
+    case 'o': case 'O': $('bOnion').click(); break;
+    case 'g': case 'G': $('bGrid').click(); break;
+    case '+': case '=': $('zIn').click(); break;
+    case '-': case '_': $('zOut').click(); break;
+    case 'Escape': dropSelection(); redraw(); break;
+    case 'Delete': case 'Backspace': if (S.sel) { e.preventDefault(); clearSelection(); } break;
+    case 'ArrowLeft': e.preventDefault(); nudge(-1, 0); break;
+    case 'ArrowRight': e.preventDefault(); nudge(1, 0); break;
+    case 'ArrowUp': e.preventDefault(); nudge(0, -1); break;
+    case 'ArrowDown': e.preventDefault(); nudge(0, 1); break;
+    case ' ': e.preventDefault(); setPlaying(!S.playing); break;
+  }
+});
+window.addEventListener('keyup', function (e) {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    if (lift) commit();
+  }
+});
+window.addEventListener('resize', function () { drawPreview(); });
+
+redraw();
+
+// a small door for checking the tool from the outside
+window.EDITOR = {
+  S: S, spr: spr, redraw: redraw, frameCanvas: frameCanvas, colourList: colourList,
+  countSoft: countSoft, openFiles: openFiles, makeSprite: makeSprite, selectSprite: selectSprite,
+  undo: undo, redo: redo, commit: commit, blank: blank
+};
+</script>
+</body>
+</html>

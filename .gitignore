@@ -1,0 +1,16 @@
+# scratch art used while testing, not part of the tool
+_test/
+_scratch/
+
+# macOS
+.DS_Store
+
+# editors
+.vscode/
+.idea/
+*.swp
+
+# nothing here needs building, but keep these out anyway
+node_modules/
+dist/
+*.log
