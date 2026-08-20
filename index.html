@@ -26,6 +26,8 @@
   button:hover{background:#262c36; color:var(--hot)}
   button:active{background:#2e3644}
   button.on{background:var(--sel); border-color:#4d6386; color:var(--selText)}
+  button.danger{border-color:#6b3a33; color:#e5a396}
+  button.danger:hover{background:#3a2622; color:#f3c4ba}
   button:disabled{opacity:.4; cursor:default}
   button:disabled:hover{background:var(--panel2); color:var(--text)}
   input[type=text],input[type=number]{
@@ -40,6 +42,7 @@
   .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   .dim{color:var(--dim)}
   .k{color:var(--dim); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:10px}
+  .pick{user-select:text; -webkit-user-select:text}
 
   /* layout */
   #app{display:flex; flex-direction:column; height:100%}
@@ -49,15 +52,28 @@
   }
   header .name{color:var(--hot); font-weight:600; letter-spacing:.02em; margin-right:6px}
   header .sep{width:1px; height:20px; background:var(--line); margin:0 3px}
-  #status{margin-left:auto; color:var(--dim); max-width:46%; text-align:right;
+  #status{margin-left:auto; color:var(--dim); max-width:44%; text-align:right;
           overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   #status.bad{color:var(--bad)} #status.good{color:var(--good)}
 
+  /* the path bar: where the files go and what to run next */
+  #pathbar{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:5px 8px; background:#12151a; border-bottom:1px solid var(--line);
+    font-size:11px; min-height:29px;
+  }
+  #pathbar .lab{color:var(--dim); flex:0 0 auto}
+  #pathbar .path{color:var(--hot)}
+  #pathbar .cmd{color:#a8c4a0}
+  #pathbar button{padding:2px 6px; font-size:10px}
+  #pathbar .refuse{color:var(--bad)}
+
   main{display:flex; flex:1; min-height:0}
   .col{display:flex; flex-direction:column; min-height:0}
-  #strip{width:132px; background:var(--panel); border-right:1px solid var(--line); overflow:auto}
+  #strip{width:150px; background:var(--panel); border-right:1px solid var(--line);
+         overflow:auto; flex:0 0 150px}
   #stage{flex:1; min-width:0; background:var(--bg)}
-  #side{width:292px; background:var(--panel); border-left:1px solid var(--line); overflow:auto}
+  #side{width:322px; flex:0 0 322px; background:var(--panel); border-left:1px solid var(--line); overflow:auto}
 
   .hd{
     padding:5px 8px; color:var(--dim); background:var(--panel2);
@@ -78,10 +94,11 @@
     width:32px; height:32px; flex:0 0 32px; image-rendering:pixelated;
     background:#0d0f13; border:1px solid var(--line);
   }
-  .item .t{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px}
-  .item .t b{display:block; font-weight:500}
+  .item .t{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; min-width:0}
+  .item .t b{display:block; font-weight:500; overflow:hidden; text-overflow:ellipsis}
   .item .t span{color:var(--dim); font-size:10px}
   .item.on .t span{color:#b8c6da}
+  .item .flag{flex:0 0 6px; width:6px; height:6px; background:var(--bad)}
 
   /* stage */
   #alphabar{
@@ -120,8 +137,8 @@
   .tool span{font-size:10px}
 
   #preview{background:#0d0f13; display:block; width:100%; border:1px solid var(--line)}
-  .bgs{display:flex; gap:4px}
-  .bgs b{width:18px; height:18px; border:1px solid var(--line); cursor:pointer; display:block}
+  .bgs{display:flex; gap:4px; flex-wrap:wrap}
+  .bgs b{width:20px; height:18px; border:1px solid var(--line); cursor:pointer; display:block}
   .bgs b.on{box-shadow:0 0 0 1px #cfd8e6; border-color:#cfd8e6}
 
   #palette{display:flex; flex-wrap:wrap; gap:3px}
@@ -147,6 +164,8 @@
   }
   #drop.show{display:flex}
   .hint{color:var(--dim); font-size:10px; line-height:1.6}
+  #keptBox{border-top:1px solid var(--line); padding:8px; line-height:1.6}
+  #keptBox .t{color:var(--text)}
 </style>
 </head>
 <body>
@@ -160,20 +179,47 @@
     <input id="newSize" type="number" min="4" max="128" value="16" style="width:48px" title="Size in pixels, square">
     <span class="dim">px</span>
     <span class="sep"></span>
+    <span class="dim">Folder</span>
+    <input id="family" type="text" class="mono" list="families" style="width:98px" value="creatures"
+           title="The folder under art-live. creatures for an enemy.">
+    <datalist id="families">
+      <option value="creatures"></option><option value="bosses"></option><option value="items"></option>
+      <option value="hero"></option><option value="steeds"></option><option value="gates"></option>
+      <option value="stairs"></option>
+    </datalist>
     <span class="dim">Name</span>
-    <input id="key" type="text" class="mono" style="width:130px" placeholder="treeent" title="Export name. Files are saved as name-0.png, name-1.png">
+    <input id="key" type="text" class="mono" style="width:128px" placeholder="treeent"
+           title="Export name. Files are saved as name-0.png, name-1.png">
     <span class="sep"></span>
     <button id="bExport">Export frames</button>
     <button id="bExport1">This frame</button>
+    <button id="bForce" style="display:none" class="danger">Export anyway</button>
     <span class="sep"></span>
-    <button id="bClose" title="Close the open sprite">Close</button>
+    <button id="bClose" title="Close this sprite and forget it">Close</button>
     <span id="status"></span>
   </header>
+
+  <div id="pathbar">
+    <span class="lab">Goes to</span>
+    <span class="path mono pick" id="pbPath">art-live/creatures/</span>
+    <button id="pbCopyPath">Copy path</button>
+    <span class="sep" style="width:1px;height:16px;background:var(--line)"></span>
+    <span class="lab">Then run</span>
+    <span class="cmd mono pick" id="pbCmd">npm run pack-art</span>
+    <button id="pbCopyCmd">Copy</button>
+    <span class="refuse" id="pbWarn"></span>
+  </div>
 
   <main>
     <div class="col" id="strip">
       <div class="hd">Open sprites</div>
       <div id="stripList"></div>
+      <div style="flex:1"></div>
+      <div class="hd">Kept in this browser</div>
+      <div id="keptBox" class="hint">
+        <div class="t" id="keptText">Nothing kept yet.</div>
+        <div class="row" style="margin-top:6px"><button id="bForget" style="width:100%">Forget all</button></div>
+      </div>
     </div>
 
     <div class="col" id="stage">
@@ -188,7 +234,8 @@
           <b>Nothing open</b>
           Drop PNG files anywhere on this window, or press Open PNGs.<br>
           Files named name-0.png and name-1.png open as one sprite with two frames.<br>
-          Or press New sprite to start from blank.
+          Or press New sprite to start from blank.<br>
+          <span class="dim">Whatever is open is kept in this browser and comes back next time.</span>
         </div>
       </div>
 
@@ -200,13 +247,13 @@
         <span id="zoomLabel" class="mono" style="width:34px; text-align:center">16x</span>
         <button id="zIn">+</button>
         <button id="zFit">Fit</button>
-        <span class="sep"></span>
+        <span class="sep" style="width:1px;height:16px;background:var(--line)"></span>
         <button id="bGrid" class="on">Grid</button>
         <button id="bGuides" class="on">Guides</button>
         <button id="bOnion" class="on">Onion skin</button>
-        <span class="sep"></span>
+        <span class="sep" style="width:1px;height:16px;background:var(--line)"></span>
         <span id="posLabel" class="mono dim" style="width:70px"></span>
-        <span class="sep"></span>
+        <span class="sep" style="width:1px;height:16px;background:var(--line)"></span>
         <span id="sizeLabel" class="mono dim"></span>
       </div>
 
@@ -215,11 +262,15 @@
     </div>
 
     <div class="col" id="side">
-      <div class="hd">Preview at game size</div>
+      <div class="hd">Game size</div>
       <div class="pad">
-        <canvas id="preview" height="88"></canvas>
+        <canvas id="preview" height="150"></canvas>
         <div class="row" style="margin-top:6px; flex-wrap:nowrap">
-          <button id="bPlay" style="width:56px; flex:0 0 auto">Play</button>
+          <span class="dim" style="flex:0 0 auto">Window</span>
+          <span class="row" id="scales" style="gap:4px; flex-wrap:nowrap"></span>
+          <button id="bPlay" style="width:52px; flex:0 0 auto; margin-left:auto">Play</button>
+        </div>
+        <div class="row" style="flex-wrap:nowrap">
           <input id="fps" type="range" min="1" max="20" value="6" style="flex:1; min-width:0">
           <span id="fpsLabel" class="mono dim" style="flex:0 0 76px; text-align:right; font-size:11px">6 a second</span>
         </div>
@@ -227,14 +278,16 @@
           <span class="dim">Ground</span>
           <span class="bgs" id="bgs"></span>
         </div>
+        <div class="row hint" id="pvNote"></div>
       </div>
 
       <div class="hd">Tools</div>
       <div class="pad">
         <div class="grid5" id="tools"></div>
-        <div class="row" style="margin-top:6px">
+        <div class="row" style="margin-top:6px; flex-wrap:nowrap">
           <button id="bUndo" style="flex:1">Undo</button>
           <button id="bRedo" style="flex:1">Redo</button>
+          <button id="bFlip" style="flex:1" title="Mirror left to right. Creatures are drawn facing right.">Flip</button>
         </div>
         <div class="row hint" id="selHint" style="display:none">
           Drag inside the box to move those pixels. Arrow keys nudge. Delete clears. Esc drops the box.
@@ -246,7 +299,6 @@
         <div class="row">
           <input id="pick" type="color" value="#8bc250">
           <input id="hex" type="text" class="mono" style="width:82px" value="#8bc250">
-          <button id="bAdd">Add</button>
         </div>
         <div class="row" style="margin-top:8px"><div id="palette"></div></div>
         <div class="row hint" id="palHint"></div>
@@ -259,7 +311,7 @@
       <div class="pad hint mono">
         B pencil &nbsp; E eraser &nbsp; F fill &nbsp; I pick &nbsp; V select<br>
         Cmd or Ctrl + Z undo &nbsp; Shift + Z redo<br>
-        - and + zoom &nbsp; O onion &nbsp; G grid &nbsp; Space play
+        - and + zoom, or the wheel &nbsp; O onion &nbsp; G grid &nbsp; Space play
       </div>
     </div>
   </main>
@@ -272,25 +324,56 @@
 <script>
 'use strict';
 // =====================================================================================
-// Eldermyr sprite editor. One file, no build, no server, no libraries.
+// Eldermyr sprite editor. One file, no build, no server, no libraries, no requests out.
 // What you draw is what ships: the game loads real PNGs, so this is a plain image editor
 // with the game's own rules built into the checks panel.
+//
+// The rules mirrored here come from two files in the game repo:
+//   scripts/pack-art.mjs  the packer, which is the thing that actually refuses art
+//   ART-BRIEF.md          the constraints an artist is asked to work to
+// Anything the packer REFUSES is red here. Anything it WARNS about is amber here.
 // =====================================================================================
 
 var $ = function (id) { return document.getElementById(id); };
 
-var GRASS = ['#487a38', '#3f6e30', '#8a6a3a', '#8f9099', '#15171c'];
+// ---------- the game's own ground colours, copied out of the terrain painter ----------
+var GROUNDS = [
+  { id: 'grass', name: 'Grass', tiles: ['#487a38', '#4d8140', '#447434'], dark: '#3f6e30', light: '#5f9448' },
+  { id: 'dirt', name: 'Dirt path', tiles: ['#a89060', '#a89060', '#a89060'], dark: '#9a8354', light: '#b39c6c' },
+  { id: 'stone', name: 'Stone', tiles: ['#63636c', '#5b5b64', '#63636c'], dark: '#4c4c55', light: '#6d6d76' },
+  { id: 'sand', name: 'Sand', tiles: ['#d8c890', '#d2c188', '#dfd09c'], dark: '#c6b47c', light: '#efe3bc' },
+  { id: 'snow', name: 'Snow', tiles: ['#dbe6f1', '#dbe6f1', '#dbe6f1'], dark: '#c8d6e6', light: '#ffffff' },
+  { id: 'ash', name: 'Burnt ground', tiles: ['#3a2420', '#3a2420', '#3a2420'], dark: '#1e1410', light: '#52312a' },
+  { id: 'floor', name: 'Dungeon floor', tiles: ['#2a2832', '#322f3c', '#2a2832'], dark: '#1a1820', light: '#3a3542' }
+];
+
+// ---------- three of the game's own creatures, to stand next to yours ----------
+// unitsPerPixel is measured off the real game painter (art-live/art-meta.json). The hero
+// sits at 1.375, which is also what a creature with no measurement of its own is drawn at.
+var HERO_UPP = 1.375;
+var REFS = [
+  { id: 'rat', label: 'rat', upp: 16.5 / 16, png: 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAA7ElEQVR4AexQKw7CUBDcViAJwaIKpsGToAgCVcEZEDg+ooojoCr4KAyaBFuFJiQ4VA0pBoPgAJjS2WZfKDThEWybzv5nsm9N+vPLBYh+vsHadaOB40Ry+0wBp9OM3iHEYxAwV0RSAkLiidjUrAoJNqc9jW4XCh/3uJP8EFECICdlUiTJ4SHklooIqWHbjKXvG0qAOxpmMZtSq9+lnucZGDexBgJdDMcTqtbbTAaHN4CIVSgjZ5zDK/tXIzV/d1Bk9FkAAYAmgBiE+WprCFDLgolDCLIGvtVSG2BYniOboAYgxzPRRy74EJCGrn8CAAD//5woi7IAAAAGSURBVAMAlU1YGVK3G/cAAAAASUVORK5CYII=' },
+  { id: 'hero', label: 'hero', upp: 22 / 16, png: 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABPUlEQVR4AYySsUvDQBTGv4o4q6OTDg46VALiEBT9E4o4dBGCoGQq6OjUycmpgxYdLBQhY2YHKVZcFKJD66bi5KSdRaj9XnlHGu6iIb97j/e+93HJ3Rhyno2g1T88+RSY26RWgyi+7ZOwNI7iTFdgzlrWxGqgonbrBlm0p9FqoEMqyotWAx04q1eRRXsacw32wiqa0bXAnOigxlwDiv76HKtBkjzABU3TjBjwrMnEXAWV/QOD5y2DcNBf35Qj5pESY8AL468UqcFjXJZo23736U569fgHxBhINbW0G7vAW3MEb+o5pRimToO14ByY3RY6k6cgydfCcGqw8mYSp0EYbOGyUZOf+f1aAxnMycsek3JpteA0oOA/GIPo4hjkvXOF6fkdLC75znn2dBfG4OX+qKATmlOoNY1a6/U+RP8LAAD//1vLpFEAAAAGSURBVAMAenSjEQ6CJMIAAAAASUVORK5CYII=' },
+  { id: 'ogre', label: 'ogre', upp: 38.4928 / 16, png: 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABt0lEQVR4AZRSzStscRh+Zha3q6463el2Q3SamZUyTmzko0gkUaKUjQU7/AVsxYKyYyMLFqJ8FDvJFEqKxogsZqbTTAjRCQvZHD2v3umoIabe3/N+Pu/HHD9++KsrDbiDraY7NWAJ/oiAxREzH2HTQOJXt+CXBM2VpW5/S3VW8vL+I24/IWE7CL8uYzWawacELC7+ZyBU9BezMxbmd+KgrSS6eU4Cb3HQLMH4aBqZs00hmV+aBknYvbO++H0CFnDUsf42t8wsdJVdkSRz45PobYhgZGhY3Eri9xZUNtWip7ECfR31aKqxJDFlp7G1H0Py8kHszJ2D63snu07OFSTT8/AOavIOBQEDhxe2uD4QHG3tiZMPOxMp2p06RUk4yQcCBlW4t+reCdSnKARk5G7aSbt/h8R/4zzKPvdPDp5fHJwkU1jZPcbadhQTC+tZm/5YygZFuxP9t86zj0rm9hGJK4dqTmEsXGhIbOMgLnhqX/lkBSpWqARW0ER5KIiuugr8+W0gkG9gKXruI3pj7VURIeAjBPyQeIevjsVkFeYxn3VCEEum5Q6L28dQ4f9MP4uItDVGpE3/GwAAAP//5NsCTQAAAAZJREFUAwBXm8rh9+bmTgAAAABJRU5ErkJggg==' }
+];
+var refImg = {};
+REFS.forEach(function (r) { var i = new Image(); i.onload = function () { drawPreview(); }; i.src = 'data:image/png;base64,' + r.png; refImg[r.id] = i; });
+
+// how many screen pixels one drawn pixel is, at the three window sizes the game runs at
+var SCALES = [{ n: 2, label: 'Small' }, { n: 3, label: 'Normal' }, { n: 4, label: 'Big' }];
 
 var S = {
-  sprites: [],      // { key, w, h, frames:[Uint8ClampedArray], cur, hist, hi, soft }
+  sprites: [],      // { key, family, w, h, frames:[Uint8ClampedArray], cur, hist, hi }
   si: -1,
   tool: 'pencil',
   color: [139, 194, 80],
   zoom: 16,
   grid: true, guides: true, onion: true,
   sel: null,        // { x, y, w, h }
-  bg: GRASS[0],
-  fps: 6, playing: false, playFrame: 0
+  ground: GROUNDS[0],
+  scale: 3,
+  fps: 6, playing: false, playFrame: 0,
+  store: { on: false, why: '', at: 0, bytes: 0 }
 };
 
 var cv = $('cv'), ctx = cv.getContext('2d');
@@ -310,6 +393,10 @@ function hex2rgb(h) {
 function rgb2hex(c) {
   return '#' + c.map(function (v) { return ('0' + v.toString(16)).slice(-2); }).join('');
 }
+function isLight(hex) {
+  var c = hex2rgb(hex) || [0, 0, 0];
+  return (c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114) > 128;
+}
 
 function say(msg, kind) {
   var el = $('status');
@@ -317,20 +404,27 @@ function say(msg, kind) {
   el.className = kind || '';
 }
 
+// ---------- names, exactly the packer's rule ----------
+// pack-art.mjs: the file must be `<key>-<frame>.png`, all lowercase, and the key must
+// match ^[a-z0-9][a-z0-9_-]*$ . Hyphens are legal and the game uses them (knight-side).
+function cleanName(v) {
+  var k = String(v == null ? '' : v).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  return k.replace(/^[^a-z0-9]+/, '');
+}
+
 // ---------- document ----------
 function blank(w, h) { return new Uint8ClampedArray(w * h * 4); }
 
-function makeSprite(key, w, h, frames) {
-  var s = { key: key, w: w, h: h, frames: frames || [blank(w, h)], cur: 0, hist: [], hi: -1, soft: 0 };
+function makeSprite(key, w, h, frames, family) {
+  var s = {
+    key: key, family: family || 'creatures', w: w, h: h,
+    frames: frames && frames.length ? frames : [blank(w, h)], cur: 0, hist: [], hi: 0, bytes: []
+  };
   s.hist = [snapshot(s)];
-  s.hi = 0;
   return s;
 }
 function snapshot(s) {
-  return {
-    w: s.w, h: s.h, cur: s.cur,
-    frames: s.frames.map(function (f) { return f.slice(); })
-  };
+  return { w: s.w, h: s.h, cur: s.cur, frames: s.frames.map(function (f) { return f.slice(); }) };
 }
 function sameAsHead(s) {
   var a = s.hist[s.hi];
@@ -342,29 +436,39 @@ function sameAsHead(s) {
   }
   return true;
 }
+// 200 steps back, but never more than about 40 MB of them: a 128 px sprite with eight
+// frames would otherwise hold half a gigabyte of undo.
+var HIST_STEPS = 200, HIST_BYTES = 40 * 1024 * 1024;
 function commit() {
   var s = spr(); if (!s) return;
   if (sameAsHead(s)) return;
   s.hist.length = s.hi + 1;
   s.hist.push(snapshot(s));
-  if (s.hist.length > 200) s.hist.shift();
+  var each = s.w * s.h * 4 * s.frames.length;
+  var cap = Math.max(8, Math.min(HIST_STEPS, Math.floor(HIST_BYTES / Math.max(1, each))));
+  while (s.hist.length > cap) s.hist.shift();
   s.hi = s.hist.length - 1;
+  s.bytes = [];
+  touched(s);
+  scheduleSave();
   redraw();
 }
 function restore(snap) {
   var s = spr();
   s.w = snap.w; s.h = snap.h; s.cur = Math.min(snap.cur, snap.frames.length - 1);
   s.frames = snap.frames.map(function (f) { return f.slice(); });
+  s.bytes = [];
+  touched(s);
 }
 function undo() {
   var s = spr(); if (!s || s.hi <= 0) return;
   dropSelection(true);
-  s.hi--; restore(s.hist[s.hi]); redraw(); say('Undone');
+  s.hi--; restore(s.hist[s.hi]); scheduleSave(); redraw(); say('Undone');
 }
 function redo() {
   var s = spr(); if (!s || s.hi >= s.hist.length - 1) return;
   dropSelection(true);
-  s.hi++; restore(s.hist[s.hi]); redraw(); say('Redone');
+  s.hi++; restore(s.hist[s.hi]); scheduleSave(); redraw(); say('Redone');
 }
 
 // ---------- pixel ops ----------
@@ -422,9 +526,23 @@ function eyedrop(x, y) {
   setColor([c[0], c[1], c[2]]);
   setTool('pencil');
 }
+// Mirror left to right. Creatures are always drawn facing right and the game flips them
+// itself when they walk the other way, so this is for fixing one you drew facing left.
+function flipFrame() {
+  var s = spr(); if (!s) return;
+  dropSelection(true);
+  var f = s.frames[s.cur], out = new Uint8ClampedArray(f.length);
+  for (var y = 0; y < s.h; y++) for (var x = 0; x < s.w; x++) {
+    var si = (y * s.w + x) * 4, di = (y * s.w + (s.w - 1 - x)) * 4;
+    out[di] = f[si]; out[di + 1] = f[si + 1]; out[di + 2] = f[si + 2]; out[di + 3] = f[si + 3];
+  }
+  s.frames[s.cur] = out;
+  commit(); redraw();
+  say('Frame ' + s.cur + ' mirrored');
+}
 
 // ---------- selection ----------
-var lift = null; // { buf, w, h, base, ox, oy }
+var lift = null; // { buf, w, h, base }
 function ptInSel(x, y) {
   var s = S.sel;
   return s && x >= s.x && y >= s.y && x < s.x + s.w && y < s.y + s.h;
@@ -471,11 +589,24 @@ function clearSelection() {
   if (lift) lift.base = f.slice();
   commit(); redraw();
 }
+// Arrows move the pixels inside the box, or the whole picture when there is no box.
+// Moving the whole picture must NOT leave a box behind: a box changes where paint lands.
 function nudge(dx, dy) {
   var s = spr(); if (!s) return;
-  if (!S.sel) { S.sel = { x: 0, y: 0, w: s.w, h: s.h }; }
-  if (!lift) beginLift();
-  stampLift(S.sel.x + dx, S.sel.y + dy);
+  if (S.sel) {
+    if (!lift) beginLift();
+    stampLift(S.sel.x + dx, S.sel.y + dy);
+    redraw();
+    return;
+  }
+  var f = s.frames[s.cur], out = new Uint8ClampedArray(f.length);
+  for (var y = 0; y < s.h; y++) for (var x = 0; x < s.w; x++) {
+    var tx = x + dx, ty = y + dy;
+    if (tx < 0 || ty < 0 || tx >= s.w || ty >= s.h) continue;
+    var si = (y * s.w + x) * 4, di = (ty * s.w + tx) * 4;
+    out[di] = f[si]; out[di + 1] = f[si + 1]; out[di + 2] = f[si + 2]; out[di + 3] = f[si + 3];
+  }
+  s.frames[s.cur] = out;
   redraw();
 }
 
@@ -489,12 +620,14 @@ function blit(f, w, h) {
 }
 function redraw() {
   var s = spr();
+  CURCHK = s ? checkSprite(s) : null;
+  if (!CURCHK || !CURCHK.bad.length) $('bForce').style.display = 'none';
   $('empty').style.display = s ? 'none' : 'flex';
   $('canvasWrap').style.display = s ? 'flex' : 'none';
   $('stagebar').style.display = s ? 'flex' : 'none';
   $('frames').style.display = s ? 'flex' : 'none';
   $('framesHd').style.display = s ? 'block' : 'none';
-  if (!s) { drawStrip(); drawPreview(); drawChecks(); drawPalette(); return; }
+  if (!s) { drawStrip(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept(); return; }
 
   var z = S.zoom, dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
   var W = s.w * z, H = s.h * z;
@@ -561,7 +694,7 @@ function redraw() {
   $('sizeLabel').textContent = s.w + ' x ' + s.h;
   $('bUndo').disabled = s.hi <= 0;
   $('bRedo').disabled = s.hi >= s.hist.length - 1;
-  drawStrip(); drawFrames(); drawPreview(); drawChecks(); drawPalette();
+  drawStrip(); drawFrames(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept();
 }
 
 // ---------- side panels ----------
@@ -580,6 +713,12 @@ function drawStrip() {
     t.querySelector('b').textContent = s.key;
     t.querySelector('span').textContent = s.w + 'x' + s.h + ', ' + s.frames.length + (s.frames.length === 1 ? ' frame' : ' frames');
     d.appendChild(c); d.appendChild(t);
+    if ((i === S.si ? (CURCHK || checkSprite(s)) : checkCached(s)).bad.length) {
+      var flag = document.createElement('i');
+      flag.className = 'flag';
+      flag.title = 'The packer will refuse this one';
+      d.appendChild(flag);
+    }
     d.onclick = function () { selectSprite(i); };
     list.appendChild(d);
   });
@@ -594,7 +733,7 @@ function drawFrames() {
     var c = document.createElement('canvas');
     c.width = s.w; c.height = s.h;
     var cc = c.getContext('2d');
-    cc.fillStyle = S.bg; cc.fillRect(0, 0, s.w, s.h);
+    cc.fillStyle = S.ground.tiles[0]; cc.fillRect(0, 0, s.w, s.h);
     cc.drawImage(blit(f, s.w, s.h), 0, 0);
     var lab = document.createElement('div');
     lab.textContent = i;
@@ -664,86 +803,244 @@ function countSoft(s) {
   });
   return n;
 }
-function drawChecks() {
-  var box = $('checks'), s = spr();
-  box.innerHTML = '';
-  if (!s) { box.innerHTML = '<div class="hint">Open or start a sprite to see its checks.</div>'; return; }
-  var out = [];
-  var here = colourList(s, 'cur').length, all = colourList(s, 'all').length;
-  out.push([all > 32 ? 'bad' : (all > 16 ? 'warn' : 'ok'),
-    '<b>' + here + ' colours</b> in this frame, ' + all + ' across all frames.' +
-    (all > 32 ? ' The packer refuses more than 32.' : (all > 12 ? ' The brief asks for 8 to 12.' : ''))]);
+function anyInk(f) { for (var i = 3; i < f.length; i += 4) if (f[i] >= 128) return true; return false; }
+function anyClear(f) { for (var i = 3; i < f.length; i += 4) if (f[i] === 0) return true; return false; }
 
-  var foot = bottomRowPainted(s, s.frames[s.cur]);
-  out.push([foot ? 'ok' : 'bad', foot
-    ? 'The bottom row is painted, so the feet sit on the ground.'
-    : '<b>Nothing on the bottom row.</b> This creature will hover. Move it down, keep the empty rows at the top.']);
+// =====================================================================================
+// The checks. `bad` is what pack-art.mjs REFUSES, `warn` is what it warns about, `ok` is
+// the rest. The wording of a refusal names the same thing the packer would name.
+// =====================================================================================
+function checkSprite(s) {
+  var bad = [], warn = [], ok = [];
+  var all = colourList(s, 'all').length;
+  var here = colourList(s, 'cur').length;
+
+  if (!cleanName(s.key)) bad.push('The name is empty. A file has to be called <b>name-0.png</b>.');
+  if (!cleanName(s.family)) bad.push('The folder name is empty. It is the folder under <b>art-live</b>, usually <b>creatures</b>.');
+
+  if (s.w !== s.h) bad.push('<b>Not square</b>, ' + s.w + ' by ' + s.h + '. A sprite is a square grid.');
 
   var soft = countSoft(s);
-  out.push([soft ? 'bad' : 'ok', soft
-    ? '<b>' + soft + ' part see-through pixels.</b> Every pixel must be fully solid or fully clear.'
-    : 'Every pixel is fully solid or fully clear.']);
+  if (soft) bad.push('<b>' + soft + ' part see-through pixels.</b> Every pixel has to be fully solid or fully clear.');
+  else ok.push('Every pixel is fully solid or fully clear.');
 
-  out.push([s.w === s.h ? 'ok' : 'bad', s.w === s.h
-    ? 'Square, ' + s.w + ' by ' + s.h + '.'
-    : '<b>Not square</b> (' + s.w + ' by ' + s.h + '). The game squashes it.']);
+  if (all > 32) bad.push('<b>' + all + ' colours</b> across the frames, and the packer stops at 32. That many means the picture was resized or blurred rather than drawn.');
+  else ok.push(here + ' colours in this frame, ' + all + ' across all frames.');
 
-  var sizesOk = s.frames.every(function (f) { return f.length === s.w * s.h * 4; });
-  out.push([s.frames.length >= 2 ? 'ok' : 'warn', s.frames.length >= 2
-    ? s.frames.length + ' frames, all the same size.'
-    : 'Only one frame. The game wants two, a standing one and a stepping one.']);
-  if (!sizesOk) out.push(['bad', 'Frames are not all the same size.']);
+  var empties = [];
+  s.frames.forEach(function (f, i) { if (!anyInk(f)) empties.push(i); });
+  if (empties.length) bad.push('Frame ' + empties.join(' and ') + ' ' + (empties.length > 1 ? 'are' : 'is') + ' <b>empty</b>. There is no sprite in that file.');
 
-  var anyInk = false;
-  for (var i = 3; i < s.frames[s.cur].length; i += 4) if (s.frames[s.cur][i] >= 128) { anyInk = true; break; }
-  if (!anyInk) out.push(['bad', 'This frame is empty.']);
+  var odd = s.frames.filter(function (f) { return f.length !== s.w * s.h * 4; });
+  if (odd.length) bad.push('The frames are <b>not all the same size</b>. The creature would grow every other step.');
+  else if (s.frames.length >= 2) ok.push(s.frames.length + ' frames, all the same size.');
 
-  var anyClear = false;
-  for (var j = 3; j < s.frames[s.cur].length; j += 4) if (s.frames[s.cur][j] === 0) { anyClear = true; break; }
-  if (!anyClear) out.push(['warn', 'No clear pixels at all. The background looks painted in.']);
+  // the packer measures EVERY file, so a hovering frame 1 has to show up while you are
+  // looking at frame 0
+  var hover = [];
+  s.frames.forEach(function (f, i) { if (anyInk(f) && !bottomRowPainted(s, f)) hover.push(i); });
+  if (hover.length) warn.push('<b>Nothing on the bottom row</b> of frame ' + hover.join(' and ') + '. The game plants that row at the feet, so this creature hovers. Move it down and keep the empty rows at the top.');
+  else ok.push('The bottom row is painted, so the feet sit on the ground.');
+
+  var baked = [];
+  s.frames.forEach(function (f, i) { if (!anyClear(f)) baked.push(i); });
+  if (baked.length) warn.push('No clear pixels in frame ' + baked.join(' and ') + '. The background looks painted in, and it has to be see-through.');
+
+  if (s.frames.length < 2) warn.push('Only one frame. The game wants two, a standing one and a stepping one.');
 
   if (s.frames.length > 1) {
     var base = {}, extra = 0;
     colourList({ frames: [s.frames[0]], cur: 0 }, 'all').forEach(function (c) { base[rgb2hex(c)] = 1; });
     for (var k = 1; k < s.frames.length; k++) {
-      colourList({ frames: [s.frames[k]], cur: 0 }, 'all').forEach(function (c) {
-        if (!base[rgb2hex(c)]) extra++;
-      });
+      colourList({ frames: [s.frames[k]], cur: 0 }, 'all').forEach(function (c) { if (!base[rgb2hex(c)]) extra++; });
     }
-    if (extra) out.push(['warn', extra + ' colours show up in a later frame that frame 0 does not have. Frames should share one palette.']);
+    if (extra) warn.push(extra + ' colour' + (extra > 1 ? 's' : '') + ' turn up in a later frame that frame 0 does not have. All the frames of one creature share one palette.');
   }
 
-  out.forEach(function (o) {
-    var d = document.createElement('div');
-    d.className = 'chk' + (o[0] === 'ok' ? '' : ' ' + o[0]);
-    d.innerHTML = '<i></i><span>' + o[1] + '</span>';
-    box.appendChild(d);
-  });
+  // only meaningful for a file that arrived from another tool; an edit clears the sizes
+  var big = (s.bytes || []).filter(function (b) { return b > 64 * 1024; });
+  if (big.length) warn.push(big.length + ' of the files you opened ' + (big.length > 1 ? 'are' : 'is') + ' over 64 KB, which at this size means an embedded colour profile or editor notes rather than art. Exporting from here strips that.');
+
+  if (s.w === s.h) ok.push('Square, ' + s.w + ' by ' + s.h + '.');
+  return { bad: bad, warn: warn, ok: ok };
 }
 
-// ---------- preview ----------
+// The open sprite is measured live on every redraw, because that is what makes the panel
+// useful while you draw. The others in the list only need their red dot, so they are
+// measured once and kept until they change.
+var CURCHK = null;
+function checkCached(s) {
+  if (s._chk && s._chkRev === s._rev) return s._chk;
+  s._chk = checkSprite(s); s._chkRev = s._rev;
+  return s._chk;
+}
+function touched(s) { if (s) { s._rev = (s._rev || 0) + 1; s._chk = null; } }
+
+function drawChecks() {
+  var box = $('checks'), s = spr();
+  box.innerHTML = '';
+  if (!s) { box.innerHTML = '<div class="hint">Open or start a sprite to see its checks.</div>'; return; }
+  var r = CURCHK || checkSprite(s);
+  var add = function (level, html) {
+    var d = document.createElement('div');
+    d.className = 'chk' + (level === 'ok' ? '' : ' ' + level);
+    d.innerHTML = '<i></i><span>' + html + '</span>';
+    box.appendChild(d);
+  };
+  r.bad.forEach(function (t) { add('bad', '<b>Refused.</b> ' + t); });
+  r.warn.forEach(function (t) { add('warn', t); });
+  r.ok.forEach(function (t) { add('ok', t); });
+}
+
+// ---------- the path bar: where the file goes and what to run next ----------
+function exportNames(s) {
+  var k = cleanName(s.key) || 'sprite';
+  return s.frames.map(function (_, i) { return k + '-' + i + '.png'; });
+}
+function drawPathBar() {
+  var s = spr();
+  // read the boxes, not the sprite, so the line follows what is being typed right now
+  var fam = cleanName($('family').value) || (s && s.family) || 'creatures';
+  var key = cleanName($('key').value) || (s && s.key) || '';
+  var names = s && key ? s.frames.map(function (_, i) { return key + '-' + i + '.png'; }) : [];
+  $('pbPath').textContent = 'art-live/' + fam + '/' + (names.length ? names.join(', ') : '');
+  $('pbCmd').textContent = 'npm run pack-art';
+  var w = '';
+  if (s) {
+    var typed = String($('key').value || '');
+    if (typed && cleanName(typed) !== typed.trim()) w = 'Saved as ' + cleanName(typed) + ', the packer only takes lowercase letters, digits, - and _';
+    var famTyped = String($('family').value || '');
+    if (famTyped && cleanName(famTyped) !== famTyped.trim()) w = 'Folder saved as ' + cleanName(famTyped) + ', same rule';
+  }
+  $('pbWarn').textContent = w;
+}
+function copyText(t, what) {
+  var done = function () { say('Copied ' + what, 'good'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(done, function () { fallbackCopy(t, done); });
+  } else fallbackCopy(t, done);
+}
+function fallbackCopy(t, done) {
+  var a = document.createElement('textarea');
+  a.value = t; a.style.position = 'fixed'; a.style.opacity = '0';
+  document.body.appendChild(a); a.select();
+  try { document.execCommand('copy'); done(); }
+  catch (e) { say('This browser would not copy it. Select the text instead.', 'bad'); }
+  a.remove();
+}
+
+// =====================================================================================
+// The game size view. A sprite at 16 pixels tells you nothing on its own, so this draws
+// it the size a player actually sees, on the game's own ground, next to three creatures
+// already in the game.
+//
+// The one number behind all of it: the game draws 1.375 world units per drawn pixel for
+// an ordinary creature, and one map tile is 32 units. So a tile is 23.3 drawn pixels
+// across, and a 16 pixel creature is about two thirds of a tile. A creature with no
+// measurement of its own is drawn to fill its box, which is the same size whatever grid
+// it was drawn on, so a 32 pixel drawing is not a bigger creature, only a finer one.
+// =====================================================================================
+var TILE_IN_PIXELS = 32 / HERO_UPP;   // 23.27 drawn pixels to a map tile
+
+function groundTile(g, tx, ty) {
+  var h = ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
+  return g.tiles[h % g.tiles.length];
+}
+function paintGround(g, W, H, tile) {
+  var light = isLight(g.tiles[0]);
+  for (var ty = 0; ty * tile < H + tile; ty++) {
+    for (var tx = 0; tx * tile < W + tile; tx++) {
+      pctx.fillStyle = groundTile(g, tx, ty);
+      pctx.fillRect(Math.floor(tx * tile), Math.floor(ty * tile), Math.ceil(tile) + 1, Math.ceil(tile) + 1);
+      // the game speckles its ground; the same hash keeps it from shimmering
+      var h = ((tx * 668265263) ^ (ty * 2246822519)) >>> 0;
+      var step = Math.max(3, Math.round(tile / 5));
+      for (var i = 0; i < 5; i++) {
+        var hx = (h >> (i * 3)) % 5, hy = (h >> (i * 3 + 7)) % 5;
+        pctx.fillStyle = i % 2 ? g.dark : g.light;
+        pctx.globalAlpha = 0.5;
+        pctx.fillRect(Math.floor(tx * tile + hx * step), Math.floor(ty * tile + hy * step), 2, 2);
+      }
+      pctx.globalAlpha = 1;
+    }
+  }
+  // one faint seam so a map tile is visible
+  pctx.strokeStyle = light ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.07)';
+  pctx.lineWidth = 1;
+  for (var x = 0; x < W + tile; x += tile) { pctx.beginPath(); pctx.moveTo(Math.floor(x) + .5, 0); pctx.lineTo(Math.floor(x) + .5, H); pctx.stroke(); }
+  for (var y = 0; y < H + tile; y += tile) { pctx.beginPath(); pctx.moveTo(0, Math.floor(y) + .5); pctx.lineTo(W, Math.floor(y) + .5); pctx.stroke(); }
+}
+// the game lays two black ellipses under an ordinary creature; this is both of them
+function paintShadow(cx, base, w) {
+  var u = S.scale / HERO_UPP;  // screen pixels to one world unit
+  pctx.fillStyle = 'rgba(0,0,0,0.30)';
+  pctx.beginPath(); pctx.ellipse(cx, base + u, w / 2, 3 * u, 0, 0, 6.2832); pctx.fill();
+  pctx.fillStyle = 'rgba(0,0,0,0.34)';
+  pctx.beginPath(); pctx.ellipse(cx, base + u, Math.max(1, w / 2 - 2 * u), 3.4 * u, 0, 0, 6.2832); pctx.fill();
+}
 function drawPreview() {
   var s = spr();
-  var W = pv.clientWidth || 244;
+  var W = pv.clientWidth || 300;
+  var scale = S.scale;
+  var mine = 16 * scale;                    // a creature is this big whatever grid it uses
+  var H = Math.round(Math.max(120, Math.min(210, 16 * scale * REFS[2].upp + 40)));
   var dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-  pv.width = Math.round(W * dpr); pv.height = Math.round(88 * dpr);
+  pv.style.height = H + 'px';
+  pv.width = Math.round(W * dpr); pv.height = Math.round(H * dpr);
   pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   pctx.imageSmoothingEnabled = false;
-  pctx.fillStyle = S.bg;
-  pctx.fillRect(0, 0, W, 88);
-  if (!s) return;
-  var f = s.frames[S.playing ? (S.playFrame % s.frames.length) : s.cur];
-  var img = blit(f, s.w, s.h);
-  var scales = [1, 2, 3, 4], x = 8;
-  pctx.font = '9px ui-monospace, Menlo, monospace';
-  for (var i = 0; i < scales.length; i++) {
-    var k = scales[i], w = s.w * k, h = s.h * k;
-    if (x + w > W - 6) break;
-    pctx.drawImage(img, x, 74 - h, w, h);
-    pctx.fillStyle = 'rgba(255,255,255,.55)';
-    pctx.fillText(k + 'x', x, 84);
-    x += w + 10;
-  }
+
+  var g = S.ground, tile = TILE_IN_PIXELS * scale;
+  paintGround(g, W, H, tile);
+
+  var base = H - 20;   // the line every creature's feet stand on
+
+  // who is on the strip: the three from the game, with yours in the middle
+  var cast = [
+    { ref: REFS[0], w: Math.round(mine * REFS[0].upp / HERO_UPP) },
+    { ref: REFS[1], w: Math.round(mine * REFS[1].upp / HERO_UPP) },
+    { ref: null, w: mine, label: 'yours' },
+    { ref: REFS[2], w: Math.round(mine * REFS[2].upp / HERO_UPP) }
+  ];
+  var gap = 8;
+  var width = function (list) { return list.reduce(function (a, c) { return a + c.w; }, 0) + gap * (list.length - 1); };
+  // when there is not room for everyone, the rat goes first, then the ogre, then the hero
+  ['rat', 'ogre', 'hero'].forEach(function (id) {
+    if (width(cast) <= W - 12) return;
+    for (var i = 0; i < cast.length; i++) {
+      if (cast[i].ref && cast[i].ref.id === id) { cast.splice(i, 1); return; }
+    }
+  });
+
+  var x = Math.round((W - width(cast)) / 2);
+  var light = isLight(g.tiles[0]);
+  pctx.font = '9px ui-monospace, Menlo, Consolas, monospace';
+  pctx.textAlign = 'center';
+  cast.forEach(function (c) {
+    var img = null, label = c.label, ch = c.w;
+    if (c.ref) { img = refImg[c.ref.id]; label = c.ref.label; }
+    else if (s) {
+      img = blit(s.frames[S.playing ? (S.playFrame % s.frames.length) : s.cur], s.w, s.h);
+      ch = Math.round(c.w * s.h / s.w);   // a squashed sprite is refused, but show it squashed
+    }
+    paintShadow(x + c.w / 2, base, c.w);
+    if (img && (c.ref ? img.complete && img.naturalWidth : true)) {
+      pctx.drawImage(img, x, base - ch, c.w, ch);
+    } else if (!c.ref) {
+      pctx.strokeStyle = light ? 'rgba(0,0,0,.35)' : 'rgba(255,255,255,.28)';
+      pctx.setLineDash([3, 3]);
+      pctx.strokeRect(x + .5, base - c.w + .5, c.w - 1, c.w - 1);
+      pctx.setLineDash([]);
+    }
+    pctx.fillStyle = light ? 'rgba(0,0,0,.62)' : 'rgba(255,255,255,.62)';
+    pctx.fillText(label, x + c.w / 2, H - 6);
+    x += c.w + gap;
+  });
+  pctx.textAlign = 'left';
+
+  var note = scale + ' screen pixels to a drawn pixel, and the faint squares are map tiles.';
+  if (s && s.w !== 16) note += ' A ' + s.w + ' pixel drawing lands the same size on screen as a 16 pixel one, just finer or coarser.';
+  $('pvNote').textContent = note;
 }
 var playTimer = null;
 function setPlaying(on) {
@@ -757,6 +1054,155 @@ function setPlaying(on) {
     playTimer = setInterval(function () { S.playFrame++; drawPreview(); }, 1000 / S.fps);
   }
   drawPreview();
+}
+
+// =====================================================================================
+// Keeping work. Everything open is written into this browser after every change, and
+// comes back next time the page opens. Undo history is NOT kept: a stale undo stack is
+// worse than none. The panel bottom left always says what is being held and when it was
+// written, and clears it in one press.
+// =====================================================================================
+var STORE_KEY = 'eldermyr-sprite-editor-v1';
+function storageOK() {
+  try {
+    var probe = STORE_KEY + '-probe';
+    window.localStorage.setItem(probe, '1');
+    var back = window.localStorage.getItem(probe) === '1';
+    window.localStorage.removeItem(probe);
+    if (!back) { S.store.why = 'This browser accepted it and then gave nothing back.'; return false; }
+    return true;
+  } catch (e) {
+    S.store.why = 'This browser will not let the page keep anything (' + (e && e.name || 'blocked') + ').';
+    return false;
+  }
+}
+// The stored copy keeps the picture EXACTLY as it is on screen, part see-through pixels
+// and all. Storing the snapped copy would quietly fix a soft-edged file behind your back
+// the next time the page opened, and the whole point of the bar at the top is that you
+// decide when that happens.
+function rawCanvas(s, i) {
+  var c = document.createElement('canvas');
+  c.width = s.w; c.height = s.h;
+  var cc = c.getContext('2d');
+  var id = cc.createImageData(s.w, s.h);
+  id.data.set(s.frames[i]);
+  cc.putImageData(id, 0, 0);
+  return c;
+}
+function frameDataURI(s, i) { return rawCanvas(s, i).toDataURL('image/png'); }
+var saveTimer = null;
+function scheduleSave() {
+  if (!S.store.on) return;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveStore, 500);
+}
+function saveStore() {
+  if (!S.store.on) return;
+  saveTimer = null;
+  var payload = {
+    v: 1, at: Date.now(), si: S.si,
+    sprites: S.sprites.map(function (s) {
+      return {
+        key: s.key, family: s.family, w: s.w, h: s.h, bytes: s.bytes || [],
+        frames: s.frames.map(function (_, i) { return frameDataURI(s, i); })
+      };
+    })
+  };
+  var text = JSON.stringify(payload);
+  try {
+    window.localStorage.setItem(STORE_KEY, text);
+    S.store.at = payload.at; S.store.bytes = text.length; S.store.why = '';
+  } catch (e) {
+    S.store.why = 'There is no room left in this browser to keep it. Export what matters.';
+    say('Could not keep this in the browser, there is no room. Export it.', 'bad');
+  }
+  drawKept();
+}
+function loadStore() {
+  if (!S.store.on) { drawKept(); return; }
+  var text = null;
+  try { text = window.localStorage.getItem(STORE_KEY); } catch (e) { text = null; }
+  if (!text) { drawKept(); return; }
+  var data = null;
+  try { data = JSON.parse(text); } catch (e) { data = null; }
+  if (!data || data.v !== 1 || !Array.isArray(data.sprites)) {
+    // do not throw away something that cannot be read: say so and let it be cleared by hand
+    S.store.why = 'What is kept here was written by a different version and cannot be read. Press Forget all to clear it.';
+    drawKept();
+    return;
+  }
+  S.store.at = data.at || 0;
+  S.store.bytes = text.length;
+  var jobs = data.sprites.map(function (rec) {
+    return Promise.all(rec.frames.map(function (u) {
+      return new Promise(function (res) {
+        var im = new Image();
+        im.onload = function () { res(toPixels(im).px); };
+        im.onerror = function () { res(null); };
+        im.src = u;
+      });
+    })).then(function (frames) {
+      frames = frames.filter(Boolean);
+      if (!frames.length) return null;
+      var s = makeSprite(rec.key || 'sprite', rec.w, rec.h, frames, rec.family);
+      s.bytes = Array.isArray(rec.bytes) ? rec.bytes : [];
+      return s;
+    });
+  });
+  Promise.all(jobs).then(function (list) {
+    var made = list.filter(Boolean);
+    if (!made.length) { drawKept(); return; }
+    S.sprites = made.concat(S.sprites);
+    selectSprite(Math.min(typeof data.si === 'number' && data.si >= 0 ? data.si : 0, made.length - 1));
+    say('Brought back ' + made.length + (made.length === 1 ? ' sprite' : ' sprites') + ' saved ' + when(S.store.at) + '.', 'good');
+    drawKept();
+  });
+}
+function when(ms) {
+  if (!ms) return 'earlier';
+  var d = new Date(ms), now = new Date();
+  var hm = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  var sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return 'at ' + hm + ' today';
+  var days = Math.round((now - d) / 86400000);
+  if (days <= 1) return 'at ' + hm + ' yesterday';
+  return 'on ' + d.toDateString().slice(4, 10) + ' at ' + hm;
+}
+var forgetArmed = false, forgetTimer = null;
+function drawKept() {
+  var t = $('keptText'), b = $('bForget');
+  if (!S.store.on) {
+    t.innerHTML = '<span style="color:var(--warn)">Nothing is being saved.</span><br>' + (S.store.why || '') + ' Export before you close the tab.';
+    b.style.display = 'none';
+    return;
+  }
+  b.style.display = '';
+  if (S.store.why) {
+    t.innerHTML = '<span style="color:var(--warn)">' + S.store.why + '</span>';
+  } else if (!S.sprites.length) {
+    t.textContent = 'Nothing kept yet. Whatever you open or draw is kept here and comes back next time.';
+  } else {
+    var frames = S.sprites.reduce(function (a, s) { return a + s.frames.length; }, 0);
+    t.textContent = S.sprites.length + (S.sprites.length === 1 ? ' sprite' : ' sprites') + ', ' + frames +
+      (frames === 1 ? ' frame' : ' frames') + ', ' + Math.max(1, Math.round(S.store.bytes / 1024)) + ' KB. ' +
+      (S.store.at ? 'Saved ' + when(S.store.at) + '.' : 'Saving.') + ' Undo history is not kept.';
+  }
+  b.textContent = forgetArmed ? 'Really forget them?' : 'Forget all';
+  b.className = forgetArmed ? 'danger' : '';
+}
+function forgetAll() {
+  if (!forgetArmed) {
+    forgetArmed = true; drawKept();
+    forgetTimer = setTimeout(function () { forgetArmed = false; drawKept(); }, 4000);
+    return;
+  }
+  if (forgetTimer) clearTimeout(forgetTimer);
+  forgetArmed = false;
+  try { window.localStorage.removeItem(STORE_KEY); } catch (e) { /* nothing to do */ }
+  S.sprites = []; S.si = -1; S.store.at = 0; S.store.bytes = 0; S.store.why = '';
+  setPlaying(false);
+  selectSprite(-1);
+  say('Forgotten. Nothing is open and nothing is kept.', 'good');
 }
 
 // ---------- tools ----------
@@ -852,6 +1298,13 @@ cv.addEventListener('pointerup', endDrag);
 cv.addEventListener('pointercancel', endDrag);
 cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 cv.addEventListener('pointerleave', function () { $('posLabel').textContent = ''; });
+cv.addEventListener('wheel', function (e) {
+  if (!spr()) return;
+  e.preventDefault();
+  var up = e.deltaY < 0;
+  S.zoom = up ? Math.min(48, S.zoom + (S.zoom < 8 ? 1 : 4)) : Math.max(1, S.zoom - (S.zoom <= 8 ? 1 : 4));
+  redraw();
+}, { passive: false });
 
 // ---------- loading files ----------
 function baseName(n) { return n.replace(/\.[^.]+$/, ''); }
@@ -865,7 +1318,7 @@ function viaImg(file) {
   return new Promise(function (res, rej) {
     var u = URL.createObjectURL(file), im = new Image();
     im.onload = function () { res(im); };
-    im.onerror = function () { rej(new Error('could not read ' + file.name)); };
+    im.onerror = function () { rej(new Error(file.name)); };
     im.src = u;
   });
 }
@@ -885,44 +1338,52 @@ function toPixels(img) {
 
 function openFiles(files) {
   var list = Array.prototype.slice.call(files).filter(function (f) { return /\.png$/i.test(f.name) || /image/.test(f.type); });
+  var skipped = Array.prototype.slice.call(files).length - list.length;
   if (!list.length) { say('No PNG files in that drop', 'bad'); return; }
+  // One unreadable file must never lose the rest of the drop.
   Promise.all(list.map(function (f) {
     return decode(f).then(function (img) {
-      var d = toPixels(img);
-      d.name = baseName(f.name);
-      return d;
-    });
+      var d = toPixels(img); d.name = baseName(f.name); d.size = f.size; return d;
+    }).catch(function () { return { failed: f.name }; });
   })).then(function (all) {
+    var bad = all.filter(function (d) { return d.failed; }).map(function (d) { return d.failed; });
+    var good = all.filter(function (d) { return !d.failed; });
+    if (!good.length) { say('Could not read ' + bad.join(', '), 'bad'); return; }
+
     // name-0.png and name-1.png become one sprite with two frames
     var groups = new Map();
-    all.forEach(function (d) {
+    good.forEach(function (d) {
       var m = /^(.*[^-])-(\d+)$/.exec(d.name);
       var key = m ? m[1] : d.name, idx = m ? parseInt(m[2], 10) : 0;
       var g = groups.get(key);
       if (!g) { g = []; groups.set(key, g); }
       g.push({ idx: idx, d: d });
     });
-    var made = 0, split = 0, softTotal = 0;
+    var made = 0, split = 0, renumbered = [];
     groups.forEach(function (g, key) {
       g.sort(function (a, b) { return a.idx - b.idx; });
       var w = g[0].d.w, h = g[0].d.h;
       var same = g.filter(function (e) { return e.d.w === w && e.d.h === h; });
       var other = g.filter(function (e) { return e.d.w !== w || e.d.h !== h; });
-      var s = makeSprite(key, w, h, same.map(function (e) { return e.d.px; }));
-      s.hist = [snapshot(s)]; s.hi = 0;
+      // frames must start at 0 with no gaps, so say when the numbering had to change
+      if (same.some(function (e, i) { return e.idx !== i; })) renumbered.push(key);
+      var s = makeSprite(cleanName(key) || 'sprite', w, h, same.map(function (e) { return e.d.px; }), cleanName($('family').value));
+      s.bytes = same.map(function (e) { return e.d.size || 0; });   // the size of the file as it arrived
       S.sprites.push(s); made++;
       other.forEach(function (e) {
-        var s2 = makeSprite(key + '-' + e.idx, e.d.w, e.d.h, [e.d.px]);
-        S.sprites.push(s2); split++;
+        S.sprites.push(makeSprite((cleanName(key) || 'sprite') + '-' + e.idx, e.d.w, e.d.h, [e.d.px], cleanName($('family').value)));
+        split++;
       });
     });
     selectSprite(S.sprites.length - 1);
-    S.sprites.forEach(function (s) { softTotal += countSoft(s); });
-    say('Opened ' + made + (made === 1 ? ' sprite' : ' sprites') +
-      (split ? ', ' + split + ' put aside because the sizes did not match' : ''), 'good');
+    var msg = 'Opened ' + made + (made === 1 ? ' sprite' : ' sprites');
+    if (split) msg += ', ' + split + ' put aside because the sizes did not match';
+    if (renumbered.length) msg += '. Frames of ' + renumbered.join(', ') + ' were renumbered from 0, which is what the packer needs';
+    if (bad.length) msg += '. Could not read ' + bad.join(', ');
+    if (skipped) msg += '. ' + skipped + ' file(s) were not PNGs';
+    say(msg, bad.length ? 'bad' : 'good');
     checkAlpha();
-  }).catch(function (err) {
-    say(String(err && err.message || err), 'bad');
+    scheduleSave();
   });
 }
 function checkAlpha() {
@@ -952,9 +1413,10 @@ function snapAlpha() {
 
 function selectSprite(i) {
   dropSelection(true);
-  S.si = i;
+  S.si = (i >= 0 && i < S.sprites.length) ? i : (S.sprites.length ? Math.max(0, Math.min(i, S.sprites.length - 1)) : -1);
   var s = spr();
-  if (s) { $('key').value = s.key; s.softDismissed = false; }
+  if (s) { $('key').value = s.key; $('family').value = s.family; s.softDismissed = false; }
+  else $('key').value = '';   // no sprite, no name: the path bar should not name a ghost
   setPlaying(false);
   checkAlpha();
   redraw();              // this is what gives the canvas area a real size
@@ -987,31 +1449,47 @@ function frameCanvas(s, i) {
   cc.putImageData(id, 0, 0);
   return c;
 }
-function saveFrame(s, i) {
+function saveFrame(s, i, name) {
   return new Promise(function (res) {
     frameCanvas(s, i).toBlob(function (b) {
       var a = document.createElement('a');
       a.href = URL.createObjectURL(b);
-      a.download = s.key + '-' + i + '.png';
+      a.download = name;
       document.body.appendChild(a);
       a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); res(); }, 400);
     }, 'image/png');
   });
 }
-function exportAll(oneOnly) {
+function exportAll(oneOnly, force) {
   var s = spr(); if (!s) return;
-  s.key = ($('key').value || 'sprite').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
-  if (!s.key) s.key = 'sprite';
-  $('key').value = s.key;
+  s.key = cleanName($('key').value) || 'sprite';
+  s.family = cleanName($('family').value) || 'creatures';
+  $('key').value = s.key; $('family').value = s.family;
+  touched(s); scheduleSave();
+
+  var r = checkSprite(s);
+  if (r.bad.length && !force) {
+    var plain = r.bad[0].replace(/<[^>]+>/g, '');
+    say('The packer would refuse this. ' + plain, 'bad');
+    // stays put until the refusal is gone, so there is time to read the checks panel
+    redraw();
+    $('bForce').style.display = '';
+    return;
+  }
+  $('bForce').style.display = 'none';
+
+  var names = exportNames(s);
   var idx = oneOnly ? [s.cur] : s.frames.map(function (_, i) { return i; });
   var soft = countSoft(s);
   var chain = Promise.resolve();
-  idx.forEach(function (i) { chain = chain.then(function () { return saveFrame(s, i); }); });
+  idx.forEach(function (i) { chain = chain.then(function () { return saveFrame(s, i, names[i]); }); });
   chain.then(function () {
-    say('Saved ' + idx.map(function (i) { return s.key + '-' + i + '.png'; }).join(', ') +
-      (soft ? '. ' + soft + ' part see-through pixels were snapped on the way out.' : ''), 'good');
-    drawStrip();
+    say('Saved ' + idx.map(function (i) { return names[i]; }).join(', ') +
+      '. Put ' + (idx.length > 1 ? 'them' : 'it') + ' in art-live/' + s.family + '/ and run npm run pack-art' +
+      (soft ? '. ' + soft + ' part see-through pixels were snapped on the way out' : ''), 'good');
+    scheduleSave();
+    redraw();
   });
 }
 
@@ -1019,18 +1497,32 @@ function exportAll(oneOnly) {
 buildTools();
 setTool('pencil');
 setColor(S.color);
-GRASS.forEach(function (g) {
+GROUNDS.forEach(function (g) {
   var b = document.createElement('b');
-  b.style.background = g;
-  b.className = g === S.bg ? 'on' : '';
-  b.title = g;
+  b.style.background = g.tiles[0];
+  b.className = g.id === S.ground.id ? 'on' : '';
+  b.title = g.name;
   b.onclick = function () {
-    S.bg = g;
+    S.ground = g;
     Array.prototype.forEach.call($('bgs').children, function (n) { n.className = ''; });
     b.className = 'on';
     drawPreview(); drawFrames();
   };
   $('bgs').appendChild(b);
+});
+SCALES.forEach(function (sc) {
+  var b = document.createElement('button');
+  b.textContent = sc.label;
+  b.style.padding = '3px 7px';
+  b.className = sc.n === S.scale ? 'on' : '';
+  b.title = sc.n + ' screen pixels to one drawn pixel';
+  b.onclick = function () {
+    S.scale = sc.n;
+    Array.prototype.forEach.call($('scales').children, function (n) { n.className = ''; });
+    b.className = 'on';
+    drawPreview();
+  };
+  $('scales').appendChild(b);
 });
 
 $('bOpen').onclick = function () { $('file').click(); };
@@ -1039,42 +1531,79 @@ $('fileFrame').onchange = function (e) {
   var s = spr(), files = Array.prototype.slice.call(e.target.files);
   e.target.value = '';
   if (!s || !files.length) return;
-  Promise.all(files.map(function (f) { return decode(f).then(toPixels); })).then(function (all) {
-    var bad = 0;
+  Promise.all(files.map(function (f) {
+    return decode(f).then(toPixels).catch(function () { return { failed: f.name }; });
+  })).then(function (all) {
+    var wrong = [], unread = [];
     all.forEach(function (d) {
-      if (d.w !== s.w || d.h !== s.h) { bad++; return; }
+      if (d.failed) { unread.push(d.failed); return; }
+      if (d.w !== s.w || d.h !== s.h) { wrong.push(d.w + 'x' + d.h); return; }
       s.frames.push(d.px);
     });
     s.cur = s.frames.length - 1;
     commit(); checkAlpha(); redraw();
-    say(bad ? bad + ' file(s) were a different size and were skipped' : 'Added ' + all.length + ' frame(s)', bad ? 'bad' : 'good');
+    var msg = 'Added ' + (all.length - wrong.length - unread.length) + ' frame(s)';
+    if (wrong.length) msg += '. ' + wrong.length + ' were a different size (' + wrong.join(', ') + ') and were skipped';
+    if (unread.length) msg += '. Could not read ' + unread.join(', ');
+    say(msg, (wrong.length || unread.length) ? 'bad' : 'good');
   });
 };
 $('bNew').onclick = function () {
   var n = Math.max(4, Math.min(128, parseInt($('newSize').value, 10) || 16));
   var name = 'sprite' + (S.sprites.length + 1);
-  S.sprites.push(makeSprite(name, n, n, [blank(n, n)]));
+  S.sprites.push(makeSprite(name, n, n, [blank(n, n)], cleanName($('family').value)));
   selectSprite(S.sprites.length - 1);
+  scheduleSave();
   say('New blank sprite, ' + n + ' by ' + n);
 };
+var closeArmed = false, closeTimer = null;
 $('bClose').onclick = function () {
   if (S.si < 0) return;
+  if (!closeArmed) {
+    closeArmed = true;
+    this.textContent = 'Close and lose it?';
+    this.className = 'danger';
+    var self = this;
+    closeTimer = setTimeout(function () { closeArmed = false; self.textContent = 'Close'; self.className = ''; }, 4000);
+    return;
+  }
+  if (closeTimer) clearTimeout(closeTimer);
+  closeArmed = false;
+  this.textContent = 'Close'; this.className = '';
+  var gone = S.sprites[S.si].key;
   S.sprites.splice(S.si, 1);
-  S.si = Math.min(S.si, S.sprites.length - 1);
-  selectSprite(S.si);
+  selectSprite(Math.min(S.si, S.sprites.length - 1));
+  scheduleSave();
+  say('Closed ' + gone + '. It is not kept any more.', 'good');
 };
-$('bExport').onclick = function () { exportAll(false); };
-$('bExport1').onclick = function () { exportAll(true); };
+$('bExport').onclick = function () { exportAll(false, false); };
+$('bExport1').onclick = function () { exportAll(true, false); };
+$('bForce').onclick = function () { exportAll(false, true); };
+$('key').oninput = function () { drawPathBar(); };
 $('key').onchange = function () {
-  var s = spr(); if (!s) return;
-  s.key = ($('key').value || 'sprite').trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+  var s = spr(); if (!s) { drawPathBar(); return; }
+  s.key = cleanName($('key').value) || 'sprite';
   $('key').value = s.key;
-  drawStrip();
+  touched(s); scheduleSave(); redraw();
 };
+$('family').oninput = function () { drawPathBar(); };
+$('family').onchange = function () {
+  var f = cleanName($('family').value) || 'creatures';
+  $('family').value = f;
+  var s = spr(); if (s) { s.family = f; touched(s); scheduleSave(); }
+  redraw();
+};
+$('pbCopyPath').onclick = function () {
+  var s = spr(); if (!s) { say('Nothing open', 'bad'); return; }
+  copyText('art-live/' + (cleanName(s.family) || 'creatures') + '/', 'the folder');
+};
+$('pbCopyCmd').onclick = function () { copyText('npm run pack-art', 'the command'); };
 $('bSnap').onclick = snapAlpha;
 $('bDismiss').onclick = function () { var s = spr(); if (s) s.softDismissed = true; checkAlpha(); };
 $('bUndo').onclick = undo;
 $('bRedo').onclick = redo;
+$('bFlip').onclick = flipFrame;
+$('bForget').onclick = forgetAll;
 $('zIn').onclick = function () { S.zoom = Math.min(48, S.zoom + (S.zoom < 8 ? 1 : 4)); redraw(); };
 $('zOut').onclick = function () { S.zoom = Math.max(1, S.zoom - (S.zoom <= 8 ? 1 : 4)); redraw(); };
 $('zFit').onclick = function () { fitZoom(); redraw(); };
@@ -1088,11 +1617,11 @@ $('fps').oninput = function () {
   if (S.playing) setPlaying(true);
 };
 $('pick').oninput = function () { setColor(hex2rgb(this.value)); };
+$('hex').oninput = function () { var c = hex2rgb(this.value); if (c) setColor(c); };
 $('hex').onchange = function () {
   var c = hex2rgb(this.value);
   if (c) setColor(c); else { say('That is not a colour like #8bc250', 'bad'); this.value = rgb2hex(S.color); }
 };
-$('bAdd').onclick = function () { setColor(S.color); say('Colour ' + rgb2hex(S.color) + ' ready to draw with'); };
 
 // drag and drop, anywhere on the window
 var dragDepth = 0;
@@ -1109,7 +1638,7 @@ window.addEventListener('keydown', function (e) {
   var t = e.target.tagName;
   if (t === 'INPUT' || t === 'TEXTAREA') return;
   var meta = e.metaKey || e.ctrlKey;
-  if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if (meta && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
   switch (e.key) {
     case 'b': case 'B': setTool('pencil'); break;
@@ -1132,19 +1661,23 @@ window.addEventListener('keydown', function (e) {
   }
 });
 window.addEventListener('keyup', function (e) {
-  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-    if (lift) commit();
-  }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') commit();
 });
 window.addEventListener('resize', function () { drawPreview(); });
+// last chance to write, for the tab that gets closed mid-stroke
+window.addEventListener('beforeunload', function () { if (saveTimer) { clearTimeout(saveTimer); saveStore(); } });
 
+S.store.on = storageOK();
 redraw();
+loadStore();
 
 // a small door for checking the tool from the outside
 window.EDITOR = {
   S: S, spr: spr, redraw: redraw, frameCanvas: frameCanvas, colourList: colourList,
   countSoft: countSoft, openFiles: openFiles, makeSprite: makeSprite, selectSprite: selectSprite,
-  undo: undo, redo: redo, commit: commit, blank: blank
+  undo: undo, redo: redo, commit: commit, blank: blank, checkSprite: checkSprite,
+  cleanName: cleanName, saveStore: saveStore, loadStore: loadStore, flipFrame: flipFrame,
+  nudge: nudge, exportNames: exportNames, STORE_KEY: STORE_KEY
 };
 </script>
 </body>
