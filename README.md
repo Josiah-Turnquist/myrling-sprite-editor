@@ -1,8 +1,9 @@
-<p align="center"><img src="docs/logo.png" width="128" alt="A small green pixel creature, the editor's logo"></p>
+<p align="center"><img src="docs/logo.png" width="128" alt="Myrling's logo, a small green pixel creature"></p>
 
-# Eldermyr sprite editor
+# Myrling
 
-A pixel editor for Realms of Eldermyr creature sprites. One HTML file. Open it and draw.
+A pixel editor for tiny game creatures, born in Realms of Eldermyr. One HTML file.
+Open it and draw.
 
     open index.html
 
@@ -30,7 +31,7 @@ for your own.
 The same editor in its own window and Dock icon, with in-place saving done natively. It
 needs the Xcode command line tools once (`xcode-select --install`), then:
 
-    make app     # builds dist/Eldermyr Sprite Editor.app
+    make app     # builds dist/Myrling.app
     make run     # builds and opens it
 
 The wrapper is one Swift file, `mac/main.swift`, around the very same `index.html` — the

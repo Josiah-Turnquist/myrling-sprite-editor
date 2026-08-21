@@ -2,7 +2,7 @@ import Cocoa
 import WebKit
 import UniformTypeIdentifiers
 
-// The Mac shell around the Eldermyr sprite editor. One window, one WKWebView, and the
+// The Mac shell around Myrling. One window, one WKWebView, and the
 // same index.html that runs in a browser, unchanged. The only native work is the part
 // WebKit cannot do itself:
 //
@@ -78,11 +78,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1240, height: 800),
                       styleMask: [.titled, .closable, .miniaturizable, .resizable],
                       backing: .buffered, defer: false)
-    window.title = "Eldermyr sprite editor"
+    window.title = "Myrling"
     window.minSize = NSSize(width: 900, height: 620)
     window.contentView = webView
     window.center()
-    window.setFrameAutosaveName("EldermyrSpriteEditor")
+    window.setFrameAutosaveName("Myrling")
     window.makeKeyAndOrderFront(nil)
 
     if let html = Bundle.main.url(forResource: "index", withExtension: "html") {
@@ -129,11 +129,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     let main = NSMenu()
     let appItem = NSMenuItem(); main.addItem(appItem)
     let appMenu = NSMenu()
-    appMenu.addItem(withTitle: "About Eldermyr sprite editor",
+    appMenu.addItem(withTitle: "About Myrling",
                     action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
     appMenu.addItem(.separator())
     appMenu.addItem(withTitle: "Hide", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-    appMenu.addItem(withTitle: "Quit Eldermyr sprite editor",
+    appMenu.addItem(withTitle: "Quit Myrling",
                     action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     appItem.submenu = appMenu
     // cut, copy, paste for the name boxes. No Undo item: Cmd+Z belongs to the page.

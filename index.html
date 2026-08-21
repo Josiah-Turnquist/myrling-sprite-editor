@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Eldermyr sprite editor</title>
+<title>Myrling</title>
 <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAxElEQVR42mNgQANCIlL/kbG4lAJejK6ekH4GQmDAHECsAZQ6AKdDBswB5Bqw5UEdCibXA0PPATAL0aMAl0MGvwPITWTdhwJQMLmJdOg4wK9KG4zRLUbHMHXDxwHoFsMSG7EOGboOINdiUh0y8A7AJYHuABEJfjDGZREuefRESXRJOOqAQecAcvHwdQBMnlh1g9cBpBbF1CqAyK4L6O4A9ChBNxjdoTRvD1DdATBAbwdg9IwG3AG4HEJuxwWXfoK9Y3o7AACpqVpHc9cEDgAAAABJRU5ErkJggg==">
 <style>
   :root{
@@ -173,7 +173,7 @@
 <div id="app">
 
   <header>
-    <span class="name">Eldermyr sprite editor</span>
+    <span class="name">Myrling</span>
     <button id="bOpen">Open PNGs</button>
     <span class="sep"></span>
     <button id="bNew">New sprite</button>
@@ -329,7 +329,8 @@
 <script>
 'use strict';
 // =====================================================================================
-// Eldermyr sprite editor. One file, no build, no server, no libraries, no requests out.
+// Myrling, a sprite editor born in Realms of Eldermyr. One file, no build, no server,
+// no libraries, no requests out.
 // What you draw is what ships: the game loads real PNGs, so this is a plain image editor
 // with the game's own rules built into the checks panel.
 //
@@ -1124,7 +1125,7 @@ function setPlaying(on) {
 // worse than none. The panel bottom left always says what is being held and when it was
 // written, and clears it in one press.
 // =====================================================================================
-var STORE_KEY = 'eldermyr-sprite-editor-v1';
+var STORE_KEY = 'eldermyr-sprite-editor-v1';   // pre-rename key, kept so no one's work is orphaned
 function storageOK() {
   try {
     var probe = STORE_KEY + '-probe';

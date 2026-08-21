@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>Eldermyr Sprite Editor</string>
+	<string>Myrling</string>
 	<key>CFBundleDisplayName</key>
-	<string>Eldermyr Sprite Editor</string>
+	<string>Myrling</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.eldermyr.sprite-editor</string>
+	<string>com.myrling.editor</string>
 	<key>CFBundleExecutable</key>
-	<string>EldermyrSpriteEditor</string>
+	<string>Myrling</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
