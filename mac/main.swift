@@ -156,12 +156,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     completionHandler(url)
   }
 
+  // the menu bar drives the page: each item just presses the page's own controls
+  private func pageItem(_ menu: NSMenu, _ title: String, _ js: String, _ key: String = "") {
+    let item = NSMenuItem(title: title, action: #selector(runPageAction(_:)), keyEquivalent: key)
+    item.target = self
+    item.representedObject = js
+    menu.addItem(item)
+  }
+  @objc func runPageAction(_ sender: NSMenuItem) {
+    if let js = sender.representedObject as? String { webView.evaluateJavaScript(js) }
+  }
+
   func buildMenu() -> NSMenu {
     let main = NSMenu()
     let appItem = NSMenuItem(); main.addItem(appItem)
     let appMenu = NSMenu()
     appMenu.addItem(withTitle: "About Myrling",
                     action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+    appMenu.addItem(.separator())
+    pageItem(appMenu, "Settings…", "EDITOR.showKeys()", ",")
     appMenu.addItem(.separator())
     appMenu.addItem(withTitle: "Hide", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
     appMenu.addItem(withTitle: "Quit Myrling",
@@ -175,6 +188,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
     edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
     editItem.submenu = edit
+    let viewItem = NSMenuItem(); main.addItem(viewItem)
+    let view = NSMenu(title: "View")
+    pageItem(view, "Grid", "document.getElementById('bGrid').click()")
+    pageItem(view, "Guides", "document.getElementById('bGuides').click()")
+    pageItem(view, "Onion Skin", "document.getElementById('bOnion').click()")
+    view.addItem(.separator())
+    pageItem(view, "Zoom In", "document.getElementById('zIn').click()", "=")
+    pageItem(view, "Zoom Out", "document.getElementById('zOut').click()", "-")
+    pageItem(view, "Fit", "document.getElementById('zFit').click()", "0")
+    viewItem.submenu = view
     return main
   }
 }
