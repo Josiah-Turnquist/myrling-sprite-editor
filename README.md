@@ -190,8 +190,9 @@ down when the box is dropped. Pasting into a smaller sprite trims to fit and say
 game flips them itself when they walk the other way, so this is for fixing one you drew
 facing the wrong way.
 
-Every tool key, and the onion skin and grid toggles, can be rebound: click the key in the
-**Keys** panel at the bottom right, press the new one, and it is kept in your browser. If
+Every tool key, and the onion skin and grid toggles, can be rebound in **Settings** — the
+button in the top bar, `Cmd + ,`, or the app menu on the Mac. Click a key, press the new
+one, and it is kept in your browser. If
 the new key already did another job, the two swap, so nothing is ever unreachable. One
 button puts them all back.
 

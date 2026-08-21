@@ -177,6 +177,20 @@
   #keyRows span{display:inline-block; margin:0 10px 4px 0}
   .vsplit{flex:0 0 5px; cursor:col-resize; background:var(--bg)}
   .vsplit:hover,.vsplit.held{background:#4d6386}
+  #settings{
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(12,14,18,.72); z-index:30;
+  }
+  #settings.show{display:flex}
+  #settings .box{
+    width:min(430px,92vw); max-height:82vh; overflow:auto;
+    background:var(--panel); border:1px solid var(--line); border-radius:6px;
+  }
+  #settings .mhd{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 10px; border-bottom:1px solid var(--line); color:var(--hot); font-weight:600;
+  }
+  #settings .pad{padding:10px}
 </style>
 </head>
 <body>
@@ -209,6 +223,7 @@
     <button id="bForce" style="display:none" class="danger">Export anyway</button>
     <span class="sep"></span>
     <button id="bClose" title="Close this sprite and forget it">Close</button>
+    <button id="bSettings" title="The keys, yours to change. Cmd+, opens this too.">Settings</button>
     <span id="status"></span>
   </header>
 
@@ -339,21 +354,26 @@
       </div>
       <div class="pad" id="checks"></div>
 
-      <div class="hd">Keys</div>
-      <div class="pad hint">
-        <div id="keyRows" class="mono"></div>
-        <div class="mono" style="margin-top:6px">
-          Cmd or Ctrl + Z undo &nbsp; Shift + Z redo<br>
-          Cmd+C copy &nbsp; Cmd+X cut &nbsp; Cmd+V paste &nbsp; Cmd+S save<br>
-          - and + zoom, or the wheel &nbsp; Space play
-        </div>
-        <div class="row" style="margin-top:6px"><button id="bKeysReset" style="width:100%">Back to the usual keys</button></div>
-      </div>
     </div>
   </main>
 </div>
 
 <div id="drop">Drop PNG files to open them</div>
+<div id="settings">
+  <div class="box">
+    <div class="mhd">Settings<button id="bSettingsClose">Done</button></div>
+    <div class="pad hint">
+      <div style="margin-bottom:6px">The keys. Click one, press the new key. A taken key swaps.</div>
+      <div id="keyRows" class="mono"></div>
+      <div class="mono" style="margin-top:8px">
+        Cmd or Ctrl + Z undo &nbsp; Shift + Z redo<br>
+        Cmd+C copy &nbsp; Cmd+X cut &nbsp; Cmd+V paste &nbsp; Cmd+S save<br>
+        - and + zoom, or the wheel &nbsp; Space play
+      </div>
+      <div class="row" style="margin-top:10px"><button id="bKeysReset" style="width:100%">Back to the usual keys</button></div>
+    </div>
+  </div>
+</div>
 <input id="file" type="file" accept=".png,image/png" multiple style="display:none">
 <input id="fileFrame" type="file" accept=".png,image/png" multiple style="display:none">
 
@@ -2052,6 +2072,9 @@ $('pbCopyPath').onclick = function () {
   copyText(PB_REAL ? PB_REAL.replace(/\/$/, '') + '/' : 'art-live/' + (cleanName(s.family) || 'creatures') + '/', 'the folder');
 };
 $('pbCopyCmd').onclick = function () { copyText('npm run pack-art', 'the command'); };
+$('bSettings').onclick = openSettings;
+$('bSettingsClose').onclick = closeSettings;
+$('settings').onclick = function (e) { if (e.target === this) closeSettings(); };
 $('bKeysReset').onclick = function () {
   KEYS = {};
   for (var a in KEY_DEFAULTS) KEYS[a] = KEY_DEFAULTS[a];
@@ -2118,8 +2141,13 @@ window.addEventListener('keydown', function (e) {
   var t = e.target.tagName;
   if (t === 'INPUT' || t === 'TEXTAREA') return;
   var meta = e.metaKey || e.ctrlKey;
-  // a keycap in the Keys panel is waiting: this press is the new binding, nothing else
+  // a keycap in Settings is waiting: this press is the new binding, nothing else
   if (keyWait) { if (!meta) { e.preventDefault(); assignKey(e.key); return; } keyWait = null; drawKeys(); }
+  if (settingsOpen()) {
+    if (e.key === 'Escape' || (meta && e.key === ',')) { e.preventDefault(); closeSettings(); }
+    return;
+  }
+  if (meta && e.key === ',') { e.preventDefault(); openSettings(); return; }
   if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if (meta && e.key.toLowerCase() === 'c') { e.preventDefault(); copySel(false); return; }
   if (meta && e.key.toLowerCase() === 'x') { e.preventDefault(); copySel(true); return; }
@@ -2160,13 +2188,12 @@ S.store.on = storageOK();
 redraw();
 loadStore();
 
-// the Mac menu bar's Settings item lands here: show the Keys panel and flash it
-function showKeys() {
-  var pad = $('keyRows').parentElement;
-  pad.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  pad.style.transition = 'none'; pad.style.background = 'rgba(139,194,80,.14)';
-  setTimeout(function () { pad.style.transition = 'background 1s'; pad.style.background = ''; }, 700);
-}
+// the settings modal. The Mac menu bar's Settings item still calls showKeys, so the
+// old door opens the new room.
+function settingsOpen() { return $('settings').className === 'show'; }
+function openSettings() { keyWait = null; drawKeys(); $('settings').className = 'show'; }
+function closeSettings() { keyWait = null; drawKeys(); $('settings').className = ''; }
+function showKeys() { openSettings(); }
 
 // a small door for checking the tool from the outside
 window.EDITOR = {
