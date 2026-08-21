@@ -32,6 +32,8 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
     case "pick": pick(replyHandler)
     case "write": write(body, replyHandler)
     case "claim": claim(body, replyHandler)
+    case "pickdir": pickDir(replyHandler)
+    case "writeto": writeTo(body, replyHandler)
     default: replyHandler(nil, "Unknown op " + op)
     }
   }
@@ -62,6 +64,32 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
     let id = "f\(nextId)"
     files[id] = url
     reply(["id": id, "dir": url.deletingLastPathComponent().path], nil)
+  }
+
+  private func pickDir(_ reply: @escaping (Any?, String?) -> Void) {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.canCreateDirectories = true
+    panel.prompt = "Save here"
+    panel.begin { resp in
+      guard resp == .OK, let url = panel.urls.first else { reply(["cancelled": true], nil); return }
+      self.nextId += 1
+      let id = "d\(self.nextId)"
+      self.files[id] = url
+      reply(["id": id, "name": url.lastPathComponent, "path": url.path], nil)
+    }
+  }
+
+  private func writeTo(_ body: [String: Any], _ reply: @escaping (Any?, String?) -> Void) {
+    guard let dirId = body["dir"] as? String, let dir = files[dirId],
+          let name = body["name"] as? String, !name.isEmpty,
+          !name.contains("/"), !name.contains(".."),
+          let b64 = body["bytes"] as? String, let data = Data(base64Encoded: b64) else {
+      reply(nil, "Nothing to write"); return
+    }
+    do { try data.write(to: dir.appendingPathComponent(name), options: .atomic); reply(["ok": true], nil) }
+    catch { reply(nil, error.localizedDescription) }
   }
 
   private func write(_ body: [String: Any], _ reply: @escaping (Any?, String?) -> Void) {

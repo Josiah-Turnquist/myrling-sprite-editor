@@ -55,6 +55,41 @@
       }, function () { return null; });
     };
   }
+  // the folder picker: a chosen directory comes back as a handle whose getFileHandle
+  // hands out writable file handles inside it, which is all the page asks of it
+  window.showDirectoryPicker = window.showDirectoryPicker || function () {
+    return port.postMessage({ op: 'pickdir' }).then(function (r) {
+      if (!r || r.cancelled || !r.id) {
+        var e = new Error('The picker was closed');
+        e.name = 'AbortError';
+        throw e;
+      }
+      return {
+        kind: 'directory',
+        name: r.name,
+        dir: r.path,
+        queryPermission: function () { return Promise.resolve('granted'); },
+        requestPermission: function () { return Promise.resolve('granted'); },
+        getFileHandle: function (fname) {
+          return Promise.resolve({
+            kind: 'file',
+            name: fname,
+            dir: r.path,
+            createWritable: function () {
+              var parts = [];
+              return Promise.resolve({
+                write: function (blob) { return blob.arrayBuffer().then(function (ab) { parts.push(ab); }); },
+                close: function () {
+                  return port.postMessage({ op: 'writeto', dir: r.id, name: fname, bytes: b64FromBuffers(parts) })
+                    .then(function () { });
+                }
+              });
+            }
+          });
+        }
+      };
+    });
+  };
   window.showOpenFilePicker = function () {
     return port.postMessage({ op: 'pick' }).then(function (r) {
       if (!r || r.cancelled || !r.files || !r.files.length) {

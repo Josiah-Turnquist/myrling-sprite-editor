@@ -100,6 +100,11 @@ The button is greyed out until the sprite in front of you actually came from fil
 session — hover it and it says exactly what to do to turn it on. In Firefox and Safari it
 never appears, because those browsers do not let a page write files.
 
+The destination is yours to change before saving: **Change…** in the path bar opens a
+real folder picker, the bar then shows the folder you chose, and Save writes every frame
+of the sprite there — including a sprite that never came from files at all. Pick your
+game's art folder once and a brand new creature saves straight into it.
+
 Plain words about how it behaves:
 
 - The browser asks **once per file** the first time, with its own "save changes" prompt.

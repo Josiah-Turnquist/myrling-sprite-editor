@@ -109,8 +109,9 @@
   #alphabar.show{display:flex}
   #canvasWrap{
     flex:1; min-height:0; overflow:auto; padding:16px;
-    display:flex; align-items:flex-start; justify-content:center;
+    display:flex;
   }
+  #cv{margin:auto}
   #cv{
     image-rendering:pixelated; background:#0d0f13; cursor:crosshair;
     box-shadow:0 0 0 1px var(--line); touch-action:none;
@@ -231,6 +232,8 @@
     <span class="lab">Goes to</span>
     <span class="path mono pick" id="pbPath">art-live/creatures/</span>
     <button id="pbCopyPath">Copy path</button>
+    <button id="pbChange" style="display:none"
+            title="Pick the folder saving writes into. Every frame of this sprite goes there.">Change&hellip;</button>
     <span class="sep" style="width:1px;height:16px;background:var(--line)"></span>
     <span class="lab">Then run</span>
     <span class="cmd mono pick" id="pbCmd">npm run pack-art</span>
@@ -754,16 +757,22 @@ function redraw() {
   // shown wherever saving in place is possible at all, and greyed with the reason when
   // this particular sprite cannot do it, so the button teaches rather than hides
   if (FS_OK) {
-    var can = canSaveOver(s);
+    var toDest = !!(s && s.dest);
+    var can = toDest || canSaveOver(s);
     $('bSave').style.display = '';
     $('bSave').disabled = !can;
-    $('bSave').title = can
-      ? 'Write every frame back over the files it was opened from. No moving files about after.'
-      : (s && s.handles && s.handles.length
-        ? 'The name no longer matches the files this sprite was opened from. Set it back, or use Export frames.'
-        : 'Nothing here came from a file opened this session. Press Open PNGs, or drop files on the window, and this comes on.');
+    if (!saveArmed) $('bSave').textContent = toDest ? 'Save' : 'Save over';
+    $('bSave').title = toDest
+      ? 'Write every frame into ' + s.dest.label + '. Change\u2026 in the bar below picks another folder.'
+      : (can
+        ? 'Write every frame back over the files it was opened from. No moving files about after.'
+        : (s && s.handles && s.handles.length
+          ? 'The name no longer matches the files this sprite was opened from. Set it back, use Export frames, or pick a folder with Change\u2026 below.'
+          : 'Nothing here came from a file opened this session. Open PNGs, drop files on the window, or pick a folder with Change\u2026 below.'));
+    $('pbChange').style.display = '';
   } else {
     $('bSave').style.display = 'none';   // Firefox and Safari cannot write files in place
+    $('pbChange').style.display = 'none';
   }
   $('empty').style.display = s ? 'none' : 'flex';
   $('canvasWrap').style.display = s ? 'flex' : 'none';
@@ -1051,10 +1060,11 @@ function drawPathBar() {
   var fam = cleanName($('family').value) || (s && s.family) || 'creatures';
   var key = cleanName($('key').value) || (s && s.key) || '';
   var names = s && key ? s.frames.map(function (_, i) { return key + '-' + i + '.png'; }) : [];
-  // when the sprite's files are real ones on disk and we know where, say where.
-  // Only the Mac app knows; a browser hands out handles with no place attached.
+  // a chosen folder wins; then the files' real folder when known (the Mac app knows,
+  // a browser hands out handles with no place attached); then the art-live guess
   var here = null;
-  if (s) for (var hi = 0; hi < names.length && !here; hi++) {
+  if (s && s.dest) here = s.dest.label;
+  if (s && !here) for (var hi = 0; hi < names.length && !here; hi++) {
     var hh = handleFor(s, names[hi]);
     if (hh && hh.dir) here = hh.dir;
   }
@@ -1554,6 +1564,22 @@ cv.addEventListener('pointerup', endDrag);
 cv.addEventListener('pointercancel', endDrag);
 cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 cv.addEventListener('pointerleave', function () { $('posLabel').textContent = ''; });
+// zoom around a point: whatever sprite pixel sits under the anchor stays under it.
+// No anchor given means the middle of the view, for the buttons and the keys.
+function zoomAt(nz, cx, cy) {
+  var s = spr(); if (!s) return;
+  nz = Math.max(1, Math.min(48, nz));
+  if (nz === S.zoom) return;
+  var wrap = $('canvasWrap'), r = cv.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+  if (cx == null) { cx = wr.left + wrap.clientWidth / 2; cy = wr.top + wrap.clientHeight / 2; }
+  var px = (cx - r.left) / S.zoom, py = (cy - r.top) / S.zoom;
+  S.zoom = nz;
+  redraw();
+  var r2 = cv.getBoundingClientRect();
+  wrap.scrollLeft += (r2.left + px * nz) - cx;
+  wrap.scrollTop += (r2.top + py * nz) - cy;
+}
+
 // a mouse wheel sends one notch of about 100 per click, a trackpad sends a stream of
 // tiny ones. Stepping on every event made a light two-finger drag jump ten levels, so
 // gather the distance up and only step once a notch's worth has built.
@@ -1566,10 +1592,10 @@ cv.addEventListener('wheel', function (e) {
   if (e.timeStamp - wheelAt > 250 || d * wheelAcc < 0) wheelAcc = 0;      // new gesture or turned around
   wheelAt = e.timeStamp;
   wheelAcc += d;
-  var NOTCH = 90, was = S.zoom;
-  while (wheelAcc <= -NOTCH) { wheelAcc += NOTCH; S.zoom = Math.min(48, S.zoom + (S.zoom < 8 ? 1 : 4)); }
-  while (wheelAcc >= NOTCH) { wheelAcc -= NOTCH; S.zoom = Math.max(1, S.zoom - (S.zoom <= 8 ? 1 : 4)); }
-  if (S.zoom !== was) redraw();
+  var NOTCH = 90, nz = S.zoom;
+  while (wheelAcc <= -NOTCH) { wheelAcc += NOTCH; nz = Math.min(48, nz + (nz < 8 ? 1 : 4)); }
+  while (wheelAcc >= NOTCH) { wheelAcc -= NOTCH; nz = Math.max(1, nz - (nz <= 8 ? 1 : 4)); }
+  if (nz !== S.zoom) zoomAt(nz, e.clientX, e.clientY);
 }, { passive: false });
 
 // ---------- loading files ----------
@@ -1821,6 +1847,31 @@ function saveOver(force) {
   }
 
   var names = exportNames(s);
+
+  // a chosen folder takes every frame, whatever the files were called before
+  if (s.dest && s.dest.handle) {
+    var dsoft = rulesOn() ? countSoft(s) : 0;
+    askWrite(s.dest.handle).then(function (ok) {
+      if (!ok) { say('The browser was not allowed to write in ' + s.dest.label + '. Nothing was touched.', 'bad'); return; }
+      var dchain = Promise.resolve();
+      names.forEach(function (n, i) {
+        dchain = dchain.then(function () {
+          return s.dest.handle.getFileHandle(n, { create: true }).then(function (h) { return writeFrame(s, i, h); });
+        });
+      });
+      dchain.then(function () {
+        s.bytes = [];
+        say('Saved ' + names.join(', ') + ' into ' + s.dest.label +
+          (dsoft ? '. ' + dsoft + ' part see-through pixels were snapped on the way out' : '') +
+          '. Run npm run pack-art', 'good');
+        scheduleSave(); redraw();
+      }, function () {
+        say('Could not write into ' + s.dest.label + '. The folder may have moved. Export frames still works.', 'bad');
+      });
+    });
+    return false;
+  }
+
   var inPlace = [], fresh = [];
   names.forEach(function (n, i) {
     var h = handleFor(s, n);
@@ -2041,8 +2092,8 @@ var saveArmed = false, saveArmTimer = null;
 function disarmSave() {
   saveArmed = false;
   if (saveArmTimer) { clearTimeout(saveArmTimer); saveArmTimer = null; }
-  var b = $('bSave');
-  b.textContent = 'Save over'; b.className = '';
+  var b = $('bSave'), s = spr();
+  b.textContent = s && s.dest ? 'Save' : 'Save over'; b.className = '';
 }
 $('bSave').onclick = function () {
   var forced = saveArmed;
@@ -2067,6 +2118,20 @@ $('family').onchange = function () {
   var s = spr(); if (s) { s.family = f; touched(s); scheduleSave(); }
   redraw();
 };
+$('pbChange').onclick = function () {
+  var s = spr(); if (!s) { say('Nothing open', 'bad'); return; }
+  if (!window.showDirectoryPicker) { say('This browser cannot pick a folder. Chrome, Edge or the Mac app can.', 'bad'); return; }
+  window.showDirectoryPicker().then(function (dh) {
+    return askWrite(dh).then(function (ok) {
+      if (!ok) { say('The browser was not allowed to write in that folder. Nothing changed.', 'bad'); return; }
+      s.dest = { handle: dh, label: dh.dir || dh.name };
+      drawPathBar(); redraw();
+      say('Saving goes to ' + s.dest.label + ' now. Press Save when ready.', 'good');
+    });
+  }).catch(function (err) {
+    if (!err || err.name !== 'AbortError') say('The folder picker did not open. Nothing changed.', 'bad');
+  });
+};
 $('pbCopyPath').onclick = function () {
   var s = spr(); if (!s) { say('Nothing open', 'bad'); return; }
   copyText(PB_REAL ? PB_REAL.replace(/\/$/, '') + '/' : 'art-live/' + (cleanName(s.family) || 'creatures') + '/', 'the folder');
@@ -2088,8 +2153,8 @@ $('bUndo').onclick = undo;
 $('bRedo').onclick = redo;
 $('bFlip').onclick = flipFrame;
 $('bForget').onclick = forgetAll;
-$('zIn').onclick = function () { S.zoom = Math.min(48, S.zoom + (S.zoom < 8 ? 1 : 4)); redraw(); };
-$('zOut').onclick = function () { S.zoom = Math.max(1, S.zoom - (S.zoom <= 8 ? 1 : 4)); redraw(); };
+$('zIn').onclick = function () { zoomAt(S.zoom + (S.zoom < 8 ? 1 : 4)); };
+$('zOut').onclick = function () { zoomAt(S.zoom - (S.zoom <= 8 ? 1 : 4)); };
 $('zFit').onclick = function () { fitZoom(); redraw(); };
 $('bGrid').onclick = function () { S.grid = !S.grid; this.className = S.grid ? 'on' : ''; redraw(); };
 $('bGuides').onclick = function () { S.guides = !S.guides; this.className = S.guides ? 'on' : ''; redraw(); };
