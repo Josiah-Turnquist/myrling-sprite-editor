@@ -14,8 +14,14 @@ import UniformTypeIdentifiers
 //  - The plain file input, used when the bridge is not there, needs runOpenPanelWith.
 
 final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
-  private var files: [String: URL] = [:]   // handle id -> the file it stands for
+  private var files: [String: URL] = [:]     // handle id -> the file it stands for
+  private var dropped: [String: URL] = [:]   // name -> file, from the last drop onto the window
   private var nextId = 0
+
+  // the native drop layer saw these before the page did; the page claims them by name
+  func noteDrop(_ urls: [URL]) {
+    for u in urls { dropped[u.lastPathComponent] = u }
+  }
 
   func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage,
                              replyHandler: @escaping (Any?, String?) -> Void) {
@@ -25,6 +31,7 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
     switch op {
     case "pick": pick(replyHandler)
     case "write": write(body, replyHandler)
+    case "claim": claim(body, replyHandler)
     default: replyHandler(nil, "Unknown op " + op)
     }
   }
@@ -42,10 +49,19 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
         self.nextId += 1
         let id = "f\(self.nextId)"
         self.files[id] = url
-        out.append(["id": id, "name": url.lastPathComponent, "bytes": data.base64EncodedString()])
+        out.append(["id": id, "name": url.lastPathComponent, "bytes": data.base64EncodedString(),
+                    "dir": url.deletingLastPathComponent().path])
       }
       reply(["files": out], nil)
     }
+  }
+
+  private func claim(_ body: [String: Any], _ reply: @escaping (Any?, String?) -> Void) {
+    guard let name = body["name"] as? String, let url = dropped[name] else { reply([:], nil); return }
+    nextId += 1
+    let id = "f\(nextId)"
+    files[id] = url
+    reply(["id": id, "dir": url.deletingLastPathComponent().path], nil)
   }
 
   private func write(_ body: [String: Any], _ reply: @escaping (Any?, String?) -> Void) {
@@ -58,9 +74,22 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
   }
 }
 
+// WebKit gives the page the dropped files but never their places on disk, so this
+// subclass notes the real URLs on the way past and the bridge hands them to the page
+final class DropCatchingWebView: WKWebView {
+  var onFileDrop: (([URL]) -> Void)?
+  override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    if let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self],
+        options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
+      onFileDrop?(urls)
+    }
+    return super.performDragOperation(sender)
+  }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
   var window: NSWindow!
-  var webView: WKWebView!
+  var webView: DropCatchingWebView!
 
   func applicationDidFinishLaunching(_ note: Notification) {
     let config = WKWebViewConfiguration()
@@ -69,9 +98,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
        let src = try? String(contentsOf: bridge, encoding: .utf8) {
       ucc.addUserScript(WKUserScript(source: src, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     }
-    ucc.addScriptMessageHandler(BridgeHandler(), contentWorld: .page, name: "eldermyr")
+    let bridge = BridgeHandler()
+    ucc.addScriptMessageHandler(bridge, contentWorld: .page, name: "eldermyr")
 
-    webView = WKWebView(frame: .zero, configuration: config)
+    webView = DropCatchingWebView(frame: .zero, configuration: config)
+    webView.onFileDrop = { bridge.noteDrop($0) }
     webView.navigationDelegate = self
     webView.uiDelegate = self
 

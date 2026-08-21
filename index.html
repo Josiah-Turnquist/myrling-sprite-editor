@@ -1020,6 +1020,7 @@ function drawChecks() {
 }
 
 // ---------- the path bar: where the file goes and what to run next ----------
+var PB_REAL = null;   // the folder the current sprite's files really live in, when known
 function exportNames(s) {
   var k = cleanName(s.key) || 'sprite';
   return s.frames.map(function (_, i) { return k + '-' + i + '.png'; });
@@ -1030,7 +1031,16 @@ function drawPathBar() {
   var fam = cleanName($('family').value) || (s && s.family) || 'creatures';
   var key = cleanName($('key').value) || (s && s.key) || '';
   var names = s && key ? s.frames.map(function (_, i) { return key + '-' + i + '.png'; }) : [];
-  $('pbPath').textContent = 'art-live/' + fam + '/' + (names.length ? names.join(', ') : '');
+  // when the sprite's files are real ones on disk and we know where, say where.
+  // Only the Mac app knows; a browser hands out handles with no place attached.
+  var here = null;
+  if (s) for (var hi = 0; hi < names.length && !here; hi++) {
+    var hh = handleFor(s, names[hi]);
+    if (hh && hh.dir) here = hh.dir;
+  }
+  PB_REAL = here;
+  $('pbPath').textContent = (here ? here.replace(/\/$/, '') + '/' : 'art-live/' + fam + '/') +
+    (names.length ? names.join(', ') : '');
   $('pbCmd').textContent = 'npm run pack-art';
   var w = '';
   if (s) {
@@ -1729,8 +1739,8 @@ function exportAll(oneOnly, force) {
   var chain = Promise.resolve();
   idx.forEach(function (i) { chain = chain.then(function () { return saveFrame(s, i, names[i]); }); });
   chain.then(function () {
-    say('Saved ' + idx.map(function (i) { return names[i]; }).join(', ') +
-      '. Put ' + (idx.length > 1 ? 'them' : 'it') + ' in art-live/' + s.family + '/ and run npm run pack-art' +
+    say('Downloaded ' + idx.map(function (i) { return names[i]; }).join(', ') +
+      ' to your Downloads folder. Move ' + (idx.length > 1 ? 'them' : 'it') + ' into art-live/' + s.family + '/ and run npm run pack-art' +
       (soft ? '. ' + soft + ' part see-through pixels were snapped on the way out' : ''), 'good');
     scheduleSave();
     redraw();
@@ -1819,7 +1829,8 @@ function saveOver(force) {
     if (wrote.length) s.bytes = [];   // what is on disk now is exactly what this editor writes
     var list = function (a) { return a.join(', '); };
     var bits = [];
-    if (wrote.length) bits.push('Saved over ' + list(wrote) + ' in place');
+    var realDir = inPlace.length && inPlace[0].h.dir ? inPlace[0].h.dir : null;
+    if (wrote.length) bits.push('Saved over ' + list(wrote) + (realDir ? ' in ' + realDir : ' in place'));
     if (fresh.length) bits.push(list(fresh.map(function (p) { return p.name; })) + (fresh.length > 1 ? ' are new frames' : ' is a new frame') + ' with no file yet, downloaded instead');
     if (blocked.length) bits.push('The browser held back ' + list(blocked) + '. It asks once per file: press Save over again');
     if (failed.length) bits.push('Could not write ' + list(failed) + '. The file may have moved. Export frames still works');
@@ -2038,7 +2049,7 @@ $('family').onchange = function () {
 };
 $('pbCopyPath').onclick = function () {
   var s = spr(); if (!s) { say('Nothing open', 'bad'); return; }
-  copyText('art-live/' + (cleanName(s.family) || 'creatures') + '/', 'the folder');
+  copyText(PB_REAL ? PB_REAL.replace(/\/$/, '') + '/' : 'art-live/' + (cleanName(s.family) || 'creatures') + '/', 'the folder');
 };
 $('pbCopyCmd').onclick = function () { copyText('npm run pack-art', 'the command'); };
 $('bKeysReset').onclick = function () {
@@ -2149,6 +2160,14 @@ S.store.on = storageOK();
 redraw();
 loadStore();
 
+// the Mac menu bar's Settings item lands here: show the Keys panel and flash it
+function showKeys() {
+  var pad = $('keyRows').parentElement;
+  pad.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  pad.style.transition = 'none'; pad.style.background = 'rgba(139,194,80,.14)';
+  setTimeout(function () { pad.style.transition = 'background 1s'; pad.style.background = ''; }, 700);
+}
+
 // a small door for checking the tool from the outside
 window.EDITOR = {
   S: S, spr: spr, redraw: redraw, frameCanvas: frameCanvas, colourList: colourList,
@@ -2157,7 +2176,8 @@ window.EDITOR = {
   cleanName: cleanName, saveStore: saveStore, loadStore: loadStore, flipFrame: flipFrame,
   nudge: nudge, exportNames: exportNames, STORE_KEY: STORE_KEY,
   saveOver: saveOver, canSaveOver: canSaveOver, handleFor: handleFor,
-  copySel: copySel, pasteClip: pasteClip, snapEnd: snapEnd, setTool: setTool
+  copySel: copySel, pasteClip: pasteClip, snapEnd: snapEnd, setTool: setTool,
+  showKeys: showKeys, drawPathBar: drawPathBar
 };
 </script>
 </body>

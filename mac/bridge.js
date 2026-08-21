@@ -24,7 +24,9 @@
     return {
       kind: 'file',
       name: rec.name,
+      dir: rec.dir || '',   // where the file really lives, so the page can say so
       getFile: function () {
+        if (!rec.bytes) return Promise.reject(new Error('no bytes came with this handle'));
         return Promise.resolve(new File([bytesFromB64(rec.bytes)], rec.name, { type: 'image/png' }));
       },
       queryPermission: function () { return Promise.resolve('granted'); },
@@ -39,6 +41,18 @@
           }
         });
       }
+    };
+  }
+  // dropped files: the app noted where they came from as they crossed the window edge;
+  // the page asks here, by name, and gets a handle it can write back through. The File
+  // itself already travelled with the drop, so the handle needs no bytes of its own.
+  if (window.DataTransferItem && !DataTransferItem.prototype.getAsFileSystemHandle) {
+    DataTransferItem.prototype.getAsFileSystemHandle = function () {
+      var f = this.getAsFile ? this.getAsFile() : null;
+      if (!f || !f.name) return Promise.resolve(null);
+      return port.postMessage({ op: 'claim', name: f.name }).then(function (r) {
+        return r && r.id ? makeHandle({ id: r.id, name: f.name, dir: r.dir }) : null;
+      }, function () { return null; });
     };
   }
   window.showOpenFilePicker = function () {
