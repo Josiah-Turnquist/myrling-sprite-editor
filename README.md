@@ -13,6 +13,18 @@ files you opened. There is also a small Mac app, below.
 
 MIT licensed. Take it, fork it, ship your own creatures with it.
 
+## Made for one game, useful for yours
+
+The rules baked into this editor — square frames, at most 32 colours, every pixel fully
+solid or fully clear, feet on the bottom row — are the art rules of Realms of Eldermyr,
+the game it was built for. You do not need that game for any of this to be useful: it is
+still a tiny pixel editor that saves straight back over your PNGs. Everything
+game-specific sits in plain sight in `index.html` — the checks, the path bar text, the
+reference creatures and grounds in the game size view — so making it enforce your own
+game's rules is an afternoon of editing one file. Sections below that talk about "the
+game" or "the packer" are describing Eldermyr's; read them as the ones you would swap
+for your own.
+
 ## The Mac app
 
 The same editor in its own window and Dock icon, with in-place saving done natively. It
@@ -56,6 +68,10 @@ when a creature is done.
 
 ## Where the files go
 
+This section is the Eldermyr team's workflow. If that is not you, the short version:
+Export downloads `name-0.png`, `name-1.png` and so on, Save over writes them back where
+they came from, and the path bar is yours to repoint at your own game's art folder.
+
 The bar under the top row says the exact path and the exact command, and follows the name
 as you type it:
 
@@ -76,8 +92,8 @@ into `art-live/<folder>/` and run `npm run pack-art` from the game's repo.
 In Chrome, Edge and the Mac app, a file opened through **Open PNGs** or dropped onto the
 window comes with permission to write it back. The **Save over** button sits next to
 Export: press it (or `Cmd + S` / `Ctrl + S`) and your edits are written straight into the
-originals, wherever they live — open them from `art-live/<folder>/` and there is no
-moving files about at all, just run the pack command.
+originals, wherever they live — open them from your game's art folder and there is no
+moving files about at all.
 
 The button is greyed out until the sprite in front of you actually came from files this
 session — hover it and it says exactly what to do to turn it on. In Firefox and Safari it
