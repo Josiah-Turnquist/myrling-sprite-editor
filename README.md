@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.png" width="128" alt="A small green pixel creature, the editor's logo"></p>
+
 # Eldermyr sprite editor
 
 A pixel editor for Realms of Eldermyr creature sprites. One HTML file. Open it and draw.
@@ -5,7 +7,30 @@ A pixel editor for Realms of Eldermyr creature sprites. One HTML file. Open it a
     open index.html
 
 No build, no server, no install, no internet. Double click the file, or drag it onto a
-browser window. Everything runs locally and nothing is uploaded anywhere.
+browser window. Everything runs locally and nothing is uploaded anywhere. Use Chrome or
+Edge if you can: they are the browsers that can save your edits straight back into the
+files you opened. There is also a small Mac app, below.
+
+MIT licensed. Take it, fork it, ship your own creatures with it.
+
+## The Mac app
+
+The same editor in its own window and Dock icon, with in-place saving done natively. It
+needs the Xcode command line tools once (`xcode-select --install`), then:
+
+    make app     # builds dist/Eldermyr Sprite Editor.app
+    make run     # builds and opens it
+
+The wrapper is one Swift file, `mac/main.swift`, around the very same `index.html` — the
+web page is not changed at all. WebKit has no File System Access API, so `mac/bridge.js`
+fills in the little of it the editor uses and hands the work to the Swift side: Open PNGs
+shows the real open panel, Save over writes the real files, Export lands in your
+Downloads folder. The app is built for your machine and ad-hoc signed, which is all a
+local tool needs; distributing a signed, notarised download is an Apple Developer
+account matter and out of scope here.
+
+The icon is itself a 16 pixel sprite, drawn by `mac/make-icon.py` (`make icon` redraws
+it, plus `docs/logo.png` and the page's favicon).
 
 ## Why this exists
 
@@ -45,6 +70,32 @@ be before you export.
 
 Export writes `name-0.png`, `name-1.png` and so on into your downloads folder. Move them
 into `art-live/<folder>/` and run `npm run pack-art` from the game's repo.
+
+## Saving over the files you opened
+
+In Chrome, Edge and the Mac app, a file opened through **Open PNGs** or dropped onto the
+window comes with permission to write it back. The **Save over** button sits next to
+Export: press it (or `Cmd + S` / `Ctrl + S`) and your edits are written straight into the
+originals, wherever they live — open them from `art-live/<folder>/` and there is no
+moving files about at all, just run the pack command.
+
+The button is greyed out until the sprite in front of you actually came from files this
+session — hover it and it says exactly what to do to turn it on. In Firefox and Safari it
+never appears, because those browsers do not let a page write files.
+
+Plain words about how it behaves:
+
+- The browser asks **once per file** the first time, with its own "save changes" prompt.
+  If it only lets some through on the first press, the top bar says so: press Save over
+  again for the rest.
+- It obeys the same checks as Export. A sprite the packer would refuse arms the button to
+  **Save anyway?** for a second press, the same way Close asks twice.
+- A frame added since opening has no file yet, so that one goes to downloads and the top
+  bar tells you to put it next to the others.
+- Renaming the sprite makes the names stop matching the files, so the button greys out
+  and Export takes over. Same if the sprite was only brought back from browser storage:
+  the browser cannot keep file permissions across visits, so open the files again to get
+  the button back.
 
 ## Opening art
 

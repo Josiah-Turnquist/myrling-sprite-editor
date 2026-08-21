@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Eldermyr sprite editor</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAxElEQVR42mNgQANCIlL/kbG4lAJejK6ekH4GQmDAHECsAZQ6AKdDBswB5Bqw5UEdCibXA0PPATAL0aMAl0MGvwPITWTdhwJQMLmJdOg4wK9KG4zRLUbHMHXDxwHoFsMSG7EOGboOINdiUh0y8A7AJYHuABEJfjDGZREuefRESXRJOOqAQecAcvHwdQBMnlh1g9cBpBbF1CqAyK4L6O4A9ChBNxjdoTRvD1DdATBAbwdg9IwG3AG4HEJuxwWXfoK9Y3o7AACpqVpHc9cEDgAAAABJRU5ErkJggg==">
 <style>
   :root{
     --bg:#131519; --panel:#191c22; --panel2:#1f232b; --line:#2b313b;
@@ -191,6 +192,8 @@
     <input id="key" type="text" class="mono" style="width:128px" placeholder="treeent"
            title="Export name. Files are saved as name-0.png, name-1.png">
     <span class="sep"></span>
+    <button id="bSave" style="display:none"
+            title="Write every frame back over the files it was opened from. No moving files about after.">Save over</button>
     <button id="bExport">Export frames</button>
     <button id="bExport1">This frame</button>
     <button id="bForce" style="display:none" class="danger">Export anyway</button>
@@ -234,6 +237,7 @@
           <b>Nothing open</b>
           Drop PNG files anywhere on this window, or press Open PNGs.<br>
           Files named name-0.png and name-1.png open as one sprite with two frames.<br>
+          In Chrome, Edge and the Mac app, Save over then writes your edits straight back into those files.<br>
           Or press New sprite to start from blank.<br>
           <span class="dim">Whatever is open is kept in this browser and comes back next time.</span>
         </div>
@@ -418,7 +422,8 @@ function blank(w, h) { return new Uint8ClampedArray(w * h * 4); }
 function makeSprite(key, w, h, frames, family) {
   var s = {
     key: key, family: family || 'creatures', w: w, h: h,
-    frames: frames && frames.length ? frames : [blank(w, h)], cur: 0, hist: [], hi: 0, bytes: []
+    frames: frames && frames.length ? frames : [blank(w, h)], cur: 0, hist: [], hi: 0, bytes: [],
+    handles: []   // FileSystemFileHandles from opening, so Save over can write back in place
   };
   s.hist = [snapshot(s)];
   return s;
@@ -622,6 +627,20 @@ function redraw() {
   var s = spr();
   CURCHK = s ? checkSprite(s) : null;
   if (!CURCHK || !CURCHK.bad.length) $('bForce').style.display = 'none';
+  // shown wherever saving in place is possible at all, and greyed with the reason when
+  // this particular sprite cannot do it, so the button teaches rather than hides
+  if (FS_OK) {
+    var can = canSaveOver(s);
+    $('bSave').style.display = '';
+    $('bSave').disabled = !can;
+    $('bSave').title = can
+      ? 'Write every frame back over the files it was opened from. No moving files about after.'
+      : (s && s.handles && s.handles.length
+        ? 'The name no longer matches the files this sprite was opened from. Set it back, or use Export frames.'
+        : 'Nothing here came from a file opened this session. Press Open PNGs, or drop files on the window, and this comes on.');
+  } else {
+    $('bSave').style.display = 'none';   // Firefox and Safari cannot write files in place
+  }
   $('empty').style.display = s ? 'none' : 'flex';
   $('canvasWrap').style.display = s ? 'flex' : 'none';
   $('stagebar').style.display = s ? 'flex' : 'none';
@@ -1298,12 +1317,22 @@ cv.addEventListener('pointerup', endDrag);
 cv.addEventListener('pointercancel', endDrag);
 cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 cv.addEventListener('pointerleave', function () { $('posLabel').textContent = ''; });
+// a mouse wheel sends one notch of about 100 per click, a trackpad sends a stream of
+// tiny ones. Stepping on every event made a light two-finger drag jump ten levels, so
+// gather the distance up and only step once a notch's worth has built.
+var wheelAcc = 0, wheelAt = 0;
 cv.addEventListener('wheel', function (e) {
   if (!spr()) return;
   e.preventDefault();
-  var up = e.deltaY < 0;
-  S.zoom = up ? Math.min(48, S.zoom + (S.zoom < 8 ? 1 : 4)) : Math.max(1, S.zoom - (S.zoom <= 8 ? 1 : 4));
-  redraw();
+  var d = e.deltaY;
+  if (e.deltaMode === 1) d *= 33; else if (e.deltaMode === 2) d *= 100;   // lines and pages to pixels
+  if (e.timeStamp - wheelAt > 250 || d * wheelAcc < 0) wheelAcc = 0;      // new gesture or turned around
+  wheelAt = e.timeStamp;
+  wheelAcc += d;
+  var NOTCH = 90, was = S.zoom;
+  while (wheelAcc <= -NOTCH) { wheelAcc += NOTCH; S.zoom = Math.min(48, S.zoom + (S.zoom < 8 ? 1 : 4)); }
+  while (wheelAcc >= NOTCH) { wheelAcc -= NOTCH; S.zoom = Math.max(1, S.zoom - (S.zoom <= 8 ? 1 : 4)); }
+  if (S.zoom !== was) redraw();
 }, { passive: false });
 
 // ---------- loading files ----------
@@ -1343,7 +1372,7 @@ function openFiles(files) {
   // One unreadable file must never lose the rest of the drop.
   Promise.all(list.map(function (f) {
     return decode(f).then(function (img) {
-      var d = toPixels(img); d.name = baseName(f.name); d.size = f.size; return d;
+      var d = toPixels(img); d.name = baseName(f.name); d.size = f.size; d.handle = f.handle || null; return d;
     }).catch(function () { return { failed: f.name }; });
   })).then(function (all) {
     var bad = all.filter(function (d) { return d.failed; }).map(function (d) { return d.failed; });
@@ -1369,9 +1398,12 @@ function openFiles(files) {
       if (same.some(function (e, i) { return e.idx !== i; })) renumbered.push(key);
       var s = makeSprite(cleanName(key) || 'sprite', w, h, same.map(function (e) { return e.d.px; }), cleanName($('family').value));
       s.bytes = same.map(function (e) { return e.d.size || 0; });   // the size of the file as it arrived
+      s.handles = same.map(function (e) { return e.d.handle; }).filter(Boolean);  // the files themselves, for Save over
       S.sprites.push(s); made++;
       other.forEach(function (e) {
-        S.sprites.push(makeSprite((cleanName(key) || 'sprite') + '-' + e.idx, e.d.w, e.d.h, [e.d.px], cleanName($('family').value)));
+        var lone = makeSprite((cleanName(key) || 'sprite') + '-' + e.idx, e.d.w, e.d.h, [e.d.px], cleanName($('family').value));
+        lone.handles = e.d.handle ? [e.d.handle] : [];
+        S.sprites.push(lone);
         split++;
       });
     });
@@ -1493,6 +1525,104 @@ function exportAll(oneOnly, force) {
   });
 }
 
+// ---------- save over: write the frames back into the files they came from ----------
+// Chrome and Edge hand this page a writable handle for a file picked through the Open
+// dialog or dropped on the window. While the sprite still has files whose names match
+// what export would write, Save over writes straight into them: no downloads folder, no
+// moving files about after. Firefox and Safari never hand out handles, so there the
+// button never appears and Export frames stays the way.
+// true where the page can write files in place at all: Chrome and Edge have the picker,
+// the Mac app fills it in through mac/bridge.js, and drops can carry handles too
+var FS_OK = !!window.showOpenFilePicker ||
+  !!(window.DataTransferItem && DataTransferItem.prototype.getAsFileSystemHandle);
+function handleFor(s, name) {
+  var hs = s.handles || [];
+  for (var i = 0; i < hs.length; i++) if (hs[i] && hs[i].name === name) return hs[i];
+  return null;
+}
+function canSaveOver(s) {
+  if (!s || !s.handles || !s.handles.length) return false;
+  return exportNames(s).some(function (n) { return !!handleFor(s, n); });
+}
+function askWrite(h) {
+  var opt = { mode: 'readwrite' };
+  if (!h.queryPermission) return Promise.resolve(true);
+  return h.queryPermission(opt).then(function (p) {
+    if (p === 'granted') return true;
+    return h.requestPermission(opt).then(function (q) { return q === 'granted'; });
+  });
+}
+function writeFrame(s, i, h) {
+  return new Promise(function (res, rej) {
+    frameCanvas(s, i).toBlob(function (b) {
+      if (!b) { rej(new Error('could not encode the PNG')); return; }
+      h.createWritable().then(function (w) {
+        return w.write(b).then(function () { return w.close(); });
+      }).then(res, rej);
+    }, 'image/png');
+  });
+}
+// returns true when the checks refused it, so the button can arm a Save anyway press
+function saveOver(force) {
+  var s = spr(); if (!s) return false;
+  s.key = cleanName($('key').value) || 'sprite';
+  s.family = cleanName($('family').value) || 'creatures';
+  $('key').value = s.key; $('family').value = s.family;
+  touched(s); scheduleSave();
+
+  var r = checkSprite(s);
+  if (r.bad.length && !force) {
+    var plain = r.bad[0].replace(/<[^>]+>/g, '');
+    say('The packer would refuse this. ' + plain, 'bad');
+    redraw();
+    return true;
+  }
+
+  var names = exportNames(s);
+  var inPlace = [], fresh = [];
+  names.forEach(function (n, i) {
+    var h = handleFor(s, n);
+    if (h) inPlace.push({ i: i, name: n, h: h });
+    else fresh.push({ i: i, name: n });
+  });
+  // the name changed under the button between redraws: fall back to plain export
+  if (!inPlace.length) { exportAll(false, force); return false; }
+
+  var soft = countSoft(s);
+  var wrote = [], blocked = [], failed = [];
+  var chain = Promise.resolve();
+  inPlace.forEach(function (p) {
+    chain = chain.then(function () {
+      return askWrite(p.h).then(function (ok) {
+        if (!ok) { blocked.push(p.name); return; }
+        return writeFrame(s, p.i, p.h).then(
+          function () { wrote.push(p.name); },
+          function () { failed.push(p.name); });
+      }, function () { blocked.push(p.name); });
+    });
+  });
+  // a frame added since opening has no file yet, so it goes to downloads as before
+  fresh.forEach(function (p) { chain = chain.then(function () { return saveFrame(s, p.i, p.name); }); });
+  chain.then(function () {
+    if (wrote.length) s.bytes = [];   // what is on disk now is exactly what this editor writes
+    var list = function (a) { return a.join(', '); };
+    var bits = [];
+    if (wrote.length) bits.push('Saved over ' + list(wrote) + ' in place');
+    if (fresh.length) bits.push(list(fresh.map(function (p) { return p.name; })) + (fresh.length > 1 ? ' are new frames' : ' is a new frame') + ' with no file yet, downloaded instead');
+    if (blocked.length) bits.push('The browser held back ' + list(blocked) + '. It asks once per file: press Save over again');
+    if (failed.length) bits.push('Could not write ' + list(failed) + '. The file may have moved. Export frames still works');
+    var stale = (s.handles || []).filter(function (h) { return h && names.indexOf(h.name) < 0; }).map(function (h) { return h.name; });
+    if (wrote.length && stale.length) bits.push(list(stale) + ' on disk ' + (stale.length > 1 ? 'are' : 'is') + ' not a frame of this sprite any more. Delete ' + (stale.length > 1 ? 'them' : 'it') + ' yourself if it should go');
+    if (wrote.length && !blocked.length && !failed.length) {
+      bits.push('Run npm run pack-art' + (soft ? '. ' + soft + ' part see-through pixels were snapped on the way out' : ''));
+    }
+    say(bits.join('. '), (blocked.length || failed.length) ? 'bad' : 'good');
+    scheduleSave();
+    redraw();
+  });
+  return false;
+}
+
 // ---------- wiring ----------
 buildTools();
 setTool('pencil');
@@ -1525,7 +1655,24 @@ SCALES.forEach(function (sc) {
   $('scales').appendChild(b);
 });
 
-$('bOpen').onclick = function () { $('file').click(); };
+// the picker is what hands back writable handles, which is what makes Save over work.
+// A browser without it, or one that refuses it here, gets the plain input as before.
+var pickerBroken = false;
+$('bOpen').onclick = function () {
+  if (pickerBroken || !window.showOpenFilePicker) { $('file').click(); return; }
+  window.showOpenFilePicker({
+    multiple: true,
+    types: [{ description: 'PNG images', accept: { 'image/png': ['.png'] } }]
+  }).then(function (hs) {
+    return Promise.all(hs.map(function (h) {
+      return h.getFile().then(function (f) { f.handle = h; return f; });
+    })).then(function (files) { if (files.length) openFiles(files); });
+  }).catch(function (err) {
+    if (err && err.name === 'AbortError') return;   // the picker was closed, nothing to open
+    pickerBroken = true;
+    $('file').click();
+  });
+};
 $('file').onchange = function (e) { openFiles(e.target.files); e.target.value = ''; };
 $('fileFrame').onchange = function (e) {
   var s = spr(), files = Array.prototype.slice.call(e.target.files);
@@ -1579,6 +1726,23 @@ $('bClose').onclick = function () {
 $('bExport').onclick = function () { exportAll(false, false); };
 $('bExport1').onclick = function () { exportAll(true, false); };
 $('bForce').onclick = function () { exportAll(false, true); };
+// a refused save arms the button the way Close arms itself: a second press goes anyway
+var saveArmed = false, saveArmTimer = null;
+function disarmSave() {
+  saveArmed = false;
+  if (saveArmTimer) { clearTimeout(saveArmTimer); saveArmTimer = null; }
+  var b = $('bSave');
+  b.textContent = 'Save over'; b.className = '';
+}
+$('bSave').onclick = function () {
+  var forced = saveArmed;
+  disarmSave();
+  if (saveOver(forced)) {
+    saveArmed = true;
+    this.textContent = 'Save anyway?'; this.className = 'danger';
+    saveArmTimer = setTimeout(disarmSave, 4000);
+  }
+};
 $('key').oninput = function () { drawPathBar(); };
 $('key').onchange = function () {
   var s = spr(); if (!s) { drawPathBar(); return; }
@@ -1630,7 +1794,26 @@ window.addEventListener('dragover', function (e) { e.preventDefault(); });
 window.addEventListener('dragleave', function () { if (--dragDepth <= 0) { dragDepth = 0; $('drop').className = ''; } });
 window.addEventListener('drop', function (e) {
   e.preventDefault(); dragDepth = 0; $('drop').className = '';
-  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) openFiles(e.dataTransfer.files);
+  var dt = e.dataTransfer;
+  if (!dt) return;
+  // ask for writable handles while the event is still alive; the items are gone after it.
+  // Both calls per item have to happen now, before anything awaits.
+  if (dt.items && dt.items.length && dt.items[0].getAsFileSystemHandle) {
+    var picks = Array.prototype.map.call(dt.items, function (it) {
+      if (it.kind !== 'file') return Promise.resolve(null);
+      var f = it.getAsFile();
+      return it.getAsFileSystemHandle().then(function (h) {
+        if (f && h && h.kind === 'file') f.handle = h;
+        return f;
+      }, function () { return f; });
+    });
+    Promise.all(picks).then(function (files) {
+      files = files.filter(Boolean);
+      if (files.length) openFiles(files);
+    });
+    return;
+  }
+  if (dt.files && dt.files.length) openFiles(dt.files);
 });
 
 // keys
@@ -1640,6 +1823,11 @@ window.addEventListener('keydown', function (e) {
   var meta = e.metaKey || e.ctrlKey;
   if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if (meta && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (meta && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    if ($('bSave').style.display !== 'none' && !$('bSave').disabled) $('bSave').click(); else exportAll(false, false);
+    return;
+  }
   switch (e.key) {
     case 'b': case 'B': setTool('pencil'); break;
     case 'e': case 'E': setTool('eraser'); break;
@@ -1677,7 +1865,8 @@ window.EDITOR = {
   countSoft: countSoft, openFiles: openFiles, makeSprite: makeSprite, selectSprite: selectSprite,
   undo: undo, redo: redo, commit: commit, blank: blank, checkSprite: checkSprite,
   cleanName: cleanName, saveStore: saveStore, loadStore: loadStore, flipFrame: flipFrame,
-  nudge: nudge, exportNames: exportNames, STORE_KEY: STORE_KEY
+  nudge: nudge, exportNames: exportNames, STORE_KEY: STORE_KEY,
+  saveOver: saveOver, canSaveOver: canSaveOver, handleFor: handleFor
 };
 </script>
 </body>
