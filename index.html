@@ -295,6 +295,7 @@
         </div>
         <div class="row hint" id="selHint" style="display:none">
           Drag inside the box to move those pixels. Arrow keys nudge. Delete clears. Esc drops the box.
+          Cmd+C copies it and Cmd+V pastes, into this sprite or another one.
         </div>
       </div>
 
@@ -613,6 +614,48 @@ function nudge(dx, dy) {
   }
   s.frames[s.cur] = out;
   redraw();
+}
+
+// ---------- copy and paste ----------
+// one clipboard for the whole page, so a box can travel between sprites
+var CLIP = null;
+function copySel(cut) {
+  var s = spr(), f = frm(), b = S.sel;
+  if (!s || !b) { say('Nothing selected. Drag a box with the Select tool first.', 'bad'); return; }
+  var buf = new Uint8ClampedArray(b.w * b.h * 4);
+  for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
+    var si = ((b.y + y) * s.w + (b.x + x)) * 4, di = (y * b.w + x) * 4;
+    buf[di] = f[si]; buf[di + 1] = f[si + 1]; buf[di + 2] = f[si + 2]; buf[di + 3] = f[si + 3];
+  }
+  CLIP = { w: b.w, h: b.h, buf: buf };
+  if (cut) clearSelection();
+  say((cut ? 'Cut ' : 'Copied ') + b.w + ' by ' + b.h + '. Cmd+V puts it down, here or in another sprite.', 'good');
+}
+function pasteClip() {
+  var s = spr();
+  if (!CLIP) { say('Nothing copied yet. Drag a box with the Select tool and press Cmd+C.', 'bad'); return; }
+  if (!s) { say('Nothing open to paste into', 'bad'); return; }
+  dropSelection();   // anything still floating is set down first
+  var w = Math.min(CLIP.w, s.w), h = Math.min(CLIP.h, s.h);
+  var buf = CLIP.buf.slice();
+  if (w !== CLIP.w || h !== CLIP.h) {
+    buf = new Uint8ClampedArray(w * h * 4);
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
+      var si = (y * CLIP.w + x) * 4, di = (y * w + x) * 4;
+      buf[di] = CLIP.buf[si]; buf[di + 1] = CLIP.buf[si + 1]; buf[di + 2] = CLIP.buf[si + 2]; buf[di + 3] = CLIP.buf[si + 3];
+    }
+  }
+  // the paste lands centred as a floating box, exactly like pixels mid-move: drag it
+  // into place, and it sets down when the box is dropped
+  setTool('select');
+  var px = Math.floor((s.w - w) / 2), py = Math.floor((s.h - h) / 2);
+  S.sel = { x: px, y: py, w: w, h: h };
+  lift = { buf: buf, w: w, h: h, base: frm().slice() };
+  stampLift(px, py);
+  $('selHint').style.display = 'flex';
+  redraw();
+  say('Pasted ' + w + ' by ' + h + (w !== CLIP.w || h !== CLIP.h ? ', trimmed to fit this sprite' : '') +
+    '. Drag it into place; Esc sets it down.', 'good');
 }
 
 // ---------- drawing the big canvas ----------
@@ -1226,8 +1269,8 @@ function forgetAll() {
 
 // ---------- tools ----------
 var TOOLS = [
-  ['pencil', 'Pencil', 'B'], ['eraser', 'Eraser', 'E'], ['fill', 'Fill', 'F'],
-  ['pick', 'Pick', 'I'], ['select', 'Select', 'V']
+  ['pencil', 'Pencil', 'D'], ['eraser', 'Eraser', 'E'], ['fill', 'Fill', 'F'],
+  ['line', 'Line', 'L'], ['pick', 'Pick', 'I'], ['select', 'Select', 'V']
 ];
 function buildTools() {
   var g = $('tools');
@@ -1284,10 +1327,29 @@ cv.addEventListener('pointerdown', function (e) {
     redraw();
     return;
   }
+  if (S.tool === 'line') {
+    // anchor the line and keep a clean copy of the frame to redraw it against
+    drag = {
+      mode: 'line', erase: e.button === 2, base: frm().slice(),
+      x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y))
+    };
+    paint(drag.x0, drag.y0, drag.erase);
+    redraw();
+    return;
+  }
   drag = { mode: 'draw', erase: S.tool === 'eraser' || e.button === 2, lx: p.x, ly: p.y };
   paint(p.x, p.y, drag.erase);
   redraw();
 });
+// the line tool only makes the lines pixel art wants: flat, upright, or a true diagonal.
+// The cursor's angle is rounded to the nearest of the three.
+function snapEnd(x0, y0, x, y) {
+  var dx = x - x0, dy = y - y0, ax = Math.abs(dx), ay = Math.abs(dy);
+  if (ax >= 2 * ay) return { x: x, y: y0 };
+  if (ay >= 2 * ax) return { x: x0, y: y };
+  var n = Math.round((ax + ay) / 2);   // one step across for every step down
+  return { x: x0 + (dx < 0 ? -n : n), y: y0 + (dy < 0 ? -n : n) };
+}
 cv.addEventListener('pointermove', function (e) {
   var s = spr(); if (!s) return;
   var p = pxAt(e);
@@ -1296,6 +1358,11 @@ cv.addEventListener('pointermove', function (e) {
   if (drag.mode === 'draw') {
     line(drag.lx, drag.ly, p.x, p.y, drag.erase);
     drag.lx = p.x; drag.ly = p.y;
+  } else if (drag.mode === 'line') {
+    var q = snapEnd(drag.x0, drag.y0,
+      Math.max(0, Math.min(s.w - 1, p.x)), Math.max(0, Math.min(s.h - 1, p.y)));
+    s.frames[s.cur] = drag.base.slice();
+    line(drag.x0, drag.y0, q.x, q.y, drag.erase);
   } else if (drag.mode === 'box') {
     var x1 = Math.max(0, Math.min(s.w - 1, p.x)), y1 = Math.max(0, Math.min(s.h - 1, p.y));
     S.sel = {
@@ -1310,7 +1377,7 @@ cv.addEventListener('pointermove', function (e) {
 function endDrag() {
   if (!drag) return;
   var was = drag.mode; drag = null;
-  if (was === 'draw' || was === 'move') commit();
+  if (was === 'draw' || was === 'move' || was === 'line') commit();
   redraw();
 }
 cv.addEventListener('pointerup', endDrag);
@@ -1822,6 +1889,9 @@ window.addEventListener('keydown', function (e) {
   if (t === 'INPUT' || t === 'TEXTAREA') return;
   var meta = e.metaKey || e.ctrlKey;
   if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+  if (meta && e.key.toLowerCase() === 'c') { e.preventDefault(); copySel(false); return; }
+  if (meta && e.key.toLowerCase() === 'x') { e.preventDefault(); copySel(true); return; }
+  if (meta && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClip(); return; }
   if (meta && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
   if (meta && e.key.toLowerCase() === 's') {
     e.preventDefault();
@@ -1829,9 +1899,10 @@ window.addEventListener('keydown', function (e) {
     return;
   }
   switch (e.key) {
-    case 'b': case 'B': setTool('pencil'); break;
+    case 'd': case 'D': case 'b': case 'B': setTool('pencil'); break;
     case 'e': case 'E': setTool('eraser'); break;
     case 'f': case 'F': setTool('fill'); break;
+    case 'l': case 'L': setTool('line'); break;
     case 'i': case 'I': setTool('pick'); break;
     case 'v': case 'V': setTool('select'); break;
     case 'z': case 'Z': if (e.shiftKey) { redo(); } break;
@@ -1866,7 +1937,8 @@ window.EDITOR = {
   undo: undo, redo: redo, commit: commit, blank: blank, checkSprite: checkSprite,
   cleanName: cleanName, saveStore: saveStore, loadStore: loadStore, flipFrame: flipFrame,
   nudge: nudge, exportNames: exportNames, STORE_KEY: STORE_KEY,
-  saveOver: saveOver, canSaveOver: canSaveOver, handleFor: handleFor
+  saveOver: saveOver, canSaveOver: canSaveOver, handleFor: handleFor,
+  copySel: copySel, pasteClip: pasteClip, snapEnd: snapEnd, setTool: setTool
 };
 </script>
 </body>

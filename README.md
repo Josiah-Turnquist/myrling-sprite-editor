@@ -165,14 +165,20 @@ The blue line down the middle is where the game centres the creature.
 
 | Tool | Key | What it does |
 | --- | --- | --- |
-| Pencil | B | Draw with the current colour. Drag for a line. |
+| Pencil | D | Draw with the current colour. Drag for a freehand line. |
 | Eraser | E | Clear back to nothing. Right click does this with any tool. |
 | Fill | F | Flood the touching pixels of the same colour. |
+| Line | L | Drag a straight line. It only makes the lines pixel art wants: flat, upright, or a true one-for-one diagonal, whichever the drag is closest to. |
 | Pick | I | Take the colour under the pointer, then go back to the pencil. |
 | Select | V | Drag a box, then drag inside it to move those pixels. |
 
 With a box in place, painting stays inside it. Arrow keys nudge the box. With no box, arrow
 keys move the whole picture. Delete clears what is in the box. Esc drops the box.
+
+`Cmd + C` (or `Ctrl + C`) copies the pixels in the box, `Cmd + X` cuts them, and `Cmd + V`
+pastes — into the same sprite or a different one, since the clipboard travels between
+open sprites. A paste lands centred as a floating box: drag it into place and it sets
+down when the box is dropped. Pasting into a smaller sprite trims to fit and says so.
 
 **Flip** mirrors the frame left to right. Creatures are always drawn facing right and the
 game flips them itself when they walk the other way, so this is for fixing one you drew
