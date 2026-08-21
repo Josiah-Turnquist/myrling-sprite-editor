@@ -221,7 +221,9 @@ Zoom with the wheel over the canvas, with `-` and `+`, or with Fit.
 
 ## Frames and the walk cycle
 
-The frames row is under the canvas. Add, copy and delete are there. **Onion skin** shows
+The frames row is under the canvas. Add, copy and delete are there, and the frames
+rearrange by dragging: pick one up, and the blue edge on its neighbour says which side
+it will land on. The numbers follow the new order. **Onion skin** shows
 the frame before the current one faintly underneath, so a leg can be moved a known
 distance. **Play** runs the frames in the game size view at the speed on the slider, which
 is the only honest way to tell whether a walk cycle works.

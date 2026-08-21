@@ -128,6 +128,8 @@
     background:#0d0f13; border:1px solid var(--line);
   }
   .fr.on canvas{border-color:#7d9dd0; box-shadow:0 0 0 1px #7d9dd0}
+  .fr.markL{box-shadow:-3px 0 0 0 #6b86ad}
+  .fr.markR{box-shadow:3px 0 0 0 #6b86ad}
   .fr div{font-size:10px; color:var(--dim); margin-top:1px}
   .fr.on div{color:var(--hot)}
 
@@ -879,6 +881,11 @@ function drawFrames() {
   var s = spr(), wrap = $('frames');
   wrap.innerHTML = '';
   if (!s) return;
+  var unmark = function () {
+    Array.prototype.forEach.call(wrap.children, function (n) {
+      n.className = String(n.className).replace(/ mark[LR]/g, '');
+    });
+  };
   s.frames.forEach(function (f, i) {
     var d = document.createElement('div');
     d.className = 'fr' + (i === s.cur ? ' on' : '');
@@ -891,6 +898,32 @@ function drawFrames() {
     lab.textContent = i;
     d.appendChild(c); d.appendChild(lab);
     d.onclick = function () { dropSelection(); s.cur = i; redraw(); };
+    // frames rearrange by dragging; the blue edge says which side it will land on
+    d.draggable = true;
+    d.title = 'Drag to another spot to reorder the frames';
+    d.ondragstart = function (e) {
+      frameDrag = i;
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', String(i)); } catch (err) { /* some engines refuse */ }
+    };
+    d.ondragend = function () { frameDrag = null; unmark(); };
+    d.ondragover = function (e) {
+      if (frameDrag === null) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      unmark();
+      var r = d.getBoundingClientRect();
+      d.className += (e.clientX < r.left + r.width / 2) ? ' markL' : ' markR';
+    };
+    d.ondragleave = function () { if (frameDrag !== null) unmark(); };
+    d.ondrop = function (e) {
+      if (frameDrag === null) return;
+      e.preventDefault(); e.stopPropagation();
+      var r = d.getBoundingClientRect();
+      var to = i + (e.clientX < r.left + r.width / 2 ? 0 : 1);
+      moveFrame(frameDrag, to);
+      frameDrag = null;
+    };
     wrap.appendChild(d);
   });
   var mk = function (label, fn, title) {
@@ -906,6 +939,19 @@ function drawFrames() {
     dropSelection(); s.frames.splice(s.cur, 1); s.cur = Math.min(s.cur, s.frames.length - 1); commit(); redraw();
   });
   mk('Add from file', function () { $('fileFrame').click(); }, 'Load a PNG as another frame of this sprite');
+}
+
+var frameDrag = null;   // the frame being dragged along the row, by index
+function moveFrame(from, to) {
+  var s = spr(); if (!s) return;
+  if (from === to || from + 1 === to) { drawFrames(); return; }   // dropped where it already sits
+  dropSelection();
+  var f = s.frames.splice(from, 1)[0];
+  if (to > from) to--;
+  s.frames.splice(to, 0, f);
+  s.cur = to;
+  commit(); checkAlpha(); redraw();
+  say('Frame moved to spot ' + to + '. The numbers follow the new order.', 'good');
 }
 
 function colourList(s, which) {
@@ -2174,11 +2220,16 @@ $('hex').onchange = function () {
 
 // drag and drop, anywhere on the window
 var dragDepth = 0;
-window.addEventListener('dragenter', function (e) { e.preventDefault(); dragDepth++; $('drop').className = 'show'; });
+window.addEventListener('dragenter', function (e) {
+  e.preventDefault();
+  if (frameDrag !== null) return;   // a frame on the move is not files arriving
+  dragDepth++; $('drop').className = 'show';
+});
 window.addEventListener('dragover', function (e) { e.preventDefault(); });
 window.addEventListener('dragleave', function () { if (--dragDepth <= 0) { dragDepth = 0; $('drop').className = ''; } });
 window.addEventListener('drop', function (e) {
   e.preventDefault(); dragDepth = 0; $('drop').className = '';
+  if (frameDrag !== null) { frameDrag = null; drawFrames(); return; }   // let go outside the row: nothing moves
   var dt = e.dataTransfer;
   if (!dt) return;
   // ask for writable handles while the event is still alive; the items are gone after it.
@@ -2269,7 +2320,7 @@ window.EDITOR = {
   nudge: nudge, exportNames: exportNames, STORE_KEY: STORE_KEY,
   saveOver: saveOver, canSaveOver: canSaveOver, handleFor: handleFor,
   copySel: copySel, pasteClip: pasteClip, snapEnd: snapEnd, setTool: setTool,
-  showKeys: showKeys, drawPathBar: drawPathBar
+  showKeys: showKeys, drawPathBar: drawPathBar, moveFrame: moveFrame
 };
 </script>
 </body>
