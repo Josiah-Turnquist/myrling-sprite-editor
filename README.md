@@ -133,14 +133,19 @@ the packer would refuse it as it is.
 
 ## The rules the game holds you to
 
-The checks panel on the right is live, and it splits the same way the packer does.
+The checks panel on the right is live, and it splits the same way the packer does. All
+of the refusals answer to one checkbox above the panel: **Hold me to the game's rules**,
+on out of the box. Untick it and the editor stops refusing soft pixels, extra colours
+and non-square pictures — what you paint, part see-through pixels included, is exactly
+what exports. For Eldermyr art leave it on, because the packer itself still refuses
+those files.
 
 **Red is refused.** The packer writes nothing and exits with an error:
 
-- **A part see-through pixel.** Every pixel is fully solid or fully clear. This editor
-  never makes one, but a file you open can carry them, and then a bar appears at the top
-  with a button to snap them. Anything at half strength or more becomes solid, the rest
-  becomes clear.
+- **A part see-through pixel.** Every pixel is fully solid or fully clear. With the rules
+  on this editor never makes one, but a file you open can carry them, and then a bar
+  appears at the top with a button to snap them. Anything at half strength or more becomes
+  solid, the rest becomes clear.
 - **Not square.** A picture that is not square gets squashed.
 - **More than 32 colours.** A count that high means the picture was resized or blurred
   rather than drawn cell by cell.
@@ -170,7 +175,7 @@ The blue line down the middle is where the game centres the creature.
 | Eraser | E | Clear back to nothing. Right click does this with any tool. |
 | Fill | F | Flood the touching pixels of the same colour. |
 | Line | L | Drag a straight line. It only makes the lines pixel art wants: flat, upright, or a true one-for-one diagonal, whichever the drag is closest to. |
-| Pick | I | Take the colour under the pointer, then go back to the pencil. |
+| Pick | S | Take the colour under the pointer, then go back to the pencil. |
 | Select | V | Drag a box, then drag inside it to move those pixels. |
 
 With a box in place, painting stays inside it. Arrow keys nudge the box. With no box, arrow
@@ -185,11 +190,26 @@ down when the box is dropped. Pasting into a smaller sprite trims to fit and say
 game flips them itself when they walk the other way, so this is for fixing one you drew
 facing the wrong way.
 
+Every tool key, and the onion skin and grid toggles, can be rebound: click the key in the
+**Keys** panel at the bottom right, press the new one, and it is kept in your browser. If
+the new key already did another job, the two swap, so nothing is ever unreachable. One
+button puts them all back.
+
+The side columns are draggable at their inner edges if the sprite list or the panels need
+more room; double clicking a divider puts it back.
+
 Undo is `Cmd + Z` or `Ctrl + Z`, redo is `Shift + Z`. It goes back 200 steps, or fewer on a
 very large sprite so the undo stack cannot eat all the memory.
 
 The palette fills up from the colours already in the open sprite, most used first. The
 colour square and the hex box next to it set what you draw with.
+
+**Opacity**, under the colour, sets how hard the paint lands: at 50%, red over white
+leaves pink. With the game's rules on, a painted pixel always comes out fully solid —
+over empty ground the colour lands at full strength, because the game refuses part
+see-through pixels. With the rules off it is true alpha blending, and the softness is
+kept. Either way a stroke blends each pixel once, so a slow drag does not darken its
+own line.
 
 Zoom with the wheel over the canvas, with `-` and `+`, or with Fit.
 

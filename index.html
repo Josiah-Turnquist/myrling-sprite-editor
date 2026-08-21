@@ -167,6 +167,16 @@
   .hint{color:var(--dim); font-size:10px; line-height:1.6}
   #keptBox{border-top:1px solid var(--line); padding:8px; line-height:1.6}
   #keptBox .t{color:var(--text)}
+  .keycap{
+    font:inherit; color:var(--text); background:var(--panel2);
+    border:1px solid var(--line); border-radius:3px; padding:0 5px; margin-right:4px;
+    cursor:pointer; min-width:20px;
+  }
+  .keycap:hover{border-color:#4d6386; color:var(--hot)}
+  .keycap.waiting{border-color:var(--warn); color:var(--warn)}
+  #keyRows span{display:inline-block; margin:0 10px 4px 0}
+  .vsplit{flex:0 0 5px; cursor:col-resize; background:var(--bg)}
+  .vsplit:hover,.vsplit.held{background:#4d6386}
 </style>
 </head>
 <body>
@@ -225,6 +235,8 @@
       </div>
     </div>
 
+    <div class="vsplit" id="splitL" title="Drag to make the sprite list wider or narrower. Double click puts it back."></div>
+
     <div class="col" id="stage">
       <div id="alphabar">
         <span id="alphaText"></span>
@@ -264,6 +276,8 @@
       <div class="hd" id="framesHd" style="display:none">Frames</div>
       <div id="frames" style="display:none"></div>
     </div>
+
+    <div class="vsplit" id="splitR" title="Drag to make the panels wider or narrower. Double click puts it back."></div>
 
     <div class="col" id="side">
       <div class="hd">Game size</div>
@@ -305,18 +319,35 @@
           <input id="pick" type="color" value="#8bc250">
           <input id="hex" type="text" class="mono" style="width:82px" value="#8bc250">
         </div>
+        <div class="row" style="margin-top:6px; flex-wrap:nowrap">
+          <span class="dim">Opacity</span>
+          <input id="alpha" type="range" min="5" max="100" value="100" style="flex:1; min-width:0"
+                 title="Paint blends with what is underneath. Over a colour the pixel stays solid.">
+          <span id="alphaPct" class="mono dim" style="flex:0 0 36px; text-align:right; font-size:11px">100%</span>
+        </div>
         <div class="row" style="margin-top:8px"><div id="palette"></div></div>
         <div class="row hint" id="palHint"></div>
       </div>
 
       <div class="hd">Checks</div>
+      <div class="pad" style="padding-bottom:2px">
+        <label class="hint" style="display:flex; gap:7px; cursor:pointer">
+          <input type="checkbox" id="rulesBox" checked style="margin-top:2px">
+          <span>Hold me to the game's rules: hard pixels, 32 colours, square. Untick to draw
+          free, and soft, part see-through pixels are kept exactly as painted.</span>
+        </label>
+      </div>
       <div class="pad" id="checks"></div>
 
       <div class="hd">Keys</div>
-      <div class="pad hint mono">
-        B pencil &nbsp; E eraser &nbsp; F fill &nbsp; I pick &nbsp; V select<br>
-        Cmd or Ctrl + Z undo &nbsp; Shift + Z redo<br>
-        - and + zoom, or the wheel &nbsp; O onion &nbsp; G grid &nbsp; Space play
+      <div class="pad hint">
+        <div id="keyRows" class="mono"></div>
+        <div class="mono" style="margin-top:6px">
+          Cmd or Ctrl + Z undo &nbsp; Shift + Z redo<br>
+          Cmd+C copy &nbsp; Cmd+X cut &nbsp; Cmd+V paste &nbsp; Cmd+S save<br>
+          - and + zoom, or the wheel &nbsp; Space play
+        </div>
+        <div class="row" style="margin-top:6px"><button id="bKeysReset" style="width:100%">Back to the usual keys</button></div>
       </div>
     </div>
   </main>
@@ -373,6 +404,7 @@ var S = {
   si: -1,
   tool: 'pencil',
   color: [139, 194, 80],
+  alpha: 100,       // brush opacity, percent
   zoom: 16,
   grid: true, guides: true, onion: true,
   sel: null,        // { x, y, w, h }
@@ -491,9 +523,36 @@ function paint(x, y, erase) {
   var s = spr(), f = frm();
   if (!inside(s, x, y)) return;
   if (S.sel && !ptInSel(x, y)) return;   // a box in place limits where paint lands
-  if (erase) set(f, s.w, x, y, 0, 0, 0, 0);
-  else set(f, s.w, x, y, S.color[0], S.color[1], S.color[2], 255);
+  if (erase) { set(f, s.w, x, y, 0, 0, 0, 0); return; }
+  if (S.alpha >= 100) { set(f, s.w, x, y, S.color[0], S.color[1], S.color[2], 255); return; }
+  // one blend per pixel per stroke, or a slow drag would darken its own line
+  if (strokeSeen) {
+    var si = y * s.w + x;
+    if (strokeSeen[si]) return;
+    strokeSeen[si] = 1;
+  }
+  blendPx(f, s.w, x, y, S.color, S.alpha / 100);
 }
+// source over: the brush at opacity o laid over what the pixel already holds. With the
+// game's rules on, a painted pixel always comes out solid: over a colour it blends, over
+// nothing it lands at full strength, because the packer refuses part see-through pixels.
+function blendPx(f, w, x, y, c, o) {
+  var i = (y * w + x) * 4;
+  var da = f[i + 3] / 255;
+  if (rulesOn()) {
+    f[i]     = Math.round(c[0] * o + f[i] * da * (1 - o) + c[0] * (1 - da) * (1 - o));
+    f[i + 1] = Math.round(c[1] * o + f[i + 1] * da * (1 - o) + c[1] * (1 - da) * (1 - o));
+    f[i + 2] = Math.round(c[2] * o + f[i + 2] * da * (1 - o) + c[2] * (1 - da) * (1 - o));
+    f[i + 3] = 255;
+    return;
+  }
+  var oa = o + da * (1 - o);
+  f[i]     = Math.round((c[0] * o + f[i] * da * (1 - o)) / oa);
+  f[i + 1] = Math.round((c[1] * o + f[i + 1] * da * (1 - o)) / oa);
+  f[i + 2] = Math.round((c[2] * o + f[i + 2] * da * (1 - o)) / oa);
+  f[i + 3] = Math.round(oa * 255);
+}
+var strokeSeen = null;   // marks pixels already blended in the stroke under way
 function line(x0, y0, x1, y1, erase) {
   var dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
   var sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, e = dx - dy;
@@ -510,7 +569,7 @@ function fill(x, y) {
   if (!inside(s, x, y)) return;
   var t = get(f, s.w, x, y);
   var want = [S.color[0], S.color[1], S.color[2], 255];
-  if (t[3] === want[3] && t[0] === want[0] && t[1] === want[1] && t[2] === want[2]) return;
+  if (S.alpha >= 100 && t[3] === want[3] && t[0] === want[0] && t[1] === want[1] && t[2] === want[2]) return;
   var lo = S.sel ? S.sel : { x: 0, y: 0, w: s.w, h: s.h };
   var st = [[x, y]], seen = new Uint8Array(s.w * s.h);
   while (st.length) {
@@ -521,7 +580,8 @@ function fill(x, y) {
     if (c[3] !== t[3]) continue;
     if (t[3] !== 0 && (c[0] !== t[0] || c[1] !== t[1] || c[2] !== t[2])) continue;
     seen[py * s.w + px] = 1;
-    set(f, s.w, px, py, want[0], want[1], want[2], 255);
+    if (S.alpha >= 100) set(f, s.w, px, py, want[0], want[1], want[2], 255);
+    else blendPx(f, s.w, px, py, S.color, S.alpha / 100);
     st.push([px + 1, py], [px - 1, py], [px, py + 1], [px, py - 1]);
   }
 }
@@ -578,7 +638,7 @@ function stampLift(nx, ny) {
     var si = (y * lift.w + x) * 4;
     if (lift.buf[si + 3] === 0) continue;
     var di = (ty * s.w + tx) * 4;
-    f[di] = lift.buf[si]; f[di + 1] = lift.buf[si + 1]; f[di + 2] = lift.buf[si + 2]; f[di + 3] = 255;
+    f[di] = lift.buf[si]; f[di + 1] = lift.buf[si + 1]; f[di + 2] = lift.buf[si + 2]; f[di + 3] = lift.buf[si + 3];
   }
   S.sel.x = nx; S.sel.y = ny;
 }
@@ -881,14 +941,18 @@ function checkSprite(s) {
   if (!cleanName(s.key)) bad.push('The name is empty. A file has to be called <b>name-0.png</b>.');
   if (!cleanName(s.family)) bad.push('The folder name is empty. It is the folder under <b>art-live</b>, usually <b>creatures</b>.');
 
-  if (s.w !== s.h) bad.push('<b>Not square</b>, ' + s.w + ' by ' + s.h + '. A sprite is a square grid.');
+  if (rulesOn()) {
+    if (s.w !== s.h) bad.push('<b>Not square</b>, ' + s.w + ' by ' + s.h + '. A sprite is a square grid.');
 
-  var soft = countSoft(s);
-  if (soft) bad.push('<b>' + soft + ' part see-through pixels.</b> Every pixel has to be fully solid or fully clear.');
-  else ok.push('Every pixel is fully solid or fully clear.');
+    var soft = countSoft(s);
+    if (soft) bad.push('<b>' + soft + ' part see-through pixels.</b> Every pixel has to be fully solid or fully clear.');
+    else ok.push('Every pixel is fully solid or fully clear.');
 
-  if (all > 32) bad.push('<b>' + all + ' colours</b> across the frames, and the packer stops at 32. That many means the picture was resized or blurred rather than drawn.');
-  else ok.push(here + ' colours in this frame, ' + all + ' across all frames.');
+    if (all > 32) bad.push('<b>' + all + ' colours</b> across the frames, and the packer stops at 32. That many means the picture was resized or blurred rather than drawn.');
+    else ok.push(here + ' colours in this frame, ' + all + ' across all frames.');
+  } else {
+    ok.push('The game rules are off. ' + here + ' colours in this frame, and soft pixels are kept as painted.');
+  }
 
   var empties = [];
   s.frames.forEach(function (f, i) { if (!anyInk(f)) empties.push(i); });
@@ -1270,8 +1334,8 @@ function forgetAll() {
 
 // ---------- tools ----------
 var TOOLS = [
-  ['pencil', 'Pencil', 'D'], ['eraser', 'Eraser', 'E'], ['fill', 'Fill', 'F'],
-  ['line', 'Line', 'L'], ['pick', 'Pick', 'I'], ['select', 'Select', 'V']
+  ['pencil', 'Pencil'], ['eraser', 'Eraser'], ['fill', 'Fill'],
+  ['line', 'Line'], ['pick', 'Pick'], ['select', 'Select']
 ];
 function buildTools() {
   var g = $('tools');
@@ -1281,10 +1345,81 @@ function buildTools() {
     b.className = 'tool' + (S.tool === t[0] ? ' on' : '');
     b.innerHTML = '<span></span><span class="k"></span>';
     b.children[0].textContent = t[1];
-    b.children[1].textContent = t[2];
+    b.children[1].textContent = (KEYS[t[0]] || '').toUpperCase();
     b.onclick = function () { setTool(t[0]); };
     g.appendChild(b);
   });
+}
+
+// ---------- the keys, yours to change ----------
+// every single-letter key lives here; click one in the Keys panel and press a new one.
+// The choice is kept in the browser, apart from the sprites, so Forget all spares it.
+var KEY_ACTIONS = [
+  ['pencil', 'Pencil', function () { setTool('pencil'); }],
+  ['eraser', 'Eraser', function () { setTool('eraser'); }],
+  ['fill', 'Fill', function () { setTool('fill'); }],
+  ['line', 'Line', function () { setTool('line'); }],
+  ['pick', 'Pick', function () { setTool('pick'); }],
+  ['select', 'Select', function () { setTool('select'); }],
+  ['onion', 'Onion skin', function () { $('bOnion').click(); }],
+  ['grid', 'Grid', function () { $('bGrid').click(); }]
+];
+var KEY_DEFAULTS = { pencil: 'd', eraser: 'e', fill: 'f', line: 'l', pick: 's', select: 'v', onion: 'o', grid: 'g' };
+var KEYS_KEY = 'eldermyr-sprite-editor-keys-v1';
+function loadKeys() {
+  var out = {}, a;
+  for (a in KEY_DEFAULTS) out[a] = KEY_DEFAULTS[a];
+  try {
+    var kept = JSON.parse(window.localStorage.getItem(KEYS_KEY) || '{}');
+    for (a in kept) if (KEY_DEFAULTS[a] && /^[a-z0-9]$/.test(String(kept[a]))) out[a] = String(kept[a]);
+  } catch (e) { /* unreadable is the same as unset */ }
+  return out;
+}
+var KEYS = loadKeys();
+function saveKeys() {
+  try { window.localStorage.setItem(KEYS_KEY, JSON.stringify(KEYS)); } catch (e) { /* nowhere to keep it */ }
+}
+var keyWait = null;   // the action waiting for its new key
+function drawKeys() {
+  var box = $('keyRows');
+  box.innerHTML = '';
+  KEY_ACTIONS.forEach(function (a) {
+    var row = document.createElement('span');
+    var cap = document.createElement('button');
+    cap.className = 'keycap' + (keyWait === a[0] ? ' waiting' : '');
+    cap.textContent = keyWait === a[0] ? '?' : KEYS[a[0]].toUpperCase();
+    cap.title = 'Press this, then the key ' + a[1].toLowerCase() + ' should answer to';
+    cap.onclick = function () {
+      keyWait = keyWait === a[0] ? null : a[0];
+      drawKeys();
+      if (keyWait) say('Press a key for ' + a[1].toLowerCase() + '. Esc keeps it as it is.');
+    };
+    row.appendChild(cap);
+    row.appendChild(document.createTextNode(a[1].toLowerCase()));
+    box.appendChild(row);
+  });
+}
+function assignKey(raw) {
+  var act = keyWait;
+  keyWait = null;
+  var k = String(raw).toLowerCase();
+  if (raw === 'Escape' || !/^[a-z0-9]$/.test(k)) {
+    drawKeys();
+    if (raw !== 'Escape') say('One letter or digit, please. The key stays as it was.', 'bad');
+    else say('Kept as it was');
+    return;
+  }
+  var label = '', swapped = null;
+  KEY_ACTIONS.forEach(function (a) { if (a[0] === act) label = a[1]; });
+  // a key already doing another job swaps, so no two things ever answer to one key
+  for (var a in KEYS) if (a !== act && KEYS[a] === k) { KEYS[a] = KEYS[act]; swapped = a; }
+  KEYS[act] = k;
+  saveKeys(); drawKeys(); buildTools();
+  var msg = label + ' is ' + k.toUpperCase() + ' now';
+  if (swapped) {
+    KEY_ACTIONS.forEach(function (a) { if (a[0] === swapped) msg += ', and ' + a[1].toLowerCase() + ' took ' + KEYS[swapped].toUpperCase(); });
+  }
+  say(msg, 'good');
 }
 function setTool(t) {
   if (t !== 'select') dropSelection();
@@ -1334,10 +1469,12 @@ cv.addEventListener('pointerdown', function (e) {
       mode: 'line', erase: e.button === 2, base: frm().slice(),
       x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y))
     };
+    strokeSeen = new Uint8Array(s.w * s.h);
     paint(drag.x0, drag.y0, drag.erase);
     redraw();
     return;
   }
+  strokeSeen = new Uint8Array(s.w * s.h);
   drag = { mode: 'draw', erase: S.tool === 'eraser' || e.button === 2, lx: p.x, ly: p.y };
   paint(p.x, p.y, drag.erase);
   redraw();
@@ -1363,6 +1500,7 @@ cv.addEventListener('pointermove', function (e) {
     var q = snapEnd(drag.x0, drag.y0,
       Math.max(0, Math.min(s.w - 1, p.x)), Math.max(0, Math.min(s.h - 1, p.y)));
     s.frames[s.cur] = drag.base.slice();
+    strokeSeen = new Uint8Array(s.w * s.h);
     line(drag.x0, drag.y0, q.x, q.y, drag.erase);
   } else if (drag.mode === 'box') {
     var x1 = Math.max(0, Math.min(s.w - 1, p.x)), y1 = Math.max(0, Math.min(s.h - 1, p.y));
@@ -1377,6 +1515,7 @@ cv.addEventListener('pointermove', function (e) {
 });
 function endDrag() {
   if (!drag) return;
+  strokeSeen = null;
   var was = drag.mode; drag = null;
   if (was === 'draw' || was === 'move' || was === 'line') commit();
   redraw();
@@ -1490,7 +1629,7 @@ function checkAlpha() {
   var s = spr();
   var bar = $('alphabar');
   if (!s) { bar.className = ''; return; }
-  var n = countSoft(s);
+  var n = rulesOn() ? countSoft(s) : 0;
   if (!n || s.softDismissed) { bar.className = ''; return; }
   $('alphaText').textContent = 'This sprite has ' + n + ' pixels that are only part see-through. ' +
     'The game needs every pixel fully solid or fully clear, so it will refuse this as it is.';
@@ -1538,8 +1677,13 @@ function frameCanvas(s, i) {
   var cc = c.getContext('2d');
   var id = cc.createImageData(s.w, s.h);
   var src = s.frames[i];
-  // last line of defence: nothing leaves here part see-through
+  // with the rules on, nothing leaves here part see-through; with them off, the file
+  // keeps exactly what was painted
   for (var j = 0; j < src.length; j += 4) {
+    if (!rulesOn()) {
+      id.data[j] = src[j]; id.data[j + 1] = src[j + 1]; id.data[j + 2] = src[j + 2]; id.data[j + 3] = src[j + 3];
+      continue;
+    }
     var a = src[j + 3] >= 128 ? 255 : 0;
     id.data[j] = a ? src[j] : 0;
     id.data[j + 1] = a ? src[j + 1] : 0;
@@ -1581,7 +1725,7 @@ function exportAll(oneOnly, force) {
 
   var names = exportNames(s);
   var idx = oneOnly ? [s.cur] : s.frames.map(function (_, i) { return i; });
-  var soft = countSoft(s);
+  var soft = rulesOn() ? countSoft(s) : 0;
   var chain = Promise.resolve();
   idx.forEach(function (i) { chain = chain.then(function () { return saveFrame(s, i, names[i]); }); });
   chain.then(function () {
@@ -1656,7 +1800,7 @@ function saveOver(force) {
   // the name changed under the button between redraws: fall back to plain export
   if (!inPlace.length) { exportAll(false, force); return false; }
 
-  var soft = countSoft(s);
+  var soft = rulesOn() ? countSoft(s) : 0;
   var wrote = [], blocked = [], failed = [];
   var chain = Promise.resolve();
   inPlace.forEach(function (p) {
@@ -1691,8 +1835,75 @@ function saveOver(force) {
   return false;
 }
 
+// ---------- the two side columns, draggable ----------
+// widths are kept in the browser next to the key choices, apart from the sprites,
+// so Forget all spares them too
+var UI_KEY = 'eldermyr-sprite-editor-ui-v1';
+var UI = (function () {
+  try { return JSON.parse(window.localStorage.getItem(UI_KEY) || '{}') || {}; }
+  catch (e) { return {}; }
+})();
+function saveUI() {
+  try { window.localStorage.setItem(UI_KEY, JSON.stringify(UI)); } catch (e) { /* nowhere to keep it */ }
+}
+function applyCols() {
+  var st = Math.max(110, Math.min(340, UI.stripW || 150));
+  var sd = Math.max(240, Math.min(520, UI.sideW || 322));
+  $('strip').style.width = st + 'px'; $('strip').style.flex = '0 0 ' + st + 'px';
+  $('side').style.width = sd + 'px'; $('side').style.flex = '0 0 ' + sd + 'px';
+}
+function wireSplit(id, which) {
+  var h = $(id);
+  h.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    h.setPointerCapture(e.pointerId);
+    h.className = 'vsplit held';
+    var x0 = e.clientX;
+    var w0 = (which === 'stripW' ? $('strip') : $('side')).getBoundingClientRect().width;
+    var mv = function (ev) {
+      var d = ev.clientX - x0;
+      UI[which] = Math.round(which === 'stripW' ? w0 + d : w0 - d);
+      applyCols();
+      drawPreview();
+    };
+    var up = function () {
+      h.removeEventListener('pointermove', mv);
+      h.className = 'vsplit';
+      saveUI();
+      redraw();
+    };
+    h.addEventListener('pointermove', mv);
+    h.addEventListener('pointerup', up, { once: true });
+    h.addEventListener('pointercancel', up, { once: true });
+  });
+  h.addEventListener('dblclick', function () {
+    delete UI[which];
+    applyCols(); saveUI(); drawPreview(); redraw();
+  });
+}
+wireSplit('splitL', 'stripW');
+wireSplit('splitR', 'sideW');
+applyCols();
+
+// the game-rules toggle lives in the same kept corner of the browser
+function rulesOn() { return UI.rules !== false; }
+$('rulesBox').checked = rulesOn();
+$('rulesBox').onchange = function () {
+  UI.rules = this.checked;
+  saveUI();
+  S.sprites.forEach(touched);   // every cached verdict is stale now
+  var s = spr(); if (s) s.softDismissed = false;
+  checkAlpha(); redraw();
+  say(this.checked ? "Back under the game's rules" : 'Rules off. Soft pixels and any colour count are yours to keep.', 'good');
+};
+$('alpha').oninput = function () {
+  S.alpha = parseInt(this.value, 10);
+  $('alphaPct').textContent = S.alpha + '%';
+};
+
 // ---------- wiring ----------
 buildTools();
+drawKeys();
 setTool('pencil');
 setColor(S.color);
 GROUNDS.forEach(function (g) {
@@ -1830,6 +2041,13 @@ $('pbCopyPath').onclick = function () {
   copyText('art-live/' + (cleanName(s.family) || 'creatures') + '/', 'the folder');
 };
 $('pbCopyCmd').onclick = function () { copyText('npm run pack-art', 'the command'); };
+$('bKeysReset').onclick = function () {
+  KEYS = {};
+  for (var a in KEY_DEFAULTS) KEYS[a] = KEY_DEFAULTS[a];
+  keyWait = null;
+  saveKeys(); drawKeys(); buildTools();
+  say('The keys are back to the usual ones', 'good');
+};
 $('bSnap').onclick = snapAlpha;
 $('bDismiss').onclick = function () { var s = spr(); if (s) s.softDismissed = true; checkAlpha(); };
 $('bUndo').onclick = undo;
@@ -1889,6 +2107,8 @@ window.addEventListener('keydown', function (e) {
   var t = e.target.tagName;
   if (t === 'INPUT' || t === 'TEXTAREA') return;
   var meta = e.metaKey || e.ctrlKey;
+  // a keycap in the Keys panel is waiting: this press is the new binding, nothing else
+  if (keyWait) { if (!meta) { e.preventDefault(); assignKey(e.key); return; } keyWait = null; drawKeys(); }
   if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if (meta && e.key.toLowerCase() === 'c') { e.preventDefault(); copySel(false); return; }
   if (meta && e.key.toLowerCase() === 'x') { e.preventDefault(); copySel(true); return; }
@@ -1899,16 +2119,14 @@ window.addEventListener('keydown', function (e) {
     if ($('bSave').style.display !== 'none' && !$('bSave').disabled) $('bSave').click(); else exportAll(false, false);
     return;
   }
+  if (!meta && !e.altKey && !e.shiftKey) {
+    var k = e.key.toLowerCase();
+    for (var i = 0; i < KEY_ACTIONS.length; i++) {
+      if (KEYS[KEY_ACTIONS[i][0]] === k) { e.preventDefault(); KEY_ACTIONS[i][2](); return; }
+    }
+  }
   switch (e.key) {
-    case 'd': case 'D': case 'b': case 'B': setTool('pencil'); break;
-    case 'e': case 'E': setTool('eraser'); break;
-    case 'f': case 'F': setTool('fill'); break;
-    case 'l': case 'L': setTool('line'); break;
-    case 'i': case 'I': setTool('pick'); break;
-    case 'v': case 'V': setTool('select'); break;
     case 'z': case 'Z': if (e.shiftKey) { redo(); } break;
-    case 'o': case 'O': $('bOnion').click(); break;
-    case 'g': case 'G': $('bGrid').click(); break;
     case '+': case '=': $('zIn').click(); break;
     case '-': case '_': $('zOut').click(); break;
     case 'Escape': dropSelection(); redraw(); break;
