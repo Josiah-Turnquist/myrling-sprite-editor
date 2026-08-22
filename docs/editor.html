@@ -1,0 +1,2327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Myrling</title>
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAxElEQVR42mNgQANCIlL/kbG4lAJejK6ekH4GQmDAHECsAZQ6AKdDBswB5Bqw5UEdCibXA0PPATAL0aMAl0MGvwPITWTdhwJQMLmJdOg4wK9KG4zRLUbHMHXDxwHoFsMSG7EOGboOINdiUh0y8A7AJYHuABEJfjDGZREuefRESXRJOOqAQecAcvHwdQBMnlh1g9cBpBbF1CqAyK4L6O4A9ChBNxjdoTRvD1DdATBAbwdg9IwG3AG4HEJuxwWXfoK9Y3o7AACpqVpHc9cEDgAAAABJRU5ErkJggg==">
+<style>
+  :root{
+    --bg:#131519; --panel:#191c22; --panel2:#1f232b; --line:#2b313b;
+    --text:#c9cfd8; --dim:#7d8794; --hot:#e6ecf5;
+    --sel:#3c4d68; --selText:#e9eff8;
+    --bad:#d1685a; --warn:#c9a24a; --good:#71a35c;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font:12px/1.4 -apple-system,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+    overflow:hidden; user-select:none; -webkit-user-select:none;
+  }
+  button,input,select{font:inherit; color:inherit}
+  button{
+    background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    padding:4px 8px; cursor:pointer; border-radius:2px;
+  }
+  button:hover{background:#262c36; color:var(--hot)}
+  button:active{background:#2e3644}
+  button.on{background:var(--sel); border-color:#4d6386; color:var(--selText)}
+  button.danger{border-color:#6b3a33; color:#e5a396}
+  button.danger:hover{background:#3a2622; color:#f3c4ba}
+  button:disabled{opacity:.4; cursor:default}
+  button:disabled:hover{background:var(--panel2); color:var(--text)}
+  input[type=text],input[type=number]{
+    background:#0f1116; border:1px solid var(--line); padding:3px 5px; border-radius:2px;
+  }
+  input[type=text]:focus,input[type=number]:focus{outline:1px solid #4d6386; border-color:#4d6386}
+  input[type=color]{
+    background:#0f1116; border:1px solid var(--line); width:34px; height:24px;
+    padding:1px; cursor:pointer; border-radius:2px;
+  }
+  input[type=range]{width:100%; accent-color:#6b86ad}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .dim{color:var(--dim)}
+  .k{color:var(--dim); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:10px}
+  .pick{user-select:text; -webkit-user-select:text}
+
+  /* layout */
+  #app{display:flex; flex-direction:column; height:100%}
+  header{
+    display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+    padding:6px 8px; background:var(--panel); border-bottom:1px solid var(--line);
+  }
+  header .name{color:var(--hot); font-weight:600; letter-spacing:.02em; margin-right:6px}
+  header .sep{width:1px; height:20px; background:var(--line); margin:0 3px}
+  #status{margin-left:auto; color:var(--dim); max-width:44%; text-align:right;
+          overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  #status.bad{color:var(--bad)} #status.good{color:var(--good)}
+
+  /* the path bar: where the files go and what to run next */
+  #pathbar{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:5px 8px; background:#12151a; border-bottom:1px solid var(--line);
+    font-size:11px; min-height:29px;
+  }
+  #pathbar .lab{color:var(--dim); flex:0 0 auto}
+  #pathbar .path{color:var(--hot)}
+  #pathbar .cmd{color:#a8c4a0}
+  #pathbar button{padding:2px 6px; font-size:10px}
+  #pathbar .refuse{color:var(--bad)}
+
+  main{display:flex; flex:1; min-height:0}
+  .col{display:flex; flex-direction:column; min-height:0}
+  #strip{width:150px; background:var(--panel); border-right:1px solid var(--line);
+         overflow:auto; flex:0 0 150px}
+  #stage{flex:1; min-width:0; background:var(--bg)}
+  #side{width:322px; flex:0 0 322px; background:var(--panel); border-left:1px solid var(--line); overflow:auto}
+
+  .hd{
+    padding:5px 8px; color:var(--dim); background:var(--panel2);
+    border-bottom:1px solid var(--line); border-top:1px solid var(--line);
+    text-transform:uppercase; letter-spacing:.06em; font-size:10px;
+  }
+  #strip .hd:first-child,#side .hd:first-child{border-top:0}
+  .pad{padding:8px}
+
+  /* sprite strip */
+  .item{
+    display:flex; align-items:center; gap:6px; padding:4px 6px; cursor:pointer;
+    border-bottom:1px solid #20242c;
+  }
+  .item:hover{background:#20242c}
+  .item.on{background:var(--sel); color:var(--selText)}
+  .item canvas{
+    width:32px; height:32px; flex:0 0 32px; image-rendering:pixelated;
+    background:#0d0f13; border:1px solid var(--line);
+  }
+  .item .t{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; min-width:0}
+  .item .t b{display:block; font-weight:500; overflow:hidden; text-overflow:ellipsis}
+  .item .t span{color:var(--dim); font-size:10px}
+  .item.on .t span{color:#b8c6da}
+  .item .flag{flex:0 0 6px; width:6px; height:6px; background:var(--bad)}
+
+  /* stage */
+  #alphabar{
+    display:none; align-items:center; gap:8px; padding:6px 10px;
+    background:#33231f; border-bottom:1px solid #563a33; color:#eab8ad;
+  }
+  #alphabar.show{display:flex}
+  #canvasWrap{
+    flex:1; min-height:0; overflow:auto; padding:16px;
+    display:flex;
+  }
+  #cv{margin:auto}
+  #cv{
+    image-rendering:pixelated; background:#0d0f13; cursor:crosshair;
+    box-shadow:0 0 0 1px var(--line); touch-action:none;
+  }
+  #stagebar{
+    display:flex; align-items:center; gap:6px; padding:5px 8px;
+    background:var(--panel); border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+  }
+  #frames{display:flex; align-items:center; gap:6px; padding:6px 8px; background:var(--panel);
+          overflow-x:auto; min-height:62px}
+  .fr{position:relative; flex:0 0 auto; cursor:pointer; text-align:center}
+  .fr canvas{
+    width:44px; height:44px; image-rendering:pixelated; display:block;
+    background:#0d0f13; border:1px solid var(--line);
+  }
+  .fr.on canvas{border-color:#7d9dd0; box-shadow:0 0 0 1px #7d9dd0}
+  .fr.markL{box-shadow:-3px 0 0 0 #6b86ad}
+  .fr.markR{box-shadow:3px 0 0 0 #6b86ad}
+  .fr div{font-size:10px; color:var(--dim); margin-top:1px}
+  .fr.on div{color:var(--hot)}
+
+  /* side panels */
+  .row{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+  .row+.row{margin-top:6px}
+  .grid5{display:grid; grid-template-columns:repeat(5,1fr); gap:4px}
+  .tool{display:flex; flex-direction:column; align-items:center; gap:1px; padding:5px 2px}
+  .tool span{font-size:10px}
+
+  #preview{background:#0d0f13; display:block; width:100%; border:1px solid var(--line)}
+  .bgs{display:flex; gap:4px; flex-wrap:wrap}
+  .bgs b{width:20px; height:18px; border:1px solid var(--line); cursor:pointer; display:block}
+  .bgs b.on{box-shadow:0 0 0 1px #cfd8e6; border-color:#cfd8e6}
+
+  #palette{display:flex; flex-wrap:wrap; gap:3px}
+  #palette .sw{width:20px; height:20px; border:1px solid #0d0f13; cursor:pointer; position:relative}
+  #palette .sw.on{box-shadow:0 0 0 2px #cfd8e6}
+  #palette .sw i{position:absolute; inset:0; border:1px solid rgba(255,255,255,.14)}
+
+  .chk{display:flex; align-items:flex-start; gap:6px; padding:3px 0; line-height:1.35}
+  .chk i{width:8px; height:8px; margin-top:4px; flex:0 0 8px; background:var(--good)}
+  .chk.warn i{background:var(--warn)} .chk.bad i{background:var(--bad)}
+  .chk.warn{color:#e0c68a} .chk.bad{color:#eda99c}
+  .chk b{font-weight:600}
+
+  #empty{
+    flex:1; display:flex; align-items:center; justify-content:center; text-align:center;
+    color:var(--dim); padding:24px; line-height:1.8;
+  }
+  #empty b{color:var(--text); font-weight:600; display:block; margin-bottom:6px}
+  #drop{
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(12,14,18,.86); color:var(--hot); font-size:16px; z-index:20;
+    border:2px dashed #4d6386;
+  }
+  #drop.show{display:flex}
+  .hint{color:var(--dim); font-size:10px; line-height:1.6}
+  #keptBox{border-top:1px solid var(--line); padding:8px; line-height:1.6}
+  #keptBox .t{color:var(--text)}
+  .keycap{
+    font:inherit; color:var(--text); background:var(--panel2);
+    border:1px solid var(--line); border-radius:3px; padding:0 5px; margin-right:4px;
+    cursor:pointer; min-width:20px;
+  }
+  .keycap:hover{border-color:#4d6386; color:var(--hot)}
+  .keycap.waiting{border-color:var(--warn); color:var(--warn)}
+  #keyRows span{display:inline-block; margin:0 10px 4px 0}
+  .vsplit{flex:0 0 5px; cursor:col-resize; background:var(--bg)}
+  .vsplit:hover,.vsplit.held{background:#4d6386}
+  #settings{
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(12,14,18,.72); z-index:30;
+  }
+  #settings.show{display:flex}
+  #settings .box{
+    width:min(430px,92vw); max-height:82vh; overflow:auto;
+    background:var(--panel); border:1px solid var(--line); border-radius:6px;
+  }
+  #settings .mhd{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 10px; border-bottom:1px solid var(--line); color:var(--hot); font-weight:600;
+  }
+  #settings .pad{padding:10px}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <span class="name">Myrling</span>
+    <button id="bOpen">Open PNGs</button>
+    <span class="sep"></span>
+    <button id="bNew">New sprite</button>
+    <input id="newSize" type="number" min="4" max="128" value="16" style="width:48px" title="Size in pixels, square">
+    <span class="dim">px</span>
+    <span class="sep"></span>
+    <span class="dim">Folder</span>
+    <input id="family" type="text" class="mono" list="families" style="width:98px" value="creatures"
+           title="The folder under art-live. creatures for an enemy.">
+    <datalist id="families">
+      <option value="creatures"></option><option value="bosses"></option><option value="items"></option>
+      <option value="hero"></option><option value="steeds"></option><option value="gates"></option>
+      <option value="stairs"></option>
+    </datalist>
+    <span class="dim">Name</span>
+    <input id="key" type="text" class="mono" style="width:128px" placeholder="treeent"
+           title="Export name. Files are saved as name-0.png, name-1.png">
+    <span class="sep"></span>
+    <button id="bSave" style="display:none"
+            title="Write every frame back over the files it was opened from. No moving files about after.">Save over</button>
+    <button id="bExport">Export frames</button>
+    <button id="bExport1">This frame</button>
+    <button id="bForce" style="display:none" class="danger">Export anyway</button>
+    <span class="sep"></span>
+    <button id="bClose" title="Close this sprite and forget it">Close</button>
+    <button id="bSettings" title="The keys, yours to change. Cmd+, opens this too.">Settings</button>
+    <span id="status"></span>
+  </header>
+
+  <div id="pathbar">
+    <span class="lab">Goes to</span>
+    <span class="path mono pick" id="pbPath">art-live/creatures/</span>
+    <button id="pbCopyPath">Copy path</button>
+    <button id="pbChange" style="display:none"
+            title="Pick the folder saving writes into. Every frame of this sprite goes there.">Change&hellip;</button>
+    <span class="sep" style="width:1px;height:16px;background:var(--line)"></span>
+    <span class="lab">Then run</span>
+    <span class="cmd mono pick" id="pbCmd">npm run pack-art</span>
+    <button id="pbCopyCmd">Copy</button>
+    <span class="refuse" id="pbWarn"></span>
+  </div>
+
+  <main>
+    <div class="col" id="strip">
+      <div class="hd">Open sprites</div>
+      <div id="stripList"></div>
+      <div style="flex:1"></div>
+      <div class="hd">Kept in this browser</div>
+      <div id="keptBox" class="hint">
+        <div class="t" id="keptText">Nothing kept yet.</div>
+        <div class="row" style="margin-top:6px"><button id="bForget" style="width:100%">Forget all</button></div>
+      </div>
+    </div>
+
+    <div class="vsplit" id="splitL" title="Drag to make the sprite list wider or narrower. Double click puts it back."></div>
+
+    <div class="col" id="stage">
+      <div id="alphabar">
+        <span id="alphaText"></span>
+        <button id="bSnap">Snap them</button>
+        <button id="bDismiss">Leave for now</button>
+      </div>
+
+      <div id="empty">
+        <div>
+          <b>Nothing open</b>
+          Drop PNG files anywhere on this window, or press Open PNGs.<br>
+          Files named name-0.png and name-1.png open as one sprite with two frames.<br>
+          In Chrome, Edge and the Mac app, Save over then writes your edits straight back into those files.<br>
+          Or press New sprite to start from blank.<br>
+          <span class="dim">Whatever is open is kept in this browser and comes back next time.</span>
+        </div>
+      </div>
+
+      <div id="canvasWrap" style="display:none"><canvas id="cv"></canvas></div>
+
+      <div id="stagebar" style="display:none">
+        <span class="dim">Zoom</span>
+        <button id="zOut">-</button>
+        <span id="zoomLabel" class="mono" style="width:34px; text-align:center">16x</span>
+        <button id="zIn">+</button>
+        <button id="zFit">Fit</button>
+        <span class="sep" style="width:1px;height:16px;background:var(--line)"></span>
+        <button id="bGrid" class="on">Grid</button>
+        <button id="bGuides" class="on">Guides</button>
+        <button id="bOnion" class="on">Onion skin</button>
+        <span class="sep" style="width:1px;height:16px;background:var(--line)"></span>
+        <span id="posLabel" class="mono dim" style="width:70px"></span>
+        <span class="sep" style="width:1px;height:16px;background:var(--line)"></span>
+        <span id="sizeLabel" class="mono dim"></span>
+      </div>
+
+      <div class="hd" id="framesHd" style="display:none">Frames</div>
+      <div id="frames" style="display:none"></div>
+    </div>
+
+    <div class="vsplit" id="splitR" title="Drag to make the panels wider or narrower. Double click puts it back."></div>
+
+    <div class="col" id="side">
+      <div class="hd">Game size</div>
+      <div class="pad">
+        <canvas id="preview" height="150"></canvas>
+        <div class="row" style="margin-top:6px; flex-wrap:nowrap">
+          <span class="dim" style="flex:0 0 auto">Window</span>
+          <span class="row" id="scales" style="gap:4px; flex-wrap:nowrap"></span>
+          <button id="bPlay" style="width:52px; flex:0 0 auto; margin-left:auto">Play</button>
+        </div>
+        <div class="row" style="flex-wrap:nowrap">
+          <input id="fps" type="range" min="1" max="20" value="6" style="flex:1; min-width:0">
+          <span id="fpsLabel" class="mono dim" style="flex:0 0 76px; text-align:right; font-size:11px">6 a second</span>
+        </div>
+        <div class="row">
+          <span class="dim">Ground</span>
+          <span class="bgs" id="bgs"></span>
+        </div>
+        <div class="row hint" id="pvNote"></div>
+      </div>
+
+      <div class="hd">Tools</div>
+      <div class="pad">
+        <div class="grid5" id="tools"></div>
+        <div class="row" style="margin-top:6px; flex-wrap:nowrap">
+          <button id="bUndo" style="flex:1">Undo</button>
+          <button id="bRedo" style="flex:1">Redo</button>
+          <button id="bFlip" style="flex:1" title="Mirror left to right. Creatures are drawn facing right.">Flip</button>
+        </div>
+        <div class="row hint" id="selHint" style="display:none">
+          Drag inside the box to move those pixels. Arrow keys nudge. Delete clears. Esc drops the box.
+          Cmd+C copies it and Cmd+V pastes, into this sprite or another one.
+        </div>
+      </div>
+
+      <div class="hd">Colour</div>
+      <div class="pad">
+        <div class="row">
+          <input id="pick" type="color" value="#8bc250">
+          <input id="hex" type="text" class="mono" style="width:82px" value="#8bc250">
+        </div>
+        <div class="row" style="margin-top:6px; flex-wrap:nowrap">
+          <span class="dim">Opacity</span>
+          <input id="alpha" type="range" min="5" max="100" value="100" style="flex:1; min-width:0"
+                 title="Paint blends with what is underneath. Over a colour the pixel stays solid.">
+          <span id="alphaPct" class="mono dim" style="flex:0 0 36px; text-align:right; font-size:11px">100%</span>
+        </div>
+        <div class="row" style="margin-top:8px"><div id="palette"></div></div>
+        <div class="row hint" id="palHint"></div>
+      </div>
+
+      <div class="hd">Checks</div>
+      <div class="pad" style="padding-bottom:2px">
+        <label class="hint" style="display:flex; gap:7px; cursor:pointer">
+          <input type="checkbox" id="rulesBox" checked style="margin-top:2px">
+          <span>Hold me to the game's rules: hard pixels, 32 colours, square. Untick to draw
+          free, and soft, part see-through pixels are kept exactly as painted.</span>
+        </label>
+      </div>
+      <div class="pad" id="checks"></div>
+
+    </div>
+  </main>
+</div>
+
+<div id="drop">Drop PNG files to open them</div>
+<div id="settings">
+  <div class="box">
+    <div class="mhd">Settings<button id="bSettingsClose">Done</button></div>
+    <div class="pad hint">
+      <div style="margin-bottom:6px">The keys. Click one, press the new key. A taken key swaps.</div>
+      <div id="keyRows" class="mono"></div>
+      <div class="mono" style="margin-top:8px">
+        Cmd or Ctrl + Z undo &nbsp; Shift + Z redo<br>
+        Cmd+C copy &nbsp; Cmd+X cut &nbsp; Cmd+V paste &nbsp; Cmd+S save<br>
+        - and + zoom, or the wheel &nbsp; Space play
+      </div>
+      <div class="row" style="margin-top:10px"><button id="bKeysReset" style="width:100%">Back to the usual keys</button></div>
+    </div>
+  </div>
+</div>
+<input id="file" type="file" accept=".png,image/png" multiple style="display:none">
+<input id="fileFrame" type="file" accept=".png,image/png" multiple style="display:none">
+
+<script>
+'use strict';
+// =====================================================================================
+// Myrling, a sprite editor born in Realms of Eldermyr. One file, no build, no server,
+// no libraries, no requests out.
+// What you draw is what ships: the game loads real PNGs, so this is a plain image editor
+// with the game's own rules built into the checks panel.
+//
+// The rules mirrored here come from two files in the game repo:
+//   scripts/pack-art.mjs  the packer, which is the thing that actually refuses art
+//   ART-BRIEF.md          the constraints an artist is asked to work to
+// Anything the packer REFUSES is red here. Anything it WARNS about is amber here.
+// =====================================================================================
+
+var $ = function (id) { return document.getElementById(id); };
+
+// ---------- the game's own ground colours, copied out of the terrain painter ----------
+var GROUNDS = [
+  { id: 'grass', name: 'Grass', tiles: ['#487a38', '#4d8140', '#447434'], dark: '#3f6e30', light: '#5f9448' },
+  { id: 'dirt', name: 'Dirt path', tiles: ['#a89060', '#a89060', '#a89060'], dark: '#9a8354', light: '#b39c6c' },
+  { id: 'stone', name: 'Stone', tiles: ['#63636c', '#5b5b64', '#63636c'], dark: '#4c4c55', light: '#6d6d76' },
+  { id: 'sand', name: 'Sand', tiles: ['#d8c890', '#d2c188', '#dfd09c'], dark: '#c6b47c', light: '#efe3bc' },
+  { id: 'snow', name: 'Snow', tiles: ['#dbe6f1', '#dbe6f1', '#dbe6f1'], dark: '#c8d6e6', light: '#ffffff' },
+  { id: 'ash', name: 'Burnt ground', tiles: ['#3a2420', '#3a2420', '#3a2420'], dark: '#1e1410', light: '#52312a' },
+  { id: 'floor', name: 'Dungeon floor', tiles: ['#2a2832', '#322f3c', '#2a2832'], dark: '#1a1820', light: '#3a3542' }
+];
+
+// ---------- three of the game's own creatures, to stand next to yours ----------
+// unitsPerPixel is measured off the real game painter (art-live/art-meta.json). The hero
+// sits at 1.375, which is also what a creature with no measurement of its own is drawn at.
+var HERO_UPP = 1.375;
+var REFS = [
+  { id: 'rat', label: 'rat', upp: 16.5 / 16, png: 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAA7ElEQVR4AexQKw7CUBDcViAJwaIKpsGToAgCVcEZEDg+ooojoCr4KAyaBFuFJiQ4VA0pBoPgAJjS2WZfKDThEWybzv5nsm9N+vPLBYh+vsHadaOB40Ry+0wBp9OM3iHEYxAwV0RSAkLiidjUrAoJNqc9jW4XCh/3uJP8EFECICdlUiTJ4SHklooIqWHbjKXvG0qAOxpmMZtSq9+lnucZGDexBgJdDMcTqtbbTAaHN4CIVSgjZ5zDK/tXIzV/d1Bk9FkAAYAmgBiE+WprCFDLgolDCLIGvtVSG2BYniOboAYgxzPRRy74EJCGrn8CAAD//5woi7IAAAAGSURBVAMAlU1YGVK3G/cAAAAASUVORK5CYII=' },
+  { id: 'hero', label: 'hero', upp: 22 / 16, png: 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABPUlEQVR4AYySsUvDQBTGv4o4q6OTDg46VALiEBT9E4o4dBGCoGQq6OjUycmpgxYdLBQhY2YHKVZcFKJD66bi5KSdRaj9XnlHGu6iIb97j/e+93HJ3Rhyno2g1T88+RSY26RWgyi+7ZOwNI7iTFdgzlrWxGqgonbrBlm0p9FqoEMqyotWAx04q1eRRXsacw32wiqa0bXAnOigxlwDiv76HKtBkjzABU3TjBjwrMnEXAWV/QOD5y2DcNBf35Qj5pESY8AL468UqcFjXJZo23736U569fgHxBhINbW0G7vAW3MEb+o5pRimToO14ByY3RY6k6cgydfCcGqw8mYSp0EYbOGyUZOf+f1aAxnMycsek3JpteA0oOA/GIPo4hjkvXOF6fkdLC75znn2dBfG4OX+qKATmlOoNY1a6/U+RP8LAAD//1vLpFEAAAAGSURBVAMAenSjEQ6CJMIAAAAASUVORK5CYII=' },
+  { id: 'ogre', label: 'ogre', upp: 38.4928 / 16, png: 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABt0lEQVR4AZRSzStscRh+Zha3q6463el2Q3SamZUyTmzko0gkUaKUjQU7/AVsxYKyYyMLFqJ8FDvJFEqKxogsZqbTTAjRCQvZHD2v3umoIabe3/N+Pu/HHD9++KsrDbiDraY7NWAJ/oiAxREzH2HTQOJXt+CXBM2VpW5/S3VW8vL+I24/IWE7CL8uYzWawacELC7+ZyBU9BezMxbmd+KgrSS6eU4Cb3HQLMH4aBqZs00hmV+aBknYvbO++H0CFnDUsf42t8wsdJVdkSRz45PobYhgZGhY3Eri9xZUNtWip7ECfR31aKqxJDFlp7G1H0Py8kHszJ2D63snu07OFSTT8/AOavIOBQEDhxe2uD4QHG3tiZMPOxMp2p06RUk4yQcCBlW4t+reCdSnKARk5G7aSbt/h8R/4zzKPvdPDp5fHJwkU1jZPcbadhQTC+tZm/5YygZFuxP9t86zj0rm9hGJK4dqTmEsXGhIbOMgLnhqX/lkBSpWqARW0ER5KIiuugr8+W0gkG9gKXruI3pj7VURIeAjBPyQeIevjsVkFeYxn3VCEEum5Q6L28dQ4f9MP4uItDVGpE3/GwAAAP//5NsCTQAAAAZJREFUAwBXm8rh9+bmTgAAAABJRU5ErkJggg==' }
+];
+var refImg = {};
+REFS.forEach(function (r) { var i = new Image(); i.onload = function () { drawPreview(); }; i.src = 'data:image/png;base64,' + r.png; refImg[r.id] = i; });
+
+// how many screen pixels one drawn pixel is, at the three window sizes the game runs at
+var SCALES = [{ n: 2, label: 'Small' }, { n: 3, label: 'Normal' }, { n: 4, label: 'Big' }];
+
+var S = {
+  sprites: [],      // { key, family, w, h, frames:[Uint8ClampedArray], cur, hist, hi }
+  si: -1,
+  tool: 'pencil',
+  color: [139, 194, 80],
+  alpha: 100,       // brush opacity, percent
+  zoom: 16,
+  grid: true, guides: true, onion: true,
+  sel: null,        // { x, y, w, h }
+  ground: GROUNDS[0],
+  scale: 3,
+  fps: 6, playing: false, playFrame: 0,
+  store: { on: false, why: '', at: 0, bytes: 0 }
+};
+
+var cv = $('cv'), ctx = cv.getContext('2d');
+var pv = $('preview'), pctx = pv.getContext('2d');
+var off = document.createElement('canvas'), octx = off.getContext('2d', { willReadFrequently: true });
+
+function spr() { return S.si >= 0 ? S.sprites[S.si] : null; }
+function frm() { var s = spr(); return s ? s.frames[s.cur] : null; }
+
+// ---------- colour helpers ----------
+function hex2rgb(h) {
+  h = String(h).trim().replace(/^#/, '');
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return null;
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+function rgb2hex(c) {
+  return '#' + c.map(function (v) { return ('0' + v.toString(16)).slice(-2); }).join('');
+}
+function isLight(hex) {
+  var c = hex2rgb(hex) || [0, 0, 0];
+  return (c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114) > 128;
+}
+
+function say(msg, kind) {
+  var el = $('status');
+  el.textContent = msg || '';
+  el.className = kind || '';
+}
+
+// ---------- names, exactly the packer's rule ----------
+// pack-art.mjs: the file must be `<key>-<frame>.png`, all lowercase, and the key must
+// match ^[a-z0-9][a-z0-9_-]*$ . Hyphens are legal and the game uses them (knight-side).
+function cleanName(v) {
+  var k = String(v == null ? '' : v).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  return k.replace(/^[^a-z0-9]+/, '');
+}
+
+// ---------- document ----------
+function blank(w, h) { return new Uint8ClampedArray(w * h * 4); }
+
+function makeSprite(key, w, h, frames, family) {
+  var s = {
+    key: key, family: family || 'creatures', w: w, h: h,
+    frames: frames && frames.length ? frames : [blank(w, h)], cur: 0, hist: [], hi: 0, bytes: [],
+    handles: []   // FileSystemFileHandles from opening, so Save over can write back in place
+  };
+  s.hist = [snapshot(s)];
+  return s;
+}
+function snapshot(s) {
+  return { w: s.w, h: s.h, cur: s.cur, frames: s.frames.map(function (f) { return f.slice(); }) };
+}
+function sameAsHead(s) {
+  var a = s.hist[s.hi];
+  if (!a || a.w !== s.w || a.h !== s.h || a.frames.length !== s.frames.length) return false;
+  for (var i = 0; i < s.frames.length; i++) {
+    var x = s.frames[i], y = a.frames[i];
+    if (x.length !== y.length) return false;
+    for (var j = 0; j < x.length; j++) if (x[j] !== y[j]) return false;
+  }
+  return true;
+}
+// 200 steps back, but never more than about 40 MB of them: a 128 px sprite with eight
+// frames would otherwise hold half a gigabyte of undo.
+var HIST_STEPS = 200, HIST_BYTES = 40 * 1024 * 1024;
+function commit() {
+  var s = spr(); if (!s) return;
+  if (sameAsHead(s)) return;
+  s.hist.length = s.hi + 1;
+  s.hist.push(snapshot(s));
+  var each = s.w * s.h * 4 * s.frames.length;
+  var cap = Math.max(8, Math.min(HIST_STEPS, Math.floor(HIST_BYTES / Math.max(1, each))));
+  while (s.hist.length > cap) s.hist.shift();
+  s.hi = s.hist.length - 1;
+  s.bytes = [];
+  touched(s);
+  scheduleSave();
+  redraw();
+}
+function restore(snap) {
+  var s = spr();
+  s.w = snap.w; s.h = snap.h; s.cur = Math.min(snap.cur, snap.frames.length - 1);
+  s.frames = snap.frames.map(function (f) { return f.slice(); });
+  s.bytes = [];
+  touched(s);
+}
+function undo() {
+  var s = spr(); if (!s || s.hi <= 0) return;
+  dropSelection(true);
+  s.hi--; restore(s.hist[s.hi]); scheduleSave(); redraw(); say('Undone');
+}
+function redo() {
+  var s = spr(); if (!s || s.hi >= s.hist.length - 1) return;
+  dropSelection(true);
+  s.hi++; restore(s.hist[s.hi]); scheduleSave(); redraw(); say('Redone');
+}
+
+// ---------- pixel ops ----------
+function get(f, w, x, y) { var i = (y * w + x) * 4; return [f[i], f[i + 1], f[i + 2], f[i + 3]]; }
+function set(f, w, x, y, r, g, b, a) {
+  var i = (y * w + x) * 4;
+  if (a === 0) { f[i] = 0; f[i + 1] = 0; f[i + 2] = 0; f[i + 3] = 0; return; }
+  f[i] = r; f[i + 1] = g; f[i + 2] = b; f[i + 3] = 255;   // alpha is only ever 0 or 255
+}
+function inside(s, x, y) { return x >= 0 && y >= 0 && x < s.w && y < s.h; }
+
+function paint(x, y, erase) {
+  var s = spr(), f = frm();
+  if (!inside(s, x, y)) return;
+  if (S.sel && !ptInSel(x, y)) return;   // a box in place limits where paint lands
+  if (erase) { set(f, s.w, x, y, 0, 0, 0, 0); return; }
+  if (S.alpha >= 100) { set(f, s.w, x, y, S.color[0], S.color[1], S.color[2], 255); return; }
+  // one blend per pixel per stroke, or a slow drag would darken its own line
+  if (strokeSeen) {
+    var si = y * s.w + x;
+    if (strokeSeen[si]) return;
+    strokeSeen[si] = 1;
+  }
+  blendPx(f, s.w, x, y, S.color, S.alpha / 100);
+}
+// source over: the brush at opacity o laid over what the pixel already holds. With the
+// game's rules on, a painted pixel always comes out solid: over a colour it blends, over
+// nothing it lands at full strength, because the packer refuses part see-through pixels.
+function blendPx(f, w, x, y, c, o) {
+  var i = (y * w + x) * 4;
+  var da = f[i + 3] / 255;
+  if (rulesOn()) {
+    f[i]     = Math.round(c[0] * o + f[i] * da * (1 - o) + c[0] * (1 - da) * (1 - o));
+    f[i + 1] = Math.round(c[1] * o + f[i + 1] * da * (1 - o) + c[1] * (1 - da) * (1 - o));
+    f[i + 2] = Math.round(c[2] * o + f[i + 2] * da * (1 - o) + c[2] * (1 - da) * (1 - o));
+    f[i + 3] = 255;
+    return;
+  }
+  var oa = o + da * (1 - o);
+  f[i]     = Math.round((c[0] * o + f[i] * da * (1 - o)) / oa);
+  f[i + 1] = Math.round((c[1] * o + f[i + 1] * da * (1 - o)) / oa);
+  f[i + 2] = Math.round((c[2] * o + f[i + 2] * da * (1 - o)) / oa);
+  f[i + 3] = Math.round(oa * 255);
+}
+var strokeSeen = null;   // marks pixels already blended in the stroke under way
+function line(x0, y0, x1, y1, erase) {
+  var dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+  var sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, e = dx - dy;
+  for (;;) {
+    paint(x0, y0, erase);
+    if (x0 === x1 && y0 === y1) break;
+    var e2 = 2 * e;
+    if (e2 > -dy) { e -= dy; x0 += sx; }
+    if (e2 < dx) { e += dx; y0 += sy; }
+  }
+}
+function fill(x, y) {
+  var s = spr(), f = frm();
+  if (!inside(s, x, y)) return;
+  var t = get(f, s.w, x, y);
+  var want = [S.color[0], S.color[1], S.color[2], 255];
+  if (S.alpha >= 100 && t[3] === want[3] && t[0] === want[0] && t[1] === want[1] && t[2] === want[2]) return;
+  var lo = S.sel ? S.sel : { x: 0, y: 0, w: s.w, h: s.h };
+  var st = [[x, y]], seen = new Uint8Array(s.w * s.h);
+  while (st.length) {
+    var p = st.pop(), px = p[0], py = p[1];
+    if (px < lo.x || py < lo.y || px >= lo.x + lo.w || py >= lo.y + lo.h) continue;
+    if (seen[py * s.w + px]) continue;
+    var c = get(f, s.w, px, py);
+    if (c[3] !== t[3]) continue;
+    if (t[3] !== 0 && (c[0] !== t[0] || c[1] !== t[1] || c[2] !== t[2])) continue;
+    seen[py * s.w + px] = 1;
+    if (S.alpha >= 100) set(f, s.w, px, py, want[0], want[1], want[2], 255);
+    else blendPx(f, s.w, px, py, S.color, S.alpha / 100);
+    st.push([px + 1, py], [px - 1, py], [px, py + 1], [px, py - 1]);
+  }
+}
+function eyedrop(x, y) {
+  var s = spr(), f = frm();
+  if (!inside(s, x, y)) return;
+  var c = get(f, s.w, x, y);
+  if (c[3] === 0) { say('That pixel is clear, nothing to pick up'); return; }
+  setColor([c[0], c[1], c[2]]);
+  setTool('pencil');
+}
+// Mirror left to right. Creatures are always drawn facing right and the game flips them
+// itself when they walk the other way, so this is for fixing one you drew facing left.
+function flipFrame() {
+  var s = spr(); if (!s) return;
+  dropSelection(true);
+  var f = s.frames[s.cur], out = new Uint8ClampedArray(f.length);
+  for (var y = 0; y < s.h; y++) for (var x = 0; x < s.w; x++) {
+    var si = (y * s.w + x) * 4, di = (y * s.w + (s.w - 1 - x)) * 4;
+    out[di] = f[si]; out[di + 1] = f[si + 1]; out[di + 2] = f[si + 2]; out[di + 3] = f[si + 3];
+  }
+  s.frames[s.cur] = out;
+  commit(); redraw();
+  say('Frame ' + s.cur + ' mirrored');
+}
+
+// ---------- selection ----------
+var lift = null; // { buf, w, h, base }
+function ptInSel(x, y) {
+  var s = S.sel;
+  return s && x >= s.x && y >= s.y && x < s.x + s.w && y < s.y + s.h;
+}
+function beginLift() {
+  var s = spr(), f = frm(), b = S.sel;
+  var buf = new Uint8ClampedArray(b.w * b.h * 4);
+  for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
+    var si = ((b.y + y) * s.w + (b.x + x)) * 4, di = (y * b.w + x) * 4;
+    buf[di] = f[si]; buf[di + 1] = f[si + 1]; buf[di + 2] = f[si + 2]; buf[di + 3] = f[si + 3];
+  }
+  var base = f.slice();
+  for (var y2 = 0; y2 < b.h; y2++) for (var x2 = 0; x2 < b.w; x2++) {
+    var i = ((b.y + y2) * s.w + (b.x + x2)) * 4;
+    base[i] = 0; base[i + 1] = 0; base[i + 2] = 0; base[i + 3] = 0;
+  }
+  lift = { buf: buf, w: b.w, h: b.h, base: base };
+}
+function stampLift(nx, ny) {
+  var s = spr();
+  s.frames[s.cur] = lift.base.slice();
+  var f = s.frames[s.cur];
+  for (var y = 0; y < lift.h; y++) for (var x = 0; x < lift.w; x++) {
+    var tx = nx + x, ty = ny + y;
+    if (!inside(s, tx, ty)) continue;
+    var si = (y * lift.w + x) * 4;
+    if (lift.buf[si + 3] === 0) continue;
+    var di = (ty * s.w + tx) * 4;
+    f[di] = lift.buf[si]; f[di + 1] = lift.buf[si + 1]; f[di + 2] = lift.buf[si + 2]; f[di + 3] = lift.buf[si + 3];
+  }
+  S.sel.x = nx; S.sel.y = ny;
+}
+function dropSelection(quiet) {
+  if (lift) { lift = null; if (!quiet) commit(); }
+  S.sel = null;
+  $('selHint').style.display = 'none';
+}
+function clearSelection() {
+  var s = spr(), f = frm(), b = S.sel; if (!b) return;
+  for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
+    var i = ((b.y + y) * s.w + (b.x + x)) * 4;
+    f[i] = 0; f[i + 1] = 0; f[i + 2] = 0; f[i + 3] = 0;
+  }
+  if (lift) lift.base = f.slice();
+  commit(); redraw();
+}
+// Arrows move the pixels inside the box, or the whole picture when there is no box.
+// Moving the whole picture must NOT leave a box behind: a box changes where paint lands.
+function nudge(dx, dy) {
+  var s = spr(); if (!s) return;
+  if (S.sel) {
+    if (!lift) beginLift();
+    stampLift(S.sel.x + dx, S.sel.y + dy);
+    redraw();
+    return;
+  }
+  var f = s.frames[s.cur], out = new Uint8ClampedArray(f.length);
+  for (var y = 0; y < s.h; y++) for (var x = 0; x < s.w; x++) {
+    var tx = x + dx, ty = y + dy;
+    if (tx < 0 || ty < 0 || tx >= s.w || ty >= s.h) continue;
+    var si = (y * s.w + x) * 4, di = (ty * s.w + tx) * 4;
+    out[di] = f[si]; out[di + 1] = f[si + 1]; out[di + 2] = f[si + 2]; out[di + 3] = f[si + 3];
+  }
+  s.frames[s.cur] = out;
+  redraw();
+}
+
+// ---------- copy and paste ----------
+// one clipboard for the whole page, so a box can travel between sprites
+var CLIP = null;
+function copySel(cut) {
+  var s = spr(), f = frm(), b = S.sel;
+  if (!s || !b) { say('Nothing selected. Drag a box with the Select tool first.', 'bad'); return; }
+  var buf = new Uint8ClampedArray(b.w * b.h * 4);
+  for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
+    var si = ((b.y + y) * s.w + (b.x + x)) * 4, di = (y * b.w + x) * 4;
+    buf[di] = f[si]; buf[di + 1] = f[si + 1]; buf[di + 2] = f[si + 2]; buf[di + 3] = f[si + 3];
+  }
+  CLIP = { w: b.w, h: b.h, buf: buf };
+  if (cut) clearSelection();
+  say((cut ? 'Cut ' : 'Copied ') + b.w + ' by ' + b.h + '. Cmd+V puts it down, here or in another sprite.', 'good');
+}
+function pasteClip() {
+  var s = spr();
+  if (!CLIP) { say('Nothing copied yet. Drag a box with the Select tool and press Cmd+C.', 'bad'); return; }
+  if (!s) { say('Nothing open to paste into', 'bad'); return; }
+  dropSelection();   // anything still floating is set down first
+  var w = Math.min(CLIP.w, s.w), h = Math.min(CLIP.h, s.h);
+  var buf = CLIP.buf.slice();
+  if (w !== CLIP.w || h !== CLIP.h) {
+    buf = new Uint8ClampedArray(w * h * 4);
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
+      var si = (y * CLIP.w + x) * 4, di = (y * w + x) * 4;
+      buf[di] = CLIP.buf[si]; buf[di + 1] = CLIP.buf[si + 1]; buf[di + 2] = CLIP.buf[si + 2]; buf[di + 3] = CLIP.buf[si + 3];
+    }
+  }
+  // the paste lands centred as a floating box, exactly like pixels mid-move: drag it
+  // into place, and it sets down when the box is dropped
+  setTool('select');
+  var px = Math.floor((s.w - w) / 2), py = Math.floor((s.h - h) / 2);
+  S.sel = { x: px, y: py, w: w, h: h };
+  lift = { buf: buf, w: w, h: h, base: frm().slice() };
+  stampLift(px, py);
+  $('selHint').style.display = 'flex';
+  redraw();
+  say('Pasted ' + w + ' by ' + h + (w !== CLIP.w || h !== CLIP.h ? ', trimmed to fit this sprite' : '') +
+    '. Drag it into place; Esc sets it down.', 'good');
+}
+
+// ---------- drawing the big canvas ----------
+function blit(f, w, h) {
+  off.width = w; off.height = h;
+  var id = octx.createImageData(w, h);
+  id.data.set(f);
+  octx.putImageData(id, 0, 0);
+  return off;
+}
+function redraw() {
+  var s = spr();
+  CURCHK = s ? checkSprite(s) : null;
+  if (!CURCHK || !CURCHK.bad.length) $('bForce').style.display = 'none';
+  // shown wherever saving in place is possible at all, and greyed with the reason when
+  // this particular sprite cannot do it, so the button teaches rather than hides
+  if (FS_OK) {
+    var toDest = !!(s && s.dest);
+    var can = toDest || canSaveOver(s);
+    $('bSave').style.display = '';
+    $('bSave').disabled = !can;
+    if (!saveArmed) $('bSave').textContent = toDest ? 'Save' : 'Save over';
+    $('bSave').title = toDest
+      ? 'Write every frame into ' + s.dest.label + '. Change\u2026 in the bar below picks another folder.'
+      : (can
+        ? 'Write every frame back over the files it was opened from. No moving files about after.'
+        : (s && s.handles && s.handles.length
+          ? 'The name no longer matches the files this sprite was opened from. Set it back, use Export frames, or pick a folder with Change\u2026 below.'
+          : 'Nothing here came from a file opened this session. Open PNGs, drop files on the window, or pick a folder with Change\u2026 below.'));
+    $('pbChange').style.display = '';
+  } else {
+    $('bSave').style.display = 'none';   // Firefox and Safari cannot write files in place
+    $('pbChange').style.display = 'none';
+  }
+  $('empty').style.display = s ? 'none' : 'flex';
+  $('canvasWrap').style.display = s ? 'flex' : 'none';
+  $('stagebar').style.display = s ? 'flex' : 'none';
+  $('frames').style.display = s ? 'flex' : 'none';
+  $('framesHd').style.display = s ? 'block' : 'none';
+  if (!s) { drawStrip(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept(); return; }
+
+  var z = S.zoom, dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  var W = s.w * z, H = s.h * z;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, W, H);
+
+  // checkerboard under the sprite so clear pixels are unmistakable
+  var c = 8;
+  for (var yy = 0; yy * c < H; yy++) for (var xx = 0; xx * c < W; xx++) {
+    ctx.fillStyle = (xx + yy) % 2 ? '#171a20' : '#12141a';
+    ctx.fillRect(xx * c, yy * c, c, c);
+  }
+
+  // onion skin: the frame before this one, faint
+  if (S.onion && s.frames.length > 1) {
+    var prev = (s.cur - 1 + s.frames.length) % s.frames.length;
+    ctx.globalAlpha = 0.22;
+    ctx.drawImage(blit(s.frames[prev], s.w, s.h), 0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+  ctx.drawImage(blit(s.frames[s.cur], s.w, s.h), 0, 0, W, H);
+
+  // gridlines
+  if (S.grid && z >= 4) {
+    ctx.lineWidth = 1;
+    for (var x = 0; x <= s.w; x++) {
+      ctx.strokeStyle = (x % 8 === 0) ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.07)';
+      ctx.beginPath(); ctx.moveTo(x * z + .5, 0); ctx.lineTo(x * z + .5, H); ctx.stroke();
+    }
+    for (var y = 0; y <= s.h; y++) {
+      ctx.strokeStyle = (y % 8 === 0) ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.07)';
+      ctx.beginPath(); ctx.moveTo(0, y * z + .5); ctx.lineTo(W, y * z + .5); ctx.stroke();
+    }
+  }
+
+  // guides: the feet line and the centre line
+  if (S.guides) {
+    var footOk = bottomRowPainted(s, s.frames[s.cur]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = footOk ? 'rgba(210,170,70,.85)' : 'rgba(209,104,90,.95)';
+    ctx.beginPath(); ctx.moveTo(0, H - z); ctx.lineTo(W, H - z); ctx.stroke();
+    ctx.strokeStyle = 'rgba(120,160,220,.6)';
+    ctx.lineWidth = 1;
+    var cxp = Math.round(s.w / 2) * z;
+    ctx.beginPath(); ctx.moveTo(cxp + .5, 0); ctx.lineTo(cxp + .5, H); ctx.stroke();
+  }
+
+  // selection box
+  if (S.sel) {
+    var b = S.sel;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#0d0f13';
+    ctx.strokeRect(b.x * z + .5, b.y * z + .5, b.w * z - 1, b.h * z - 1);
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = '#e6ecf5';
+    ctx.strokeRect(b.x * z + .5, b.y * z + .5, b.w * z - 1, b.h * z - 1);
+    ctx.setLineDash([]);
+  }
+
+  $('zoomLabel').textContent = z + 'x';
+  $('sizeLabel').textContent = s.w + ' x ' + s.h;
+  $('bUndo').disabled = s.hi <= 0;
+  $('bRedo').disabled = s.hi >= s.hist.length - 1;
+  drawStrip(); drawFrames(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept();
+}
+
+// ---------- side panels ----------
+function drawStrip() {
+  var list = $('stripList');
+  list.innerHTML = '';
+  S.sprites.forEach(function (s, i) {
+    var d = document.createElement('div');
+    d.className = 'item' + (i === S.si ? ' on' : '');
+    var c = document.createElement('canvas');
+    c.width = s.w; c.height = s.h;
+    c.getContext('2d').drawImage(blit(s.frames[0], s.w, s.h), 0, 0);
+    var t = document.createElement('div');
+    t.className = 't';
+    t.innerHTML = '<b></b><span></span>';
+    t.querySelector('b').textContent = s.key;
+    t.querySelector('span').textContent = s.w + 'x' + s.h + ', ' + s.frames.length + (s.frames.length === 1 ? ' frame' : ' frames');
+    d.appendChild(c); d.appendChild(t);
+    if ((i === S.si ? (CURCHK || checkSprite(s)) : checkCached(s)).bad.length) {
+      var flag = document.createElement('i');
+      flag.className = 'flag';
+      flag.title = 'The packer will refuse this one';
+      d.appendChild(flag);
+    }
+    d.onclick = function () { selectSprite(i); };
+    list.appendChild(d);
+  });
+}
+function drawFrames() {
+  var s = spr(), wrap = $('frames');
+  wrap.innerHTML = '';
+  if (!s) return;
+  var unmark = function () {
+    Array.prototype.forEach.call(wrap.children, function (n) {
+      n.className = String(n.className).replace(/ mark[LR]/g, '');
+    });
+  };
+  s.frames.forEach(function (f, i) {
+    var d = document.createElement('div');
+    d.className = 'fr' + (i === s.cur ? ' on' : '');
+    var c = document.createElement('canvas');
+    c.width = s.w; c.height = s.h;
+    var cc = c.getContext('2d');
+    cc.fillStyle = S.ground.tiles[0]; cc.fillRect(0, 0, s.w, s.h);
+    cc.drawImage(blit(f, s.w, s.h), 0, 0);
+    var lab = document.createElement('div');
+    lab.textContent = i;
+    d.appendChild(c); d.appendChild(lab);
+    d.onclick = function () { dropSelection(); s.cur = i; redraw(); };
+    // frames rearrange by dragging; the blue edge says which side it will land on
+    d.draggable = true;
+    d.title = 'Drag to another spot to reorder the frames';
+    d.ondragstart = function (e) {
+      frameDrag = i;
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', String(i)); } catch (err) { /* some engines refuse */ }
+    };
+    d.ondragend = function () { frameDrag = null; unmark(); };
+    d.ondragover = function (e) {
+      if (frameDrag === null) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      unmark();
+      var r = d.getBoundingClientRect();
+      d.className += (e.clientX < r.left + r.width / 2) ? ' markL' : ' markR';
+    };
+    d.ondragleave = function () { if (frameDrag !== null) unmark(); };
+    d.ondrop = function (e) {
+      if (frameDrag === null) return;
+      e.preventDefault(); e.stopPropagation();
+      var r = d.getBoundingClientRect();
+      var to = i + (e.clientX < r.left + r.width / 2 ? 0 : 1);
+      moveFrame(frameDrag, to);
+      frameDrag = null;
+    };
+    wrap.appendChild(d);
+  });
+  var mk = function (label, fn, title) {
+    var b = document.createElement('button');
+    b.textContent = label; b.onclick = fn; if (title) b.title = title;
+    b.style.marginLeft = '4px';
+    wrap.appendChild(b);
+  };
+  mk('Add', function () { dropSelection(); s.frames.push(blank(s.w, s.h)); s.cur = s.frames.length - 1; commit(); redraw(); });
+  mk('Copy', function () { dropSelection(); s.frames.splice(s.cur + 1, 0, s.frames[s.cur].slice()); s.cur++; commit(); redraw(); });
+  mk('Delete', function () {
+    if (s.frames.length < 2) { say('A sprite needs at least one frame', 'bad'); return; }
+    dropSelection(); s.frames.splice(s.cur, 1); s.cur = Math.min(s.cur, s.frames.length - 1); commit(); redraw();
+  });
+  mk('Add from file', function () { $('fileFrame').click(); }, 'Load a PNG as another frame of this sprite');
+}
+
+var frameDrag = null;   // the frame being dragged along the row, by index
+function moveFrame(from, to) {
+  var s = spr(); if (!s) return;
+  if (from === to || from + 1 === to) { drawFrames(); return; }   // dropped where it already sits
+  dropSelection();
+  var f = s.frames.splice(from, 1)[0];
+  if (to > from) to--;
+  s.frames.splice(to, 0, f);
+  s.cur = to;
+  commit(); checkAlpha(); redraw();
+  say('Frame moved to spot ' + to + '. The numbers follow the new order.', 'good');
+}
+
+function colourList(s, which) {
+  var m = new Map();
+  var fs = which === 'all' ? s.frames : [s.frames[s.cur]];
+  fs.forEach(function (f) {
+    for (var i = 0; i < f.length; i += 4) {
+      if (f[i + 3] < 128) continue;
+      var k = (f[i] << 16) | (f[i + 1] << 8) | f[i + 2];
+      m.set(k, (m.get(k) || 0) + 1);
+    }
+  });
+  return Array.from(m.entries()).sort(function (a, b) { return b[1] - a[1]; })
+    .map(function (e) { return [(e[0] >> 16) & 255, (e[0] >> 8) & 255, e[0] & 255]; });
+}
+function drawPalette() {
+  var p = $('palette'), s = spr();
+  p.innerHTML = '';
+  var cols = s ? colourList(s, 'all') : [];
+  var cur = rgb2hex(S.color);
+  var seen = {};
+  cols.forEach(function (c) { seen[rgb2hex(c)] = 1; });
+  if (!seen[cur]) cols.unshift(S.color.slice());
+  cols.forEach(function (c) {
+    var h = rgb2hex(c);
+    var d = document.createElement('div');
+    d.className = 'sw' + (h === cur ? ' on' : '');
+    d.style.background = h;
+    d.title = h;
+    d.innerHTML = '<i></i>';
+    d.onclick = function () { setColor(c); };
+    p.appendChild(d);
+  });
+  $('palHint').textContent = s
+    ? (cols.length + ' in the palette. Click one to draw with it.')
+    : 'The palette fills up from the colours in the open sprite.';
+}
+
+function bottomRowPainted(s, f) {
+  for (var x = 0; x < s.w; x++) if (f[((s.h - 1) * s.w + x) * 4 + 3] >= 128) return true;
+  return false;
+}
+function countSoft(s) {
+  var n = 0;
+  s.frames.forEach(function (f) {
+    for (var i = 3; i < f.length; i += 4) if (f[i] !== 0 && f[i] !== 255) n++;
+  });
+  return n;
+}
+function anyInk(f) { for (var i = 3; i < f.length; i += 4) if (f[i] >= 128) return true; return false; }
+function anyClear(f) { for (var i = 3; i < f.length; i += 4) if (f[i] === 0) return true; return false; }
+
+// =====================================================================================
+// The checks. `bad` is what pack-art.mjs REFUSES, `warn` is what it warns about, `ok` is
+// the rest. The wording of a refusal names the same thing the packer would name.
+// =====================================================================================
+function checkSprite(s) {
+  var bad = [], warn = [], ok = [];
+  var all = colourList(s, 'all').length;
+  var here = colourList(s, 'cur').length;
+
+  if (!cleanName(s.key)) bad.push('The name is empty. A file has to be called <b>name-0.png</b>.');
+  if (!cleanName(s.family)) bad.push('The folder name is empty. It is the folder under <b>art-live</b>, usually <b>creatures</b>.');
+
+  if (rulesOn()) {
+    if (s.w !== s.h) bad.push('<b>Not square</b>, ' + s.w + ' by ' + s.h + '. A sprite is a square grid.');
+
+    var soft = countSoft(s);
+    if (soft) bad.push('<b>' + soft + ' part see-through pixels.</b> Every pixel has to be fully solid or fully clear.');
+    else ok.push('Every pixel is fully solid or fully clear.');
+
+    if (all > 32) bad.push('<b>' + all + ' colours</b> across the frames, and the packer stops at 32. That many means the picture was resized or blurred rather than drawn.');
+    else ok.push(here + ' colours in this frame, ' + all + ' across all frames.');
+  } else {
+    ok.push('The game rules are off. ' + here + ' colours in this frame, and soft pixels are kept as painted.');
+  }
+
+  var empties = [];
+  s.frames.forEach(function (f, i) { if (!anyInk(f)) empties.push(i); });
+  if (empties.length) bad.push('Frame ' + empties.join(' and ') + ' ' + (empties.length > 1 ? 'are' : 'is') + ' <b>empty</b>. There is no sprite in that file.');
+
+  var odd = s.frames.filter(function (f) { return f.length !== s.w * s.h * 4; });
+  if (odd.length) bad.push('The frames are <b>not all the same size</b>. The creature would grow every other step.');
+  else if (s.frames.length >= 2) ok.push(s.frames.length + ' frames, all the same size.');
+
+  // the packer measures EVERY file, so a hovering frame 1 has to show up while you are
+  // looking at frame 0
+  var hover = [];
+  s.frames.forEach(function (f, i) { if (anyInk(f) && !bottomRowPainted(s, f)) hover.push(i); });
+  if (hover.length) warn.push('<b>Nothing on the bottom row</b> of frame ' + hover.join(' and ') + '. The game plants that row at the feet, so this creature hovers. Move it down and keep the empty rows at the top.');
+  else ok.push('The bottom row is painted, so the feet sit on the ground.');
+
+  var baked = [];
+  s.frames.forEach(function (f, i) { if (!anyClear(f)) baked.push(i); });
+  if (baked.length) warn.push('No clear pixels in frame ' + baked.join(' and ') + '. The background looks painted in, and it has to be see-through.');
+
+  if (s.frames.length < 2) warn.push('Only one frame. The game wants two, a standing one and a stepping one.');
+
+  if (s.frames.length > 1) {
+    var base = {}, extra = 0;
+    colourList({ frames: [s.frames[0]], cur: 0 }, 'all').forEach(function (c) { base[rgb2hex(c)] = 1; });
+    for (var k = 1; k < s.frames.length; k++) {
+      colourList({ frames: [s.frames[k]], cur: 0 }, 'all').forEach(function (c) { if (!base[rgb2hex(c)]) extra++; });
+    }
+    if (extra) warn.push(extra + ' colour' + (extra > 1 ? 's' : '') + ' turn up in a later frame that frame 0 does not have. All the frames of one creature share one palette.');
+  }
+
+  // only meaningful for a file that arrived from another tool; an edit clears the sizes
+  var big = (s.bytes || []).filter(function (b) { return b > 64 * 1024; });
+  if (big.length) warn.push(big.length + ' of the files you opened ' + (big.length > 1 ? 'are' : 'is') + ' over 64 KB, which at this size means an embedded colour profile or editor notes rather than art. Exporting from here strips that.');
+
+  if (s.w === s.h) ok.push('Square, ' + s.w + ' by ' + s.h + '.');
+  return { bad: bad, warn: warn, ok: ok };
+}
+
+// The open sprite is measured live on every redraw, because that is what makes the panel
+// useful while you draw. The others in the list only need their red dot, so they are
+// measured once and kept until they change.
+var CURCHK = null;
+function checkCached(s) {
+  if (s._chk && s._chkRev === s._rev) return s._chk;
+  s._chk = checkSprite(s); s._chkRev = s._rev;
+  return s._chk;
+}
+function touched(s) { if (s) { s._rev = (s._rev || 0) + 1; s._chk = null; } }
+
+function drawChecks() {
+  var box = $('checks'), s = spr();
+  box.innerHTML = '';
+  if (!s) { box.innerHTML = '<div class="hint">Open or start a sprite to see its checks.</div>'; return; }
+  var r = CURCHK || checkSprite(s);
+  var add = function (level, html) {
+    var d = document.createElement('div');
+    d.className = 'chk' + (level === 'ok' ? '' : ' ' + level);
+    d.innerHTML = '<i></i><span>' + html + '</span>';
+    box.appendChild(d);
+  };
+  r.bad.forEach(function (t) { add('bad', '<b>Refused.</b> ' + t); });
+  r.warn.forEach(function (t) { add('warn', t); });
+  r.ok.forEach(function (t) { add('ok', t); });
+}
+
+// ---------- the path bar: where the file goes and what to run next ----------
+var PB_REAL = null;   // the folder the current sprite's files really live in, when known
+function exportNames(s) {
+  var k = cleanName(s.key) || 'sprite';
+  return s.frames.map(function (_, i) { return k + '-' + i + '.png'; });
+}
+function drawPathBar() {
+  var s = spr();
+  // read the boxes, not the sprite, so the line follows what is being typed right now
+  var fam = cleanName($('family').value) || (s && s.family) || 'creatures';
+  var key = cleanName($('key').value) || (s && s.key) || '';
+  var names = s && key ? s.frames.map(function (_, i) { return key + '-' + i + '.png'; }) : [];
+  // a chosen folder wins; then the files' real folder when known (the Mac app knows,
+  // a browser hands out handles with no place attached); then the art-live guess
+  var here = null;
+  if (s && s.dest) here = s.dest.label;
+  if (s && !here) for (var hi = 0; hi < names.length && !here; hi++) {
+    var hh = handleFor(s, names[hi]);
+    if (hh && hh.dir) here = hh.dir;
+  }
+  PB_REAL = here;
+  $('pbPath').textContent = (here ? here.replace(/\/$/, '') + '/' : 'art-live/' + fam + '/') +
+    (names.length ? names.join(', ') : '');
+  $('pbCmd').textContent = 'npm run pack-art';
+  var w = '';
+  if (s) {
+    var typed = String($('key').value || '');
+    if (typed && cleanName(typed) !== typed.trim()) w = 'Saved as ' + cleanName(typed) + ', the packer only takes lowercase letters, digits, - and _';
+    var famTyped = String($('family').value || '');
+    if (famTyped && cleanName(famTyped) !== famTyped.trim()) w = 'Folder saved as ' + cleanName(famTyped) + ', same rule';
+  }
+  $('pbWarn').textContent = w;
+}
+function copyText(t, what) {
+  var done = function () { say('Copied ' + what, 'good'); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(done, function () { fallbackCopy(t, done); });
+  } else fallbackCopy(t, done);
+}
+function fallbackCopy(t, done) {
+  var a = document.createElement('textarea');
+  a.value = t; a.style.position = 'fixed'; a.style.opacity = '0';
+  document.body.appendChild(a); a.select();
+  try { document.execCommand('copy'); done(); }
+  catch (e) { say('This browser would not copy it. Select the text instead.', 'bad'); }
+  a.remove();
+}
+
+// =====================================================================================
+// The game size view. A sprite at 16 pixels tells you nothing on its own, so this draws
+// it the size a player actually sees, on the game's own ground, next to three creatures
+// already in the game.
+//
+// The one number behind all of it: the game draws 1.375 world units per drawn pixel for
+// an ordinary creature, and one map tile is 32 units. So a tile is 23.3 drawn pixels
+// across, and a 16 pixel creature is about two thirds of a tile. A creature with no
+// measurement of its own is drawn to fill its box, which is the same size whatever grid
+// it was drawn on, so a 32 pixel drawing is not a bigger creature, only a finer one.
+// =====================================================================================
+var TILE_IN_PIXELS = 32 / HERO_UPP;   // 23.27 drawn pixels to a map tile
+
+function groundTile(g, tx, ty) {
+  var h = ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
+  return g.tiles[h % g.tiles.length];
+}
+function paintGround(g, W, H, tile) {
+  var light = isLight(g.tiles[0]);
+  for (var ty = 0; ty * tile < H + tile; ty++) {
+    for (var tx = 0; tx * tile < W + tile; tx++) {
+      pctx.fillStyle = groundTile(g, tx, ty);
+      pctx.fillRect(Math.floor(tx * tile), Math.floor(ty * tile), Math.ceil(tile) + 1, Math.ceil(tile) + 1);
+      // the game speckles its ground; the same hash keeps it from shimmering
+      var h = ((tx * 668265263) ^ (ty * 2246822519)) >>> 0;
+      var step = Math.max(3, Math.round(tile / 5));
+      for (var i = 0; i < 5; i++) {
+        var hx = (h >> (i * 3)) % 5, hy = (h >> (i * 3 + 7)) % 5;
+        pctx.fillStyle = i % 2 ? g.dark : g.light;
+        pctx.globalAlpha = 0.5;
+        pctx.fillRect(Math.floor(tx * tile + hx * step), Math.floor(ty * tile + hy * step), 2, 2);
+      }
+      pctx.globalAlpha = 1;
+    }
+  }
+  // one faint seam so a map tile is visible
+  pctx.strokeStyle = light ? 'rgba(0,0,0,.12)' : 'rgba(255,255,255,.07)';
+  pctx.lineWidth = 1;
+  for (var x = 0; x < W + tile; x += tile) { pctx.beginPath(); pctx.moveTo(Math.floor(x) + .5, 0); pctx.lineTo(Math.floor(x) + .5, H); pctx.stroke(); }
+  for (var y = 0; y < H + tile; y += tile) { pctx.beginPath(); pctx.moveTo(0, Math.floor(y) + .5); pctx.lineTo(W, Math.floor(y) + .5); pctx.stroke(); }
+}
+// the game lays two black ellipses under an ordinary creature; this is both of them
+function paintShadow(cx, base, w) {
+  var u = S.scale / HERO_UPP;  // screen pixels to one world unit
+  pctx.fillStyle = 'rgba(0,0,0,0.30)';
+  pctx.beginPath(); pctx.ellipse(cx, base + u, w / 2, 3 * u, 0, 0, 6.2832); pctx.fill();
+  pctx.fillStyle = 'rgba(0,0,0,0.34)';
+  pctx.beginPath(); pctx.ellipse(cx, base + u, Math.max(1, w / 2 - 2 * u), 3.4 * u, 0, 0, 6.2832); pctx.fill();
+}
+function drawPreview() {
+  var s = spr();
+  var W = pv.clientWidth || 300;
+  var scale = S.scale;
+  var mine = 16 * scale;                    // a creature is this big whatever grid it uses
+  var H = Math.round(Math.max(120, Math.min(210, 16 * scale * REFS[2].upp + 40)));
+  var dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  pv.style.height = H + 'px';
+  pv.width = Math.round(W * dpr); pv.height = Math.round(H * dpr);
+  pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  pctx.imageSmoothingEnabled = false;
+
+  var g = S.ground, tile = TILE_IN_PIXELS * scale;
+  paintGround(g, W, H, tile);
+
+  var base = H - 20;   // the line every creature's feet stand on
+
+  // who is on the strip: the three from the game, with yours in the middle
+  var cast = [
+    { ref: REFS[0], w: Math.round(mine * REFS[0].upp / HERO_UPP) },
+    { ref: REFS[1], w: Math.round(mine * REFS[1].upp / HERO_UPP) },
+    { ref: null, w: mine, label: 'yours' },
+    { ref: REFS[2], w: Math.round(mine * REFS[2].upp / HERO_UPP) }
+  ];
+  var gap = 8;
+  var width = function (list) { return list.reduce(function (a, c) { return a + c.w; }, 0) + gap * (list.length - 1); };
+  // when there is not room for everyone, the rat goes first, then the ogre, then the hero
+  ['rat', 'ogre', 'hero'].forEach(function (id) {
+    if (width(cast) <= W - 12) return;
+    for (var i = 0; i < cast.length; i++) {
+      if (cast[i].ref && cast[i].ref.id === id) { cast.splice(i, 1); return; }
+    }
+  });
+
+  var x = Math.round((W - width(cast)) / 2);
+  var light = isLight(g.tiles[0]);
+  pctx.font = '9px ui-monospace, Menlo, Consolas, monospace';
+  pctx.textAlign = 'center';
+  cast.forEach(function (c) {
+    var img = null, label = c.label, ch = c.w;
+    if (c.ref) { img = refImg[c.ref.id]; label = c.ref.label; }
+    else if (s) {
+      img = blit(s.frames[S.playing ? (S.playFrame % s.frames.length) : s.cur], s.w, s.h);
+      ch = Math.round(c.w * s.h / s.w);   // a squashed sprite is refused, but show it squashed
+    }
+    paintShadow(x + c.w / 2, base, c.w);
+    if (img && (c.ref ? img.complete && img.naturalWidth : true)) {
+      pctx.drawImage(img, x, base - ch, c.w, ch);
+    } else if (!c.ref) {
+      pctx.strokeStyle = light ? 'rgba(0,0,0,.35)' : 'rgba(255,255,255,.28)';
+      pctx.setLineDash([3, 3]);
+      pctx.strokeRect(x + .5, base - c.w + .5, c.w - 1, c.w - 1);
+      pctx.setLineDash([]);
+    }
+    pctx.fillStyle = light ? 'rgba(0,0,0,.62)' : 'rgba(255,255,255,.62)';
+    pctx.fillText(label, x + c.w / 2, H - 6);
+    x += c.w + gap;
+  });
+  pctx.textAlign = 'left';
+
+  var note = scale + ' screen pixels to a drawn pixel, and the faint squares are map tiles.';
+  if (s && s.w !== 16) note += ' A ' + s.w + ' pixel drawing lands the same size on screen as a 16 pixel one, just finer or coarser.';
+  $('pvNote').textContent = note;
+}
+var playTimer = null;
+function setPlaying(on) {
+  var s = spr();
+  S.playing = on && !!s && s.frames.length > 1;
+  $('bPlay').textContent = S.playing ? 'Stop' : 'Play';
+  $('bPlay').className = S.playing ? 'on' : '';
+  if (playTimer) { clearInterval(playTimer); playTimer = null; }
+  if (S.playing) {
+    S.playFrame = 0;
+    playTimer = setInterval(function () { S.playFrame++; drawPreview(); }, 1000 / S.fps);
+  }
+  drawPreview();
+}
+
+// =====================================================================================
+// Keeping work. Everything open is written into this browser after every change, and
+// comes back next time the page opens. Undo history is NOT kept: a stale undo stack is
+// worse than none. The panel bottom left always says what is being held and when it was
+// written, and clears it in one press.
+// =====================================================================================
+var STORE_KEY = 'eldermyr-sprite-editor-v1';   // pre-rename key, kept so no one's work is orphaned
+function storageOK() {
+  try {
+    var probe = STORE_KEY + '-probe';
+    window.localStorage.setItem(probe, '1');
+    var back = window.localStorage.getItem(probe) === '1';
+    window.localStorage.removeItem(probe);
+    if (!back) { S.store.why = 'This browser accepted it and then gave nothing back.'; return false; }
+    return true;
+  } catch (e) {
+    S.store.why = 'This browser will not let the page keep anything (' + (e && e.name || 'blocked') + ').';
+    return false;
+  }
+}
+// The stored copy keeps the picture EXACTLY as it is on screen, part see-through pixels
+// and all. Storing the snapped copy would quietly fix a soft-edged file behind your back
+// the next time the page opened, and the whole point of the bar at the top is that you
+// decide when that happens.
+function rawCanvas(s, i) {
+  var c = document.createElement('canvas');
+  c.width = s.w; c.height = s.h;
+  var cc = c.getContext('2d');
+  var id = cc.createImageData(s.w, s.h);
+  id.data.set(s.frames[i]);
+  cc.putImageData(id, 0, 0);
+  return c;
+}
+function frameDataURI(s, i) { return rawCanvas(s, i).toDataURL('image/png'); }
+var saveTimer = null;
+function scheduleSave() {
+  if (!S.store.on) return;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveStore, 500);
+}
+function saveStore() {
+  if (!S.store.on) return;
+  saveTimer = null;
+  var payload = {
+    v: 1, at: Date.now(), si: S.si,
+    sprites: S.sprites.map(function (s) {
+      return {
+        key: s.key, family: s.family, w: s.w, h: s.h, bytes: s.bytes || [],
+        frames: s.frames.map(function (_, i) { return frameDataURI(s, i); })
+      };
+    })
+  };
+  var text = JSON.stringify(payload);
+  try {
+    window.localStorage.setItem(STORE_KEY, text);
+    S.store.at = payload.at; S.store.bytes = text.length; S.store.why = '';
+  } catch (e) {
+    S.store.why = 'There is no room left in this browser to keep it. Export what matters.';
+    say('Could not keep this in the browser, there is no room. Export it.', 'bad');
+  }
+  drawKept();
+}
+function loadStore() {
+  if (!S.store.on) { drawKept(); return; }
+  var text = null;
+  try { text = window.localStorage.getItem(STORE_KEY); } catch (e) { text = null; }
+  if (!text) { drawKept(); return; }
+  var data = null;
+  try { data = JSON.parse(text); } catch (e) { data = null; }
+  if (!data || data.v !== 1 || !Array.isArray(data.sprites)) {
+    // do not throw away something that cannot be read: say so and let it be cleared by hand
+    S.store.why = 'What is kept here was written by a different version and cannot be read. Press Forget all to clear it.';
+    drawKept();
+    return;
+  }
+  S.store.at = data.at || 0;
+  S.store.bytes = text.length;
+  var jobs = data.sprites.map(function (rec) {
+    return Promise.all(rec.frames.map(function (u) {
+      return new Promise(function (res) {
+        var im = new Image();
+        im.onload = function () { res(toPixels(im).px); };
+        im.onerror = function () { res(null); };
+        im.src = u;
+      });
+    })).then(function (frames) {
+      frames = frames.filter(Boolean);
+      if (!frames.length) return null;
+      var s = makeSprite(rec.key || 'sprite', rec.w, rec.h, frames, rec.family);
+      s.bytes = Array.isArray(rec.bytes) ? rec.bytes : [];
+      return s;
+    });
+  });
+  Promise.all(jobs).then(function (list) {
+    var made = list.filter(Boolean);
+    if (!made.length) { drawKept(); return; }
+    S.sprites = made.concat(S.sprites);
+    selectSprite(Math.min(typeof data.si === 'number' && data.si >= 0 ? data.si : 0, made.length - 1));
+    say('Brought back ' + made.length + (made.length === 1 ? ' sprite' : ' sprites') + ' saved ' + when(S.store.at) + '.', 'good');
+    drawKept();
+  });
+}
+function when(ms) {
+  if (!ms) return 'earlier';
+  var d = new Date(ms), now = new Date();
+  var hm = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  var sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return 'at ' + hm + ' today';
+  var days = Math.round((now - d) / 86400000);
+  if (days <= 1) return 'at ' + hm + ' yesterday';
+  return 'on ' + d.toDateString().slice(4, 10) + ' at ' + hm;
+}
+var forgetArmed = false, forgetTimer = null;
+function drawKept() {
+  var t = $('keptText'), b = $('bForget');
+  if (!S.store.on) {
+    t.innerHTML = '<span style="color:var(--warn)">Nothing is being saved.</span><br>' + (S.store.why || '') + ' Export before you close the tab.';
+    b.style.display = 'none';
+    return;
+  }
+  b.style.display = '';
+  if (S.store.why) {
+    t.innerHTML = '<span style="color:var(--warn)">' + S.store.why + '</span>';
+  } else if (!S.sprites.length) {
+    t.textContent = 'Nothing kept yet. Whatever you open or draw is kept here and comes back next time.';
+  } else {
+    var frames = S.sprites.reduce(function (a, s) { return a + s.frames.length; }, 0);
+    t.textContent = S.sprites.length + (S.sprites.length === 1 ? ' sprite' : ' sprites') + ', ' + frames +
+      (frames === 1 ? ' frame' : ' frames') + ', ' + Math.max(1, Math.round(S.store.bytes / 1024)) + ' KB. ' +
+      (S.store.at ? 'Saved ' + when(S.store.at) + '.' : 'Saving.') + ' Undo history is not kept.';
+  }
+  b.textContent = forgetArmed ? 'Really forget them?' : 'Forget all';
+  b.className = forgetArmed ? 'danger' : '';
+}
+function forgetAll() {
+  if (!forgetArmed) {
+    forgetArmed = true; drawKept();
+    forgetTimer = setTimeout(function () { forgetArmed = false; drawKept(); }, 4000);
+    return;
+  }
+  if (forgetTimer) clearTimeout(forgetTimer);
+  forgetArmed = false;
+  try { window.localStorage.removeItem(STORE_KEY); } catch (e) { /* nothing to do */ }
+  S.sprites = []; S.si = -1; S.store.at = 0; S.store.bytes = 0; S.store.why = '';
+  setPlaying(false);
+  selectSprite(-1);
+  say('Forgotten. Nothing is open and nothing is kept.', 'good');
+}
+
+// ---------- tools ----------
+var TOOLS = [
+  ['pencil', 'Pencil'], ['eraser', 'Eraser'], ['fill', 'Fill'],
+  ['line', 'Line'], ['pick', 'Pick'], ['select', 'Select']
+];
+function buildTools() {
+  var g = $('tools');
+  g.innerHTML = '';
+  TOOLS.forEach(function (t) {
+    var b = document.createElement('button');
+    b.className = 'tool' + (S.tool === t[0] ? ' on' : '');
+    b.innerHTML = '<span></span><span class="k"></span>';
+    b.children[0].textContent = t[1];
+    b.children[1].textContent = (KEYS[t[0]] || '').toUpperCase();
+    b.onclick = function () { setTool(t[0]); };
+    g.appendChild(b);
+  });
+}
+
+// ---------- the keys, yours to change ----------
+// every single-letter key lives here; click one in the Keys panel and press a new one.
+// The choice is kept in the browser, apart from the sprites, so Forget all spares it.
+var KEY_ACTIONS = [
+  ['pencil', 'Pencil', function () { setTool('pencil'); }],
+  ['eraser', 'Eraser', function () { setTool('eraser'); }],
+  ['fill', 'Fill', function () { setTool('fill'); }],
+  ['line', 'Line', function () { setTool('line'); }],
+  ['pick', 'Pick', function () { setTool('pick'); }],
+  ['select', 'Select', function () { setTool('select'); }],
+  ['onion', 'Onion skin', function () { $('bOnion').click(); }],
+  ['grid', 'Grid', function () { $('bGrid').click(); }]
+];
+var KEY_DEFAULTS = { pencil: 'd', eraser: 'e', fill: 'f', line: 'l', pick: 's', select: 'v', onion: 'o', grid: 'g' };
+var KEYS_KEY = 'eldermyr-sprite-editor-keys-v1';
+function loadKeys() {
+  var out = {}, a;
+  for (a in KEY_DEFAULTS) out[a] = KEY_DEFAULTS[a];
+  try {
+    var kept = JSON.parse(window.localStorage.getItem(KEYS_KEY) || '{}');
+    for (a in kept) if (KEY_DEFAULTS[a] && /^[a-z0-9]$/.test(String(kept[a]))) out[a] = String(kept[a]);
+  } catch (e) { /* unreadable is the same as unset */ }
+  return out;
+}
+var KEYS = loadKeys();
+function saveKeys() {
+  try { window.localStorage.setItem(KEYS_KEY, JSON.stringify(KEYS)); } catch (e) { /* nowhere to keep it */ }
+}
+var keyWait = null;   // the action waiting for its new key
+function drawKeys() {
+  var box = $('keyRows');
+  box.innerHTML = '';
+  KEY_ACTIONS.forEach(function (a) {
+    var row = document.createElement('span');
+    var cap = document.createElement('button');
+    cap.className = 'keycap' + (keyWait === a[0] ? ' waiting' : '');
+    cap.textContent = keyWait === a[0] ? '?' : KEYS[a[0]].toUpperCase();
+    cap.title = 'Press this, then the key ' + a[1].toLowerCase() + ' should answer to';
+    cap.onclick = function () {
+      keyWait = keyWait === a[0] ? null : a[0];
+      drawKeys();
+      if (keyWait) say('Press a key for ' + a[1].toLowerCase() + '. Esc keeps it as it is.');
+    };
+    row.appendChild(cap);
+    row.appendChild(document.createTextNode(a[1].toLowerCase()));
+    box.appendChild(row);
+  });
+}
+function assignKey(raw) {
+  var act = keyWait;
+  keyWait = null;
+  var k = String(raw).toLowerCase();
+  if (raw === 'Escape' || !/^[a-z0-9]$/.test(k)) {
+    drawKeys();
+    if (raw !== 'Escape') say('One letter or digit, please. The key stays as it was.', 'bad');
+    else say('Kept as it was');
+    return;
+  }
+  var label = '', swapped = null;
+  KEY_ACTIONS.forEach(function (a) { if (a[0] === act) label = a[1]; });
+  // a key already doing another job swaps, so no two things ever answer to one key
+  for (var a in KEYS) if (a !== act && KEYS[a] === k) { KEYS[a] = KEYS[act]; swapped = a; }
+  KEYS[act] = k;
+  saveKeys(); drawKeys(); buildTools();
+  var msg = label + ' is ' + k.toUpperCase() + ' now';
+  if (swapped) {
+    KEY_ACTIONS.forEach(function (a) { if (a[0] === swapped) msg += ', and ' + a[1].toLowerCase() + ' took ' + KEYS[swapped].toUpperCase(); });
+  }
+  say(msg, 'good');
+}
+function setTool(t) {
+  if (t !== 'select') dropSelection();
+  S.tool = t;
+  buildTools();
+  $('selHint').style.display = t === 'select' ? 'flex' : 'none';
+  cv.style.cursor = t === 'pick' ? 'copy' : (t === 'select' ? 'cell' : 'crosshair');
+}
+function setColor(c) {
+  S.color = c.slice();
+  var h = rgb2hex(c);
+  $('pick').value = h; $('hex').value = h;
+  drawPalette();
+}
+
+// ---------- pointer ----------
+var drag = null;
+function pxAt(e) {
+  var s = spr(), r = cv.getBoundingClientRect();
+  return {
+    x: Math.floor((e.clientX - r.left) / (r.width / s.w)),
+    y: Math.floor((e.clientY - r.top) / (r.height / s.h))
+  };
+}
+cv.addEventListener('pointerdown', function (e) {
+  var s = spr(); if (!s) return;
+  cv.setPointerCapture(e.pointerId);
+  var p = pxAt(e);
+  if (S.tool === 'pick') { eyedrop(p.x, p.y); return; }
+  if (S.tool === 'fill') { fill(p.x, p.y); commit(); redraw(); return; }
+  if (S.tool === 'select') {
+    if (S.sel && ptInSel(p.x, p.y)) {
+      if (!lift) beginLift();
+      drag = { mode: 'move', gx: p.x - S.sel.x, gy: p.y - S.sel.y };
+    } else {
+      dropSelection();
+      drag = { mode: 'box', x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y)) };
+      S.sel = { x: drag.x0, y: drag.y0, w: 1, h: 1 };
+      $('selHint').style.display = 'flex';
+    }
+    redraw();
+    return;
+  }
+  if (S.tool === 'line') {
+    // anchor the line and keep a clean copy of the frame to redraw it against
+    drag = {
+      mode: 'line', erase: e.button === 2, base: frm().slice(),
+      x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y))
+    };
+    strokeSeen = new Uint8Array(s.w * s.h);
+    paint(drag.x0, drag.y0, drag.erase);
+    redraw();
+    return;
+  }
+  strokeSeen = new Uint8Array(s.w * s.h);
+  drag = { mode: 'draw', erase: S.tool === 'eraser' || e.button === 2, lx: p.x, ly: p.y };
+  paint(p.x, p.y, drag.erase);
+  redraw();
+});
+// the line tool only makes the lines pixel art wants: flat, upright, or a true diagonal.
+// The cursor's angle is rounded to the nearest of the three.
+function snapEnd(x0, y0, x, y) {
+  var dx = x - x0, dy = y - y0, ax = Math.abs(dx), ay = Math.abs(dy);
+  if (ax >= 2 * ay) return { x: x, y: y0 };
+  if (ay >= 2 * ax) return { x: x0, y: y };
+  var n = Math.round((ax + ay) / 2);   // one step across for every step down
+  return { x: x0 + (dx < 0 ? -n : n), y: y0 + (dy < 0 ? -n : n) };
+}
+cv.addEventListener('pointermove', function (e) {
+  var s = spr(); if (!s) return;
+  var p = pxAt(e);
+  $('posLabel').textContent = (p.x >= 0 && p.y >= 0 && p.x < s.w && p.y < s.h) ? (p.x + ', ' + p.y) : '';
+  if (!drag) return;
+  if (drag.mode === 'draw') {
+    line(drag.lx, drag.ly, p.x, p.y, drag.erase);
+    drag.lx = p.x; drag.ly = p.y;
+  } else if (drag.mode === 'line') {
+    var q = snapEnd(drag.x0, drag.y0,
+      Math.max(0, Math.min(s.w - 1, p.x)), Math.max(0, Math.min(s.h - 1, p.y)));
+    s.frames[s.cur] = drag.base.slice();
+    strokeSeen = new Uint8Array(s.w * s.h);
+    line(drag.x0, drag.y0, q.x, q.y, drag.erase);
+  } else if (drag.mode === 'box') {
+    var x1 = Math.max(0, Math.min(s.w - 1, p.x)), y1 = Math.max(0, Math.min(s.h - 1, p.y));
+    S.sel = {
+      x: Math.min(drag.x0, x1), y: Math.min(drag.y0, y1),
+      w: Math.abs(x1 - drag.x0) + 1, h: Math.abs(y1 - drag.y0) + 1
+    };
+  } else if (drag.mode === 'move') {
+    stampLift(p.x - drag.gx, p.y - drag.gy);
+  }
+  redraw();
+});
+function endDrag() {
+  if (!drag) return;
+  strokeSeen = null;
+  var was = drag.mode; drag = null;
+  if (was === 'draw' || was === 'move' || was === 'line') commit();
+  redraw();
+}
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+cv.addEventListener('pointerleave', function () { $('posLabel').textContent = ''; });
+// zoom around a point: whatever sprite pixel sits under the anchor stays under it.
+// No anchor given means the middle of the view, for the buttons and the keys.
+function zoomAt(nz, cx, cy) {
+  var s = spr(); if (!s) return;
+  nz = Math.max(1, Math.min(48, nz));
+  if (nz === S.zoom) return;
+  var wrap = $('canvasWrap'), r = cv.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+  if (cx == null) { cx = wr.left + wrap.clientWidth / 2; cy = wr.top + wrap.clientHeight / 2; }
+  var px = (cx - r.left) / S.zoom, py = (cy - r.top) / S.zoom;
+  S.zoom = nz;
+  redraw();
+  var r2 = cv.getBoundingClientRect();
+  wrap.scrollLeft += (r2.left + px * nz) - cx;
+  wrap.scrollTop += (r2.top + py * nz) - cy;
+}
+
+// a mouse wheel sends one notch of about 100 per click, a trackpad sends a stream of
+// tiny ones. Stepping on every event made a light two-finger drag jump ten levels, so
+// gather the distance up and only step once a notch's worth has built.
+var wheelAcc = 0, wheelAt = 0;
+cv.addEventListener('wheel', function (e) {
+  if (!spr()) return;
+  e.preventDefault();
+  var d = e.deltaY;
+  if (e.deltaMode === 1) d *= 33; else if (e.deltaMode === 2) d *= 100;   // lines and pages to pixels
+  if (e.timeStamp - wheelAt > 250 || d * wheelAcc < 0) wheelAcc = 0;      // new gesture or turned around
+  wheelAt = e.timeStamp;
+  wheelAcc += d;
+  var NOTCH = 90, nz = S.zoom;
+  while (wheelAcc <= -NOTCH) { wheelAcc += NOTCH; nz = Math.min(48, nz + (nz < 8 ? 1 : 4)); }
+  while (wheelAcc >= NOTCH) { wheelAcc -= NOTCH; nz = Math.max(1, nz - (nz <= 8 ? 1 : 4)); }
+  if (nz !== S.zoom) zoomAt(nz, e.clientX, e.clientY);
+}, { passive: false });
+
+// ---------- loading files ----------
+function baseName(n) { return n.replace(/\.[^.]+$/, ''); }
+function decode(file) {
+  if (window.createImageBitmap) {
+    return createImageBitmap(file).catch(function () { return viaImg(file); });
+  }
+  return viaImg(file);
+}
+function viaImg(file) {
+  return new Promise(function (res, rej) {
+    var u = URL.createObjectURL(file), im = new Image();
+    im.onload = function () { res(im); };
+    im.onerror = function () { rej(new Error(file.name)); };
+    im.src = u;
+  });
+}
+function toPixels(img) {
+  var w = img.width, h = img.height;
+  var c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  var cc = c.getContext('2d', { willReadFrequently: true });
+  cc.imageSmoothingEnabled = false;
+  cc.drawImage(img, 0, 0);
+  try {
+    return { w: w, h: h, px: new Uint8ClampedArray(cc.getImageData(0, 0, w, h).data) };
+  } catch (err) {
+    throw new Error('This browser will not let the page read that image. Open the file with the Open PNGs button.');
+  }
+}
+
+function openFiles(files) {
+  var list = Array.prototype.slice.call(files).filter(function (f) { return /\.png$/i.test(f.name) || /image/.test(f.type); });
+  var skipped = Array.prototype.slice.call(files).length - list.length;
+  if (!list.length) { say('No PNG files in that drop', 'bad'); return; }
+  // One unreadable file must never lose the rest of the drop.
+  Promise.all(list.map(function (f) {
+    return decode(f).then(function (img) {
+      var d = toPixels(img); d.name = baseName(f.name); d.size = f.size; d.handle = f.handle || null; return d;
+    }).catch(function () { return { failed: f.name }; });
+  })).then(function (all) {
+    var bad = all.filter(function (d) { return d.failed; }).map(function (d) { return d.failed; });
+    var good = all.filter(function (d) { return !d.failed; });
+    if (!good.length) { say('Could not read ' + bad.join(', '), 'bad'); return; }
+
+    // name-0.png and name-1.png become one sprite with two frames
+    var groups = new Map();
+    good.forEach(function (d) {
+      var m = /^(.*[^-])-(\d+)$/.exec(d.name);
+      var key = m ? m[1] : d.name, idx = m ? parseInt(m[2], 10) : 0;
+      var g = groups.get(key);
+      if (!g) { g = []; groups.set(key, g); }
+      g.push({ idx: idx, d: d });
+    });
+    var made = 0, split = 0, renumbered = [];
+    groups.forEach(function (g, key) {
+      g.sort(function (a, b) { return a.idx - b.idx; });
+      var w = g[0].d.w, h = g[0].d.h;
+      var same = g.filter(function (e) { return e.d.w === w && e.d.h === h; });
+      var other = g.filter(function (e) { return e.d.w !== w || e.d.h !== h; });
+      // frames must start at 0 with no gaps, so say when the numbering had to change
+      if (same.some(function (e, i) { return e.idx !== i; })) renumbered.push(key);
+      var s = makeSprite(cleanName(key) || 'sprite', w, h, same.map(function (e) { return e.d.px; }), cleanName($('family').value));
+      s.bytes = same.map(function (e) { return e.d.size || 0; });   // the size of the file as it arrived
+      s.handles = same.map(function (e) { return e.d.handle; }).filter(Boolean);  // the files themselves, for Save over
+      S.sprites.push(s); made++;
+      other.forEach(function (e) {
+        var lone = makeSprite((cleanName(key) || 'sprite') + '-' + e.idx, e.d.w, e.d.h, [e.d.px], cleanName($('family').value));
+        lone.handles = e.d.handle ? [e.d.handle] : [];
+        S.sprites.push(lone);
+        split++;
+      });
+    });
+    selectSprite(S.sprites.length - 1);
+    var msg = 'Opened ' + made + (made === 1 ? ' sprite' : ' sprites');
+    if (split) msg += ', ' + split + ' put aside because the sizes did not match';
+    if (renumbered.length) msg += '. Frames of ' + renumbered.join(', ') + ' were renumbered from 0, which is what the packer needs';
+    if (bad.length) msg += '. Could not read ' + bad.join(', ');
+    if (skipped) msg += '. ' + skipped + ' file(s) were not PNGs';
+    say(msg, bad.length ? 'bad' : 'good');
+    checkAlpha();
+    scheduleSave();
+  });
+}
+function checkAlpha() {
+  var s = spr();
+  var bar = $('alphabar');
+  if (!s) { bar.className = ''; return; }
+  var n = rulesOn() ? countSoft(s) : 0;
+  if (!n || s.softDismissed) { bar.className = ''; return; }
+  $('alphaText').textContent = 'This sprite has ' + n + ' pixels that are only part see-through. ' +
+    'The game needs every pixel fully solid or fully clear, so it will refuse this as it is.';
+  bar.className = 'show';
+}
+function snapAlpha() {
+  var s = spr(); if (!s) return;
+  var n = 0;
+  s.frames.forEach(function (f) {
+    for (var i = 3; i < f.length; i += 4) {
+      if (f[i] === 0 || f[i] === 255) continue;
+      n++;
+      if (f[i] >= 128) { f[i] = 255; }
+      else { f[i - 3] = 0; f[i - 2] = 0; f[i - 1] = 0; f[i] = 0; }
+    }
+  });
+  commit(); checkAlpha(); redraw();
+  say('Snapped ' + n + ' pixels to solid or clear', 'good');
+}
+
+function selectSprite(i) {
+  dropSelection(true);
+  S.si = (i >= 0 && i < S.sprites.length) ? i : (S.sprites.length ? Math.max(0, Math.min(i, S.sprites.length - 1)) : -1);
+  var s = spr();
+  if (s) { $('key').value = s.key; $('family').value = s.family; s.softDismissed = false; }
+  else $('key').value = '';   // no sprite, no name: the path bar should not name a ghost
+  setPlaying(false);
+  checkAlpha();
+  redraw();              // this is what gives the canvas area a real size
+  if (s) { fitZoom(); redraw(); }
+}
+function fitZoom() {
+  var s = spr(); if (!s) return;
+  var box = $('canvasWrap').clientHeight - 40;
+  var boxw = $('canvasWrap').clientWidth - 40;
+  if (box < 8 || boxw < 8) { S.zoom = 16; return; }
+  var z = Math.floor(Math.min(box / s.h, boxw / s.w));
+  S.zoom = Math.max(1, Math.min(48, z || 16));
+}
+
+// ---------- export ----------
+function frameCanvas(s, i) {
+  var c = document.createElement('canvas');
+  c.width = s.w; c.height = s.h;
+  var cc = c.getContext('2d');
+  var id = cc.createImageData(s.w, s.h);
+  var src = s.frames[i];
+  // with the rules on, nothing leaves here part see-through; with them off, the file
+  // keeps exactly what was painted
+  for (var j = 0; j < src.length; j += 4) {
+    if (!rulesOn()) {
+      id.data[j] = src[j]; id.data[j + 1] = src[j + 1]; id.data[j + 2] = src[j + 2]; id.data[j + 3] = src[j + 3];
+      continue;
+    }
+    var a = src[j + 3] >= 128 ? 255 : 0;
+    id.data[j] = a ? src[j] : 0;
+    id.data[j + 1] = a ? src[j + 1] : 0;
+    id.data[j + 2] = a ? src[j + 2] : 0;
+    id.data[j + 3] = a;
+  }
+  cc.putImageData(id, 0, 0);
+  return c;
+}
+function saveFrame(s, i, name) {
+  return new Promise(function (res) {
+    frameCanvas(s, i).toBlob(function (b) {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(b);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); res(); }, 400);
+    }, 'image/png');
+  });
+}
+function exportAll(oneOnly, force) {
+  var s = spr(); if (!s) return;
+  s.key = cleanName($('key').value) || 'sprite';
+  s.family = cleanName($('family').value) || 'creatures';
+  $('key').value = s.key; $('family').value = s.family;
+  touched(s); scheduleSave();
+
+  var r = checkSprite(s);
+  if (r.bad.length && !force) {
+    var plain = r.bad[0].replace(/<[^>]+>/g, '');
+    say('The packer would refuse this. ' + plain, 'bad');
+    // stays put until the refusal is gone, so there is time to read the checks panel
+    redraw();
+    $('bForce').style.display = '';
+    return;
+  }
+  $('bForce').style.display = 'none';
+
+  var names = exportNames(s);
+  var idx = oneOnly ? [s.cur] : s.frames.map(function (_, i) { return i; });
+  var soft = rulesOn() ? countSoft(s) : 0;
+  var chain = Promise.resolve();
+  idx.forEach(function (i) { chain = chain.then(function () { return saveFrame(s, i, names[i]); }); });
+  chain.then(function () {
+    say('Downloaded ' + idx.map(function (i) { return names[i]; }).join(', ') +
+      ' to your Downloads folder. Move ' + (idx.length > 1 ? 'them' : 'it') + ' into art-live/' + s.family + '/ and run npm run pack-art' +
+      (soft ? '. ' + soft + ' part see-through pixels were snapped on the way out' : ''), 'good');
+    scheduleSave();
+    redraw();
+  });
+}
+
+// ---------- save over: write the frames back into the files they came from ----------
+// Chrome and Edge hand this page a writable handle for a file picked through the Open
+// dialog or dropped on the window. While the sprite still has files whose names match
+// what export would write, Save over writes straight into them: no downloads folder, no
+// moving files about after. Firefox and Safari never hand out handles, so there the
+// button never appears and Export frames stays the way.
+// true where the page can write files in place at all: Chrome and Edge have the picker,
+// the Mac app fills it in through mac/bridge.js, and drops can carry handles too
+var FS_OK = !!window.showOpenFilePicker ||
+  !!(window.DataTransferItem && DataTransferItem.prototype.getAsFileSystemHandle);
+function handleFor(s, name) {
+  var hs = s.handles || [];
+  for (var i = 0; i < hs.length; i++) if (hs[i] && hs[i].name === name) return hs[i];
+  return null;
+}
+function canSaveOver(s) {
+  if (!s || !s.handles || !s.handles.length) return false;
+  return exportNames(s).some(function (n) { return !!handleFor(s, n); });
+}
+function askWrite(h) {
+  var opt = { mode: 'readwrite' };
+  if (!h.queryPermission) return Promise.resolve(true);
+  return h.queryPermission(opt).then(function (p) {
+    if (p === 'granted') return true;
+    return h.requestPermission(opt).then(function (q) { return q === 'granted'; });
+  });
+}
+function writeFrame(s, i, h) {
+  return new Promise(function (res, rej) {
+    frameCanvas(s, i).toBlob(function (b) {
+      if (!b) { rej(new Error('could not encode the PNG')); return; }
+      h.createWritable().then(function (w) {
+        return w.write(b).then(function () { return w.close(); });
+      }).then(res, rej);
+    }, 'image/png');
+  });
+}
+// returns true when the checks refused it, so the button can arm a Save anyway press
+function saveOver(force) {
+  var s = spr(); if (!s) return false;
+  s.key = cleanName($('key').value) || 'sprite';
+  s.family = cleanName($('family').value) || 'creatures';
+  $('key').value = s.key; $('family').value = s.family;
+  touched(s); scheduleSave();
+
+  var r = checkSprite(s);
+  if (r.bad.length && !force) {
+    var plain = r.bad[0].replace(/<[^>]+>/g, '');
+    say('The packer would refuse this. ' + plain, 'bad');
+    redraw();
+    return true;
+  }
+
+  var names = exportNames(s);
+
+  // a chosen folder takes every frame, whatever the files were called before
+  if (s.dest && s.dest.handle) {
+    var dsoft = rulesOn() ? countSoft(s) : 0;
+    askWrite(s.dest.handle).then(function (ok) {
+      if (!ok) { say('The browser was not allowed to write in ' + s.dest.label + '. Nothing was touched.', 'bad'); return; }
+      var dchain = Promise.resolve();
+      names.forEach(function (n, i) {
+        dchain = dchain.then(function () {
+          return s.dest.handle.getFileHandle(n, { create: true }).then(function (h) { return writeFrame(s, i, h); });
+        });
+      });
+      dchain.then(function () {
+        s.bytes = [];
+        say('Saved ' + names.join(', ') + ' into ' + s.dest.label +
+          (dsoft ? '. ' + dsoft + ' part see-through pixels were snapped on the way out' : '') +
+          '. Run npm run pack-art', 'good');
+        scheduleSave(); redraw();
+      }, function () {
+        say('Could not write into ' + s.dest.label + '. The folder may have moved. Export frames still works.', 'bad');
+      });
+    });
+    return false;
+  }
+
+  var inPlace = [], fresh = [];
+  names.forEach(function (n, i) {
+    var h = handleFor(s, n);
+    if (h) inPlace.push({ i: i, name: n, h: h });
+    else fresh.push({ i: i, name: n });
+  });
+  // the name changed under the button between redraws: fall back to plain export
+  if (!inPlace.length) { exportAll(false, force); return false; }
+
+  var soft = rulesOn() ? countSoft(s) : 0;
+  var wrote = [], blocked = [], failed = [];
+  var chain = Promise.resolve();
+  inPlace.forEach(function (p) {
+    chain = chain.then(function () {
+      return askWrite(p.h).then(function (ok) {
+        if (!ok) { blocked.push(p.name); return; }
+        return writeFrame(s, p.i, p.h).then(
+          function () { wrote.push(p.name); },
+          function () { failed.push(p.name); });
+      }, function () { blocked.push(p.name); });
+    });
+  });
+  // a frame added since opening has no file yet, so it goes to downloads as before
+  fresh.forEach(function (p) { chain = chain.then(function () { return saveFrame(s, p.i, p.name); }); });
+  chain.then(function () {
+    if (wrote.length) s.bytes = [];   // what is on disk now is exactly what this editor writes
+    var list = function (a) { return a.join(', '); };
+    var bits = [];
+    var realDir = inPlace.length && inPlace[0].h.dir ? inPlace[0].h.dir : null;
+    if (wrote.length) bits.push('Saved over ' + list(wrote) + (realDir ? ' in ' + realDir : ' in place'));
+    if (fresh.length) bits.push(list(fresh.map(function (p) { return p.name; })) + (fresh.length > 1 ? ' are new frames' : ' is a new frame') + ' with no file yet, downloaded instead');
+    if (blocked.length) bits.push('The browser held back ' + list(blocked) + '. It asks once per file: press Save over again');
+    if (failed.length) bits.push('Could not write ' + list(failed) + '. The file may have moved. Export frames still works');
+    var stale = (s.handles || []).filter(function (h) { return h && names.indexOf(h.name) < 0; }).map(function (h) { return h.name; });
+    if (wrote.length && stale.length) bits.push(list(stale) + ' on disk ' + (stale.length > 1 ? 'are' : 'is') + ' not a frame of this sprite any more. Delete ' + (stale.length > 1 ? 'them' : 'it') + ' yourself if it should go');
+    if (wrote.length && !blocked.length && !failed.length) {
+      bits.push('Run npm run pack-art' + (soft ? '. ' + soft + ' part see-through pixels were snapped on the way out' : ''));
+    }
+    say(bits.join('. '), (blocked.length || failed.length) ? 'bad' : 'good');
+    scheduleSave();
+    redraw();
+  });
+  return false;
+}
+
+// ---------- the two side columns, draggable ----------
+// widths are kept in the browser next to the key choices, apart from the sprites,
+// so Forget all spares them too
+var UI_KEY = 'eldermyr-sprite-editor-ui-v1';
+var UI = (function () {
+  try { return JSON.parse(window.localStorage.getItem(UI_KEY) || '{}') || {}; }
+  catch (e) { return {}; }
+})();
+function saveUI() {
+  try { window.localStorage.setItem(UI_KEY, JSON.stringify(UI)); } catch (e) { /* nowhere to keep it */ }
+}
+function applyCols() {
+  var st = Math.max(110, Math.min(340, UI.stripW || 150));
+  var sd = Math.max(240, Math.min(520, UI.sideW || 322));
+  $('strip').style.width = st + 'px'; $('strip').style.flex = '0 0 ' + st + 'px';
+  $('side').style.width = sd + 'px'; $('side').style.flex = '0 0 ' + sd + 'px';
+}
+function wireSplit(id, which) {
+  var h = $(id);
+  h.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    h.setPointerCapture(e.pointerId);
+    h.className = 'vsplit held';
+    var x0 = e.clientX;
+    var w0 = (which === 'stripW' ? $('strip') : $('side')).getBoundingClientRect().width;
+    var mv = function (ev) {
+      var d = ev.clientX - x0;
+      UI[which] = Math.round(which === 'stripW' ? w0 + d : w0 - d);
+      applyCols();
+      drawPreview();
+    };
+    var up = function () {
+      h.removeEventListener('pointermove', mv);
+      h.className = 'vsplit';
+      saveUI();
+      redraw();
+    };
+    h.addEventListener('pointermove', mv);
+    h.addEventListener('pointerup', up, { once: true });
+    h.addEventListener('pointercancel', up, { once: true });
+  });
+  h.addEventListener('dblclick', function () {
+    delete UI[which];
+    applyCols(); saveUI(); drawPreview(); redraw();
+  });
+}
+wireSplit('splitL', 'stripW');
+wireSplit('splitR', 'sideW');
+applyCols();
+
+// the game-rules toggle lives in the same kept corner of the browser
+function rulesOn() { return UI.rules !== false; }
+$('rulesBox').checked = rulesOn();
+$('rulesBox').onchange = function () {
+  UI.rules = this.checked;
+  saveUI();
+  S.sprites.forEach(touched);   // every cached verdict is stale now
+  var s = spr(); if (s) s.softDismissed = false;
+  checkAlpha(); redraw();
+  say(this.checked ? "Back under the game's rules" : 'Rules off. Soft pixels and any colour count are yours to keep.', 'good');
+};
+$('alpha').oninput = function () {
+  S.alpha = parseInt(this.value, 10);
+  $('alphaPct').textContent = S.alpha + '%';
+};
+
+// ---------- wiring ----------
+buildTools();
+drawKeys();
+setTool('pencil');
+setColor(S.color);
+GROUNDS.forEach(function (g) {
+  var b = document.createElement('b');
+  b.style.background = g.tiles[0];
+  b.className = g.id === S.ground.id ? 'on' : '';
+  b.title = g.name;
+  b.onclick = function () {
+    S.ground = g;
+    Array.prototype.forEach.call($('bgs').children, function (n) { n.className = ''; });
+    b.className = 'on';
+    drawPreview(); drawFrames();
+  };
+  $('bgs').appendChild(b);
+});
+SCALES.forEach(function (sc) {
+  var b = document.createElement('button');
+  b.textContent = sc.label;
+  b.style.padding = '3px 7px';
+  b.className = sc.n === S.scale ? 'on' : '';
+  b.title = sc.n + ' screen pixels to one drawn pixel';
+  b.onclick = function () {
+    S.scale = sc.n;
+    Array.prototype.forEach.call($('scales').children, function (n) { n.className = ''; });
+    b.className = 'on';
+    drawPreview();
+  };
+  $('scales').appendChild(b);
+});
+
+// the picker is what hands back writable handles, which is what makes Save over work.
+// A browser without it, or one that refuses it here, gets the plain input as before.
+var pickerBroken = false;
+$('bOpen').onclick = function () {
+  if (pickerBroken || !window.showOpenFilePicker) { $('file').click(); return; }
+  window.showOpenFilePicker({
+    multiple: true,
+    types: [{ description: 'PNG images', accept: { 'image/png': ['.png'] } }]
+  }).then(function (hs) {
+    return Promise.all(hs.map(function (h) {
+      return h.getFile().then(function (f) { f.handle = h; return f; });
+    })).then(function (files) { if (files.length) openFiles(files); });
+  }).catch(function (err) {
+    if (err && err.name === 'AbortError') return;   // the picker was closed, nothing to open
+    pickerBroken = true;
+    $('file').click();
+  });
+};
+$('file').onchange = function (e) { openFiles(e.target.files); e.target.value = ''; };
+$('fileFrame').onchange = function (e) {
+  var s = spr(), files = Array.prototype.slice.call(e.target.files);
+  e.target.value = '';
+  if (!s || !files.length) return;
+  Promise.all(files.map(function (f) {
+    return decode(f).then(toPixels).catch(function () { return { failed: f.name }; });
+  })).then(function (all) {
+    var wrong = [], unread = [];
+    all.forEach(function (d) {
+      if (d.failed) { unread.push(d.failed); return; }
+      if (d.w !== s.w || d.h !== s.h) { wrong.push(d.w + 'x' + d.h); return; }
+      s.frames.push(d.px);
+    });
+    s.cur = s.frames.length - 1;
+    commit(); checkAlpha(); redraw();
+    var msg = 'Added ' + (all.length - wrong.length - unread.length) + ' frame(s)';
+    if (wrong.length) msg += '. ' + wrong.length + ' were a different size (' + wrong.join(', ') + ') and were skipped';
+    if (unread.length) msg += '. Could not read ' + unread.join(', ');
+    say(msg, (wrong.length || unread.length) ? 'bad' : 'good');
+  });
+};
+$('bNew').onclick = function () {
+  var n = Math.max(4, Math.min(128, parseInt($('newSize').value, 10) || 16));
+  var name = 'sprite' + (S.sprites.length + 1);
+  S.sprites.push(makeSprite(name, n, n, [blank(n, n)], cleanName($('family').value)));
+  selectSprite(S.sprites.length - 1);
+  scheduleSave();
+  say('New blank sprite, ' + n + ' by ' + n);
+};
+var closeArmed = false, closeTimer = null;
+$('bClose').onclick = function () {
+  if (S.si < 0) return;
+  if (!closeArmed) {
+    closeArmed = true;
+    this.textContent = 'Close and lose it?';
+    this.className = 'danger';
+    var self = this;
+    closeTimer = setTimeout(function () { closeArmed = false; self.textContent = 'Close'; self.className = ''; }, 4000);
+    return;
+  }
+  if (closeTimer) clearTimeout(closeTimer);
+  closeArmed = false;
+  this.textContent = 'Close'; this.className = '';
+  var gone = S.sprites[S.si].key;
+  S.sprites.splice(S.si, 1);
+  selectSprite(Math.min(S.si, S.sprites.length - 1));
+  scheduleSave();
+  say('Closed ' + gone + '. It is not kept any more.', 'good');
+};
+$('bExport').onclick = function () { exportAll(false, false); };
+$('bExport1').onclick = function () { exportAll(true, false); };
+$('bForce').onclick = function () { exportAll(false, true); };
+// a refused save arms the button the way Close arms itself: a second press goes anyway
+var saveArmed = false, saveArmTimer = null;
+function disarmSave() {
+  saveArmed = false;
+  if (saveArmTimer) { clearTimeout(saveArmTimer); saveArmTimer = null; }
+  var b = $('bSave'), s = spr();
+  b.textContent = s && s.dest ? 'Save' : 'Save over'; b.className = '';
+}
+$('bSave').onclick = function () {
+  var forced = saveArmed;
+  disarmSave();
+  if (saveOver(forced)) {
+    saveArmed = true;
+    this.textContent = 'Save anyway?'; this.className = 'danger';
+    saveArmTimer = setTimeout(disarmSave, 4000);
+  }
+};
+$('key').oninput = function () { drawPathBar(); };
+$('key').onchange = function () {
+  var s = spr(); if (!s) { drawPathBar(); return; }
+  s.key = cleanName($('key').value) || 'sprite';
+  $('key').value = s.key;
+  touched(s); scheduleSave(); redraw();
+};
+$('family').oninput = function () { drawPathBar(); };
+$('family').onchange = function () {
+  var f = cleanName($('family').value) || 'creatures';
+  $('family').value = f;
+  var s = spr(); if (s) { s.family = f; touched(s); scheduleSave(); }
+  redraw();
+};
+$('pbChange').onclick = function () {
+  var s = spr(); if (!s) { say('Nothing open', 'bad'); return; }
+  if (!window.showDirectoryPicker) { say('This browser cannot pick a folder. Chrome, Edge or the Mac app can.', 'bad'); return; }
+  window.showDirectoryPicker().then(function (dh) {
+    return askWrite(dh).then(function (ok) {
+      if (!ok) { say('The browser was not allowed to write in that folder. Nothing changed.', 'bad'); return; }
+      s.dest = { handle: dh, label: dh.dir || dh.name };
+      drawPathBar(); redraw();
+      say('Saving goes to ' + s.dest.label + ' now. Press Save when ready.', 'good');
+    });
+  }).catch(function (err) {
+    if (!err || err.name !== 'AbortError') say('The folder picker did not open. Nothing changed.', 'bad');
+  });
+};
+$('pbCopyPath').onclick = function () {
+  var s = spr(); if (!s) { say('Nothing open', 'bad'); return; }
+  copyText(PB_REAL ? PB_REAL.replace(/\/$/, '') + '/' : 'art-live/' + (cleanName(s.family) || 'creatures') + '/', 'the folder');
+};
+$('pbCopyCmd').onclick = function () { copyText('npm run pack-art', 'the command'); };
+$('bSettings').onclick = openSettings;
+$('bSettingsClose').onclick = closeSettings;
+$('settings').onclick = function (e) { if (e.target === this) closeSettings(); };
+$('bKeysReset').onclick = function () {
+  KEYS = {};
+  for (var a in KEY_DEFAULTS) KEYS[a] = KEY_DEFAULTS[a];
+  keyWait = null;
+  saveKeys(); drawKeys(); buildTools();
+  say('The keys are back to the usual ones', 'good');
+};
+$('bSnap').onclick = snapAlpha;
+$('bDismiss').onclick = function () { var s = spr(); if (s) s.softDismissed = true; checkAlpha(); };
+$('bUndo').onclick = undo;
+$('bRedo').onclick = redo;
+$('bFlip').onclick = flipFrame;
+$('bForget').onclick = forgetAll;
+$('zIn').onclick = function () { zoomAt(S.zoom + (S.zoom < 8 ? 1 : 4)); };
+$('zOut').onclick = function () { zoomAt(S.zoom - (S.zoom <= 8 ? 1 : 4)); };
+$('zFit').onclick = function () { fitZoom(); redraw(); };
+$('bGrid').onclick = function () { S.grid = !S.grid; this.className = S.grid ? 'on' : ''; redraw(); };
+$('bGuides').onclick = function () { S.guides = !S.guides; this.className = S.guides ? 'on' : ''; redraw(); };
+$('bOnion').onclick = function () { S.onion = !S.onion; this.className = S.onion ? 'on' : ''; redraw(); };
+$('bPlay').onclick = function () { setPlaying(!S.playing); };
+$('fps').oninput = function () {
+  S.fps = parseInt(this.value, 10);
+  $('fpsLabel').textContent = S.fps + ' a second';
+  if (S.playing) setPlaying(true);
+};
+$('pick').oninput = function () { setColor(hex2rgb(this.value)); };
+$('hex').oninput = function () { var c = hex2rgb(this.value); if (c) setColor(c); };
+$('hex').onchange = function () {
+  var c = hex2rgb(this.value);
+  if (c) setColor(c); else { say('That is not a colour like #8bc250', 'bad'); this.value = rgb2hex(S.color); }
+};
+
+// drag and drop, anywhere on the window
+var dragDepth = 0;
+window.addEventListener('dragenter', function (e) {
+  e.preventDefault();
+  if (frameDrag !== null) return;   // a frame on the move is not files arriving
+  dragDepth++; $('drop').className = 'show';
+});
+window.addEventListener('dragover', function (e) { e.preventDefault(); });
+window.addEventListener('dragleave', function () { if (--dragDepth <= 0) { dragDepth = 0; $('drop').className = ''; } });
+window.addEventListener('drop', function (e) {
+  e.preventDefault(); dragDepth = 0; $('drop').className = '';
+  if (frameDrag !== null) { frameDrag = null; drawFrames(); return; }   // let go outside the row: nothing moves
+  var dt = e.dataTransfer;
+  if (!dt) return;
+  // ask for writable handles while the event is still alive; the items are gone after it.
+  // Both calls per item have to happen now, before anything awaits.
+  if (dt.items && dt.items.length && dt.items[0].getAsFileSystemHandle) {
+    var picks = Array.prototype.map.call(dt.items, function (it) {
+      if (it.kind !== 'file') return Promise.resolve(null);
+      var f = it.getAsFile();
+      return it.getAsFileSystemHandle().then(function (h) {
+        if (f && h && h.kind === 'file') f.handle = h;
+        return f;
+      }, function () { return f; });
+    });
+    Promise.all(picks).then(function (files) {
+      files = files.filter(Boolean);
+      if (files.length) openFiles(files);
+    });
+    return;
+  }
+  if (dt.files && dt.files.length) openFiles(dt.files);
+});
+
+// keys
+window.addEventListener('keydown', function (e) {
+  var t = e.target.tagName;
+  if (t === 'INPUT' || t === 'TEXTAREA') return;
+  var meta = e.metaKey || e.ctrlKey;
+  // a keycap in Settings is waiting: this press is the new binding, nothing else
+  if (keyWait) { if (!meta) { e.preventDefault(); assignKey(e.key); return; } keyWait = null; drawKeys(); }
+  if (settingsOpen()) {
+    if (e.key === 'Escape' || (meta && e.key === ',')) { e.preventDefault(); closeSettings(); }
+    return;
+  }
+  if (meta && e.key === ',') { e.preventDefault(); openSettings(); return; }
+  if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+  if (meta && e.key.toLowerCase() === 'c') { e.preventDefault(); copySel(false); return; }
+  if (meta && e.key.toLowerCase() === 'x') { e.preventDefault(); copySel(true); return; }
+  if (meta && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClip(); return; }
+  if (meta && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (meta && e.key.toLowerCase() === 's') {
+    e.preventDefault();
+    if ($('bSave').style.display !== 'none' && !$('bSave').disabled) $('bSave').click(); else exportAll(false, false);
+    return;
+  }
+  if (!meta && !e.altKey && !e.shiftKey) {
+    var k = e.key.toLowerCase();
+    for (var i = 0; i < KEY_ACTIONS.length; i++) {
+      if (KEYS[KEY_ACTIONS[i][0]] === k) { e.preventDefault(); KEY_ACTIONS[i][2](); return; }
+    }
+  }
+  switch (e.key) {
+    case 'z': case 'Z': if (e.shiftKey) { redo(); } break;
+    case '+': case '=': $('zIn').click(); break;
+    case '-': case '_': $('zOut').click(); break;
+    case 'Escape': dropSelection(); redraw(); break;
+    case 'Delete': case 'Backspace': if (S.sel) { e.preventDefault(); clearSelection(); } break;
+    case 'ArrowLeft': e.preventDefault(); nudge(-1, 0); break;
+    case 'ArrowRight': e.preventDefault(); nudge(1, 0); break;
+    case 'ArrowUp': e.preventDefault(); nudge(0, -1); break;
+    case 'ArrowDown': e.preventDefault(); nudge(0, 1); break;
+    case ' ': e.preventDefault(); setPlaying(!S.playing); break;
+  }
+});
+window.addEventListener('keyup', function (e) {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') commit();
+});
+window.addEventListener('resize', function () { drawPreview(); });
+// last chance to write, for the tab that gets closed mid-stroke
+window.addEventListener('beforeunload', function () { if (saveTimer) { clearTimeout(saveTimer); saveStore(); } });
+
+S.store.on = storageOK();
+redraw();
+loadStore();
+
+// the settings modal. The Mac menu bar's Settings item still calls showKeys, so the
+// old door opens the new room.
+function settingsOpen() { return $('settings').className === 'show'; }
+function openSettings() { keyWait = null; drawKeys(); $('settings').className = 'show'; }
+function closeSettings() { keyWait = null; drawKeys(); $('settings').className = ''; }
+function showKeys() { openSettings(); }
+
+// a small door for checking the tool from the outside
+window.EDITOR = {
+  S: S, spr: spr, redraw: redraw, frameCanvas: frameCanvas, colourList: colourList,
+  countSoft: countSoft, openFiles: openFiles, makeSprite: makeSprite, selectSprite: selectSprite,
+  undo: undo, redo: redo, commit: commit, blank: blank, checkSprite: checkSprite,
+  cleanName: cleanName, saveStore: saveStore, loadStore: loadStore, flipFrame: flipFrame,
+  nudge: nudge, exportNames: exportNames, STORE_KEY: STORE_KEY,
+  saveOver: saveOver, canSaveOver: canSaveOver, handleFor: handleFor,
+  copySel: copySel, pasteClip: pasteClip, snapEnd: snapEnd, setTool: setTool,
+  showKeys: showKeys, drawPathBar: drawPathBar, moveFrame: moveFrame
+};
+</script>
+</body>
+</html>

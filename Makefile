@@ -26,7 +26,13 @@ run: app
 icon:
 	python3 mac/make-icon.py
 
+# docs/ is the GitHub Pages site: the landing page, plus the editor itself as
+# editor.html. Run this after editing index.html so the hosted copy keeps up.
+site:
+	cp index.html docs/editor.html
+	@echo 'docs/editor.html refreshed. Commit and push to update the site.'
+
 clean:
 	rm -rf dist
 
-.PHONY: app run icon clean
+.PHONY: app run icon site clean

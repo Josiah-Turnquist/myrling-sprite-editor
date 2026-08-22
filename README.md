@@ -14,6 +14,13 @@ files you opened. There is also a small Mac app, below.
 
 MIT licensed. Take it, fork it, ship your own creatures with it.
 
+**Try it without downloading anything:** the editor runs at
+[josiah-turnquist.github.io/myrling-sprite-editor/editor.html](https://josiah-turnquist.github.io/myrling-sprite-editor/editor.html),
+and the landing page lives at
+[josiah-turnquist.github.io/myrling-sprite-editor](https://josiah-turnquist.github.io/myrling-sprite-editor/).
+Saving in place works there too — the page is served over HTTPS, so Chrome and Edge
+allow it. After editing `index.html`, `make site` refreshes the hosted copy.
+
 ## Made for one game, useful for yours
 
 The rules baked into this editor — square frames, at most 32 colours, every pixel fully

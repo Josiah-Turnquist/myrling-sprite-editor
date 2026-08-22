@@ -1,0 +1,345 @@
+<title>Myrling</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root{
+    --bg:#131519; --panel:#191c22; --panel2:#1f232b; --line:#2b313b;
+    --text:#c9cfd8; --dim:#7d8794; --hot:#e6ecf5;
+    --green:#8bc250; --green-dark:#4e7a2b; --green-light:#b4e07e;
+    --warn:#c9a24a; --bad:#d1685a;
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --pixel:'Pixelify Sans','IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:16px/1.65 'IBM Plex Sans',system-ui,sans-serif;
+  }
+  a{color:var(--green-light); text-decoration-color:var(--green-dark)}
+  .wrap{max-width:60rem; margin:0 auto; padding:0 20px}
+
+  /* ---- hero: the editor's own canvas ---- */
+  header{
+    background:
+      repeating-conic-gradient(#171a20 0% 25%, #12141a 0% 50%) 0 0 / 64px 64px;
+    border-bottom:1px solid var(--line);
+    padding:64px 20px 56px; text-align:center;
+  }
+  header canvas{image-rendering:pixelated; display:block; margin:0 auto 22px; width:176px; height:176px}
+  h1{
+    font-family:var(--pixel); font-weight:600; font-size:clamp(38px,7vw,58px);
+    color:var(--hot); margin:0 0 8px; letter-spacing:.5px; text-wrap:balance;
+  }
+  .pitch{
+    font-family:var(--pixel); color:var(--green); font-size:clamp(17px,3vw,22px);
+    margin:0 auto 14px; max-width:none; letter-spacing:.04em;
+  }
+  .tag{color:var(--dim); margin:0 auto 26px; max-width:36rem; font-size:17px}
+  .tag b{color:var(--text); font-weight:600}
+  .ctas{display:flex; gap:12px; justify-content:center; flex-wrap:wrap}
+  .btn{
+    display:inline-block; font:600 15px/1 'IBM Plex Sans',sans-serif; text-decoration:none;
+    padding:13px 22px; border-radius:4px; border:1px solid transparent;
+  }
+  .btn.solid{background:var(--green); color:#16210c}
+  .btn.solid:hover{background:var(--green-light)}
+  .btn.ghost{border-color:var(--green-dark); color:var(--green-light)}
+  .btn.ghost:hover{border-color:var(--green); color:var(--hot)}
+  .pillrow{margin-top:26px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap}
+  .pill{
+    font:500 12px/1 var(--mono); letter-spacing:.06em; color:var(--dim);
+    border:1px solid var(--line); background:var(--panel); border-radius:3px; padding:7px 11px;
+  }
+
+  /* ---- sections ---- */
+  section{padding:64px 0}
+  section+section{border-top:1px solid var(--line)}
+  .eyebrow{
+    font-family:var(--pixel); font-size:15px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--green); margin:0 0 6px;
+  }
+  h2{font-size:27px; font-weight:600; color:var(--hot); margin:0 0 14px; text-wrap:balance}
+  p{margin:0 0 14px; max-width:66ch}
+  .dim{color:var(--dim)}
+  code{font:14px var(--mono); background:var(--panel2); border:1px solid var(--line); border-radius:3px; padding:1px 5px; white-space:nowrap}
+  pre{
+    background:var(--panel); border:1px solid var(--line); border-radius:4px;
+    padding:14px 16px; overflow-x:auto; margin:16px 0; max-width:34rem;
+  }
+  pre code{background:none; border:0; padding:0; white-space:pre; color:var(--green-light)}
+  pre .c{color:var(--dim)}
+
+  /* try it */
+  .try{display:flex; gap:36px; align-items:flex-start; flex-wrap:wrap}
+  .try .board{flex:0 0 auto}
+  .try .words{flex:1 1 280px; min-width:260px}
+  #mini{
+    image-rendering:pixelated; width:min(320px,86vw); height:min(320px,86vw);
+    border:1px solid var(--line); box-shadow:0 0 0 1px #0d0f13; cursor:crosshair;
+    touch-action:none; display:block;
+  }
+  .swatches{display:flex; gap:6px; margin-top:10px; align-items:center; flex-wrap:wrap}
+  .sw{
+    width:26px; height:26px; border-radius:3px; border:1px solid var(--line); cursor:pointer; padding:0;
+  }
+  .sw.on{outline:2px solid var(--hot); outline-offset:1px}
+  .swatches button.txt{
+    font:500 12px var(--mono); color:var(--dim); background:var(--panel);
+    border:1px solid var(--line); border-radius:3px; padding:6px 10px; cursor:pointer;
+  }
+  .swatches button.txt:hover{color:var(--hot); border-color:#4d6386}
+
+  /* feature grid */
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; margin-top:22px}
+  .card{border:1px solid var(--line); border-radius:4px; background:var(--panel); padding:18px 20px}
+  .card h3{margin:0 0 8px; font-size:16px; font-weight:600; color:var(--hot)}
+  .card p{font-size:14.5px; margin:0; color:var(--text)}
+  .card .k{
+    font-family:var(--mono); color:var(--green); font-size:12px;
+    border:1px solid var(--green-dark); border-radius:3px; padding:1px 6px;
+    white-space:nowrap; vertical-align:2px;
+  }
+
+  /* the checks motif */
+  .checks{border:1px solid var(--line); border-radius:4px; background:var(--panel); margin:18px 0; overflow:hidden; max-width:44rem}
+  .checks div{display:flex; gap:12px; padding:11px 14px; border-top:1px solid var(--line); align-items:baseline}
+  .checks div:first-child{border-top:0}
+  .checks i{flex:0 0 8px; height:8px; border-radius:2px; align-self:center}
+  .ok i{background:var(--green)} .wr i{background:var(--warn)} .rf i{background:var(--bad)}
+  .checks b{font-weight:600; color:var(--hot)}
+  .checks p{margin:0; font-size:15px}
+
+  footer{border-top:1px solid var(--line); padding:28px 20px 48px; text-align:center; font-size:14px; color:var(--dim)}
+</style>
+
+<header>
+  <canvas id="rootling" width="16" height="16" aria-label="Myrling's mascot, a small green pixel creature, idling between its standing and stepping frames"></canvas>
+  <h1>Myrling</h1>
+  <p class="pitch">Draw the creature. Ship the pixels.</p>
+  <p class="tag">A pixel editor for tiny game creatures in <b>one HTML file</b> — no build, no
+  server, no dependencies, nothing uploaded anywhere. Saves straight back over your PNGs.
+  Free and MIT, with a native Mac app around the same file.</p>
+  <div class="ctas">
+    <a class="btn solid" href="editor.html">Open the editor</a>
+    <a class="btn ghost" href="https://github.com/Josiah-Turnquist/myrling-sprite-editor">Get it on GitHub</a>
+  </div>
+  <p class="dim" style="margin-top:12px; font-size:13px">Runs entirely in your browser. Nothing installs, nothing uploads.</p>
+  <div class="pillrow">
+    <span class="pill">1 HTML file</span>
+    <span class="pill">0 dependencies</span>
+    <span class="pill">MIT licensed</span>
+    <span class="pill">Mac app included</span>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section id="try">
+    <p class="eyebrow">Try it</p>
+    <h2>This is the whole idea, at arm's length</h2>
+    <div class="try">
+      <div class="board">
+        <canvas id="mini" width="16" height="16" aria-label="A small working pixel canvas, prefilled with the rootling mascot, that you can draw on"></canvas>
+        <div class="swatches" id="sws"></div>
+      </div>
+      <div class="words">
+        <p>That's our rootling on a real 16&#8209;pixel canvas. Draw on it. Right&#8209;click
+        erases. Wreck it, Reset brings it back.</p>
+        <p>The actual editor is this, grown up: frames and a walk cycle you can drag to
+        reorder, onion skin, a fill and a line tool that only draws the lines pixel art
+        wants, a palette that builds itself from your sprite, and a live preview of your
+        creature at the size a player actually sees it, standing on the game's own ground
+        next to creatures already shipped.</p>
+        <p class="dim">Everything you open is kept in your browser and comes back next
+        visit. Undo goes back 200 steps.</p>
+        <p><a class="btn ghost" href="editor.html">Skip the toy — open the real editor</a></p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">The point</p>
+    <h2>It saves real files, where they really live</h2>
+    <p>Exporting to a downloads folder and dragging files back where they belong is the
+    worst part of every browser tool, so Myrling doesn't do that. Open PNGs — or drop
+    them on the window — and <b>Save over</b> writes your edits straight back into the
+    originals, wherever they live. The path bar shows the file's true folder, not a
+    guess.</p>
+    <p>Starting from a blank sprite instead? Press <b>Change…</b>, pick any folder once,
+    and Save writes every frame there — <code>name&#8209;0.png</code>,
+    <code>name&#8209;1.png</code> — straight into your game's art directory. Works in
+    Chrome and Edge through the File System Access API, and in the Mac app natively.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Guardrails</p>
+    <h2>Your game's rules ride along while you draw</h2>
+    <p>Myrling was born inside Realms of Eldermyr, whose art packer refuses files that
+    break its rules. So the editor checks them live, the same way the packer does, and is
+    honest about which problems block you and which are just worth a look:</p>
+    <div class="checks">
+      <div class="rf"><i></i><p><b>Refused.</b> Part see-through pixels, a non-square
+      picture, more than 32 colours, an empty frame, a name that cannot be a filename.</p></div>
+      <div class="wr"><i></i><p><b>Worth a look.</b> Nothing on the bottom row — the game
+      plants that row at the creature's feet, so it would hover. One frame only. No clear
+      pixels at all.</p></div>
+      <div class="ok"><i></i><p><b>Clean.</b> What you drew is what ships, pixel for
+      pixel. No outline added, no shadow to paint; the game does both.</p></div>
+    </div>
+    <p>Not shipping into Eldermyr? One checkbox turns the rules off: soft, part
+    see-through pixels and any colour count are then kept exactly as painted, through
+    save, export and browser storage alike. And the rules themselves are ordinary code in
+    one readable file — fork it and make it enforce <em>your</em> game's rules instead.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">The editor</p>
+    <h2>Small tool, sharp edges</h2>
+    <div class="grid">
+      <div class="card"><h3>An honest brush <span class="k">D</span></h3>
+      <p>Pencil, fill, eraser, and a line tool that snaps every drag to flat, upright, or
+      a true one-for-one diagonal. An opacity slider blends paint with what's underneath
+      — once per stroke, so a slow drag never darkens its own line.</p></div>
+      <div class="card"><h3>Frames that behave</h3>
+      <p>Add, copy, delete, drag tiles to rearrange. Onion skin shows the frame before,
+      faintly. Play runs the walk cycle at game size, which is the only honest way to
+      judge one.</p></div>
+      <div class="card"><h3>Copy, paste, between sprites <span class="k">&#8984;C &#8984;V</span></h3>
+      <p>Select a box, copy it, paste it into the same sprite or a different one. Pastes
+      land floating so you drag them into place before they set down.</p></div>
+      <div class="card"><h3>Judged at game size</h3>
+      <p>A 16-pixel sprite tells you nothing at 16 pixels. The preview draws yours the
+      size a player sees it, on the game's grounds, next to a grave rat, the hero and an
+      ogre already in the game.</p></div>
+      <div class="card"><h3>Keys, yours to change <span class="k">&#8984;,</span></h3>
+      <p>Every tool key rebinds in Settings — click a key, press a new one. A taken key
+      swaps so nothing goes unreachable. Kept in your browser.</p></div>
+      <div class="card"><h3>Zoom that follows you</h3>
+      <p>The wheel zooms around your cursor: the pixel under it stays under it. The side
+      columns drag wider when the sprite list or panels need room.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">The Mac app</p>
+    <h2>The same file, in its own window</h2>
+    <p>Not a port — the Mac app is <code>index.html</code>, unchanged, behind a single
+    Swift file. WebKit has no File System Access API, so a 100-line bridge fills in the
+    corner Myrling uses: real open panels, real folder pickers, Save over writing real
+    files, exports landing in Downloads. Build it with the Xcode command line tools and
+    nothing else:</p>
+    <pre><code>git clone https://github.com/Josiah-Turnquist/myrling-sprite-editor
+cd myrling-sprite-editor
+make run    <span class="c"># builds dist/Myrling.app and opens it</span></code></pre>
+    <p class="dim">Built for your machine, ad-hoc signed — all a local tool needs. The
+    Dock icon is itself a 16-pixel sprite, drawn by a hundred lines of dependency-free
+    Python.</p>
+  </section>
+
+  <section>
+    <p class="eyebrow">Take it</p>
+    <h2>MIT, for whatever you're making</h2>
+    <p>The whole tool is readable in an afternoon: one HTML file for the editor, one
+    Swift file for the shell, one script for the icon. Swap the palette, the checks and
+    the reference creatures for your own game's, and you have a sprite editor that knows
+    your rules.</p>
+    <div class="ctas" style="justify-content:flex-start; margin-top:22px">
+      <a class="btn solid" href="https://github.com/Josiah-Turnquist/myrling-sprite-editor">github.com/Josiah-Turnquist/myrling-sprite-editor</a>
+    </div>
+  </section>
+</div>
+
+<footer>
+  Myrling · MIT License · born in Realms of Eldermyr, useful anywhere creatures are
+  sixteen pixels tall.
+</footer>
+
+<script>
+(function () {
+  // the mascot's art, shared by the idling hero and the little canvas below it
+  var A = [
+    "................","................",".......LL.......","......L..L......",
+    ".......GG.......",".....DGGGGD.....","....DGLGGGGD....","...DGLGGGGGGD...",
+    "...DGEGGGEGGD...","...DGEGGGEGGD...","...DGGGGGGGGD...","...DGGGDDGGGD...",
+    "....DGGGGGGD....",".....DD..DD.....",".....DD..DD.....","................"
+  ];
+  var B = A.slice(1).concat(["................"]);
+  B[12] = "....DGGGGGGD...."; B[13] = ".....DD..DD....."; B[14] = "................";
+  var PAL = { D:'#4e7a2b', G:'#8bc250', L:'#b4e07e', E:'#14180f' };
+  function checker(x, y) { return ((x >> 2) + (y >> 2)) % 2 ? '#171a20' : '#12141a'; }
+
+  // the hero rootling idles in its two frames, standing and stepping
+  var cv = document.getElementById('rootling'), cx = cv.getContext('2d');
+  function draw(art) {
+    for (var y = 0; y < 16; y++) for (var x = 0; x < 16; x++) {
+      cx.fillStyle = PAL[art[y][x]] || checker(x, y);
+      cx.fillRect(x, y, 1, 1);
+    }
+  }
+  draw(A);
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    var on = false;
+    setInterval(function () { on = !on; draw(on ? B : A); }, 333);
+  }
+
+  // the little canvas: the rootling, editable. Left paints, right erases.
+  var mini = document.getElementById('mini'), mx = mini.getContext('2d');
+  var px = [];
+  function reset() {
+    px = [];
+    for (var y = 0; y < 16; y++) { px.push([]); for (var x = 0; x < 16; x++) px[y].push(PAL[A[y][x]] || null); }
+    paintAll();
+  }
+  function paintAll() {
+    for (var y = 0; y < 16; y++) for (var x = 0; x < 16; x++) {
+      mx.fillStyle = px[y][x] || checker(x, y);
+      mx.fillRect(x, y, 1, 1);
+    }
+  }
+  var colour = '#8bc250';
+  var SWS = ['#8bc250', '#4e7a2b', '#b4e07e', '#c9a24a', '#d1685a', '#7d9dd0', '#e6ecf5', '#14180f'];
+  var swBox = document.getElementById('sws');
+  SWS.forEach(function (c, i) {
+    var b = document.createElement('button');
+    b.className = 'sw' + (i === 0 ? ' on' : '');
+    b.style.background = c;
+    b.title = c;
+    b.onclick = function () {
+      colour = c;
+      Array.prototype.forEach.call(swBox.querySelectorAll('.sw'), function (n) { n.className = 'sw'; });
+      b.className = 'sw on';
+    };
+    swBox.appendChild(b);
+  });
+  var rst = document.createElement('button');
+  rst.className = 'txt'; rst.textContent = 'Reset';
+  rst.onclick = reset;
+  swBox.appendChild(rst);
+
+  function cell(e) {
+    var r = mini.getBoundingClientRect();
+    return { x: Math.floor((e.clientX - r.left) / (r.width / 16)), y: Math.floor((e.clientY - r.top) / (r.height / 16)) };
+  }
+  var down = false, erasing = false;
+  function dab(e) {
+    var p = cell(e);
+    if (p.x < 0 || p.y < 0 || p.x > 15 || p.y > 15) return;
+    px[p.y][p.x] = erasing ? null : colour;
+    mx.fillStyle = px[p.y][p.x] || checker(p.x, p.y);
+    mx.fillRect(p.x, p.y, 1, 1);
+  }
+  mini.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    mini.setPointerCapture(e.pointerId);
+    down = true; erasing = e.button === 2;
+    dab(e);
+  });
+  mini.addEventListener('pointermove', function (e) { if (down) dab(e); });
+  mini.addEventListener('pointerup', function () { down = false; });
+  mini.addEventListener('pointercancel', function () { down = false; });
+  mini.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  reset();
+})();
+</script>
