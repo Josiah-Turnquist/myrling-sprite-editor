@@ -254,6 +254,11 @@ creature is drawn to fill its box, and the box is the same either way.
 ## Notes
 
 - Tested in Chrome. Any current browser should work.
+- Large images are fine. A 1000 by 2000 picture opens below life size on the zoom
+  ladder (down to 1/8x), draws smoothly, and zoom stops where the browser's canvas
+  limits would begin. One thing changes: a sprite past about a million pixels is too
+  big for the browser's own storage, so it is not kept between visits — the corner
+  says so, and saving it to files works as ever.
 - The picture you export is the picture you drew, pixel for pixel. Opening a shipped sprite
   and exporting it untouched gives back an identical image. The file's bytes can differ,
   because the PNG is written again here, but not one pixel moves.
