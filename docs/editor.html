@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Myrling</title>
+<script>
+// If the page froze last time, open with #forget on the URL (or add it now) and
+// reload. This runs before anything else so the kept copy is gone before decode.
+if (location.hash === '#forget') {
+  try { localStorage.removeItem('eldermyr-sprite-editor-v1'); } catch (e) { /* nothing to do */ }
+}
+</script>
 <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAxElEQVR42mNgQANCIlL/kbG4lAJejK6ekH4GQmDAHECsAZQ6AKdDBswB5Bqw5UEdCibXA0PPATAL0aMAl0MGvwPITWTdhwJQMLmJdOg4wK9KG4zRLUbHMHXDxwHoFsMSG7EOGboOINdiUh0y8A7AJYHuABEJfjDGZREuefRESXRJOOqAQecAcvHwdQBMnlh1g9cBpBbF1CqAyK4L6O4A9ChBNxjdoTRvD1DdATBAbwdg9IwG3AG4HEJuxwWXfoK9Y3o7AACpqVpHc9cEDgAAAABJRU5ErkJggg==">
 <style>
   :root{
@@ -107,14 +114,20 @@
     background:#33231f; border-bottom:1px solid #563a33; color:#eab8ad;
   }
   #alphabar.show{display:flex}
-  #canvasWrap{
-    flex:1; min-height:0; overflow:auto; padding:16px;
-    display:flex;
+  #canvasHost{
+    flex:1; min-height:0; position:relative; display:none;
   }
-  #cv{margin:auto}
   #cv{
-    image-rendering:pixelated; background:#0d0f13; cursor:crosshair;
-    box-shadow:0 0 0 1px var(--line); touch-action:none;
+    position:absolute; inset:0; z-index:0; display:block;
+    image-rendering:pixelated; touch-action:none;
+  }
+  #canvasWrap{
+    position:absolute; inset:0; z-index:1; overflow:auto; padding:16px;
+    display:flex; cursor:crosshair;
+  }
+  #canvasSizer{
+    margin:auto; flex:0 0 auto; pointer-events:none;
+    box-shadow:0 0 0 1px var(--line);
   }
   #stagebar{
     display:flex; align-items:center; gap:6px; padding:5px 8px;
@@ -204,7 +217,7 @@
     <button id="bOpen">Open PNGs</button>
     <span class="sep"></span>
     <button id="bNew">New sprite</button>
-    <input id="newSize" type="number" min="4" max="128" value="16" style="width:48px" title="Size in pixels, square">
+    <input id="newSize" type="number" min="4" max="1024" value="16" style="width:48px" title="Size in pixels, square">
     <span class="dim">px</span>
     <span class="sep"></span>
     <span class="dim">Folder</span>
@@ -275,7 +288,10 @@
         </div>
       </div>
 
-      <div id="canvasWrap" style="display:none"><canvas id="cv"></canvas></div>
+      <div id="canvasHost" style="display:none">
+        <canvas id="cv"></canvas>
+        <div id="canvasWrap"><div id="canvasSizer"></div></div>
+      </div>
 
       <div id="stagebar" style="display:none">
         <span class="dim">Zoom</span>
@@ -442,6 +458,24 @@ var S = {
 var cv = $('cv'), ctx = cv.getContext('2d');
 var pv = $('preview'), pctx = pv.getContext('2d');
 var off = document.createElement('canvas'), octx = off.getContext('2d', { willReadFrequently: true });
+var blitF = null;     // last frame drawn into `off`; one slot, so a redraw can reuse it
+var canvasRaf = 0;    // coalesces paint-only redraws while a stroke is in flight
+var viewW = 0, viewH = 0, viewDpr = 0;
+var chkTile = null;
+
+// Zoom is 1–48, the same for a 16 px creature and a 1000 px picture. The canvas
+// itself is only ever as big as the visible hole in the window: the wrap scrolls
+// a sizer the size of the zoomed sprite, and we paint that window. Pictures
+// bigger than MAX_SIDE are refused on open so a 20 000 px drop cannot eat RAM;
+// anything already kept still comes back.
+var MAX_SIDE = 4096, MAX_ZOOM = 48, PAL_MAX = 64, MAX_BACK = 4096;
+// Above this many pixels the editor still opens and draws the picture, but it
+// skips the live palette and checks until the UI has had a frame to breathe.
+// A game screenshot at 473×1024 has hundreds of thousands of colours; counting
+// them on every redraw is what froze the app on open, not zoom.
+var HEAVY_PX = 128 * 128;
+function isHeavy(s) { return !!(s && s.w * s.h > HEAVY_PX); }
+var panelTimer = null, deepCheck = false;
 
 function spr() { return S.si >= 0 ? S.sprites[S.si] : null; }
 function frm() { var s = spr(); return s ? s.frames[s.cur] : null; }
@@ -501,7 +535,8 @@ function sameAsHead(s) {
   return true;
 }
 // 200 steps back, but never more than about 40 MB of them: a 128 px sprite with eight
-// frames would otherwise hold half a gigabyte of undo.
+// frames would otherwise hold half a gigabyte of undo. Two copies is the floor so the
+// last stroke can still be undone; forcing eight would keep 512 MB for a 4k frame.
 var HIST_STEPS = 200, HIST_BYTES = 40 * 1024 * 1024;
 function commit() {
   var s = spr(); if (!s) return;
@@ -597,10 +632,10 @@ function fill(x, y) {
   if (S.alpha >= 100 && t[3] === want[3] && t[0] === want[0] && t[1] === want[1] && t[2] === want[2]) return;
   var lo = S.sel ? S.sel : { x: 0, y: 0, w: s.w, h: s.h };
   // flat index stack and inline reads: a two-megapixel flood was half a second of
-  // little array allocations before, and is a blink now
+  // little array allocations, and is a blink now. seen marks queued-once, at push,
+  // so the stack can never outgrow one slot a pixel.
   var w = s.w, n = w * s.h;
   var st = new Int32Array(n), sp = 0, seen = new Uint8Array(n);
-  // seen marks queued-once, at push, so the stack can never outgrow one slot a pixel
   st[sp++] = y * w + x; seen[y * w + x] = 1;
   var t0 = t[0], t1 = t[1], t2 = t[2], t3 = t[3];
   while (sp) {
@@ -753,88 +788,71 @@ function pasteClip() {
 }
 
 // ---------- drawing the big canvas ----------
-var blitID = null;
 function blit(f, w, h) {
-  if (off.width !== w || off.height !== h) { off.width = w; off.height = h; blitID = null; }
-  if (!blitID || blitID.width !== w || blitID.height !== h) blitID = octx.createImageData(w, h);
-  blitID.data.set(f);
-  octx.putImageData(blitID, 0, 0);
+  if (blitF === f && off.width === w && off.height === h) return off;
+  blitF = f;
+  if (off.width !== w) off.width = w;
+  if (off.height !== h) off.height = h;
+  var id = octx.createImageData(w, h);
+  id.data.set(f);
+  octx.putImageData(id, 0, 0);
   return off;
 }
-var checkerPat = null, gridPatZ = 0, gridPat = null;
+function thumb(f, w, h, size) {
+  var c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  var cc = c.getContext('2d');
+  cc.imageSmoothingEnabled = false;
+  cc.drawImage(blit(f, w, h), 0, 0, size, size);
+  return c;
+}
 function checkerPattern() {
-  if (checkerPat) return checkerPat;
-  var p = document.createElement('canvas'); p.width = 16; p.height = 16;
-  var pc = p.getContext('2d');
-  pc.fillStyle = '#12141a'; pc.fillRect(0, 0, 16, 16);
-  pc.fillStyle = '#171a20'; pc.fillRect(8, 0, 8, 8); pc.fillRect(0, 8, 8, 8);
-  checkerPat = ctx.createPattern(p, 'repeat');
-  return checkerPat;
-}
-function gridPattern(z) {
-  if (gridPat && gridPatZ === z) return gridPat;
-  var n = 8 * z;
-  var p = document.createElement('canvas'); p.width = n; p.height = n;
-  var pc = p.getContext('2d');
-  pc.lineWidth = 1;
-  for (var k = 0; k < 8; k++) {
-    pc.strokeStyle = k === 0 ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.07)';
-    pc.beginPath(); pc.moveTo(k * z + .5, 0); pc.lineTo(k * z + .5, n); pc.stroke();
-    pc.beginPath(); pc.moveTo(0, k * z + .5); pc.lineTo(n, k * z + .5); pc.stroke();
+  if (!chkTile) {
+    chkTile = document.createElement('canvas');
+    chkTile.width = 16; chkTile.height = 16;
+    var x = chkTile.getContext('2d');
+    x.fillStyle = '#12141a'; x.fillRect(0, 0, 16, 16);
+    x.fillStyle = '#171a20'; x.fillRect(0, 0, 8, 8); x.fillRect(8, 8, 8, 8);
   }
-  gridPatZ = z; gridPat = ctx.createPattern(p, 'repeat');
-  return gridPat;
+  return ctx.createPattern(chkTile, 'repeat');
 }
-function redraw() {
-  var s = spr();
-  // mid-stroke, the checks and the side panels can wait for the pointer to lift;
-  // repainting them per mousemove is what made a big picture feel like syrup
-  var busy = !!(drag && (drag.mode === 'draw' || drag.mode === 'line' || drag.mode === 'move' || drag.mode === 'box'));
-  CURCHK = s ? checkCached(s) : null;
-  if (!CURCHK || !CURCHK.bad.length) $('bForce').style.display = 'none';
-  // shown wherever saving in place is possible at all, and greyed with the reason when
-  // this particular sprite cannot do it, so the button teaches rather than hides
-  if (FS_OK) {
-    var toDest = !!(s && s.dest);
-    var can = toDest || canSaveOver(s);
-    $('bSave').style.display = '';
-    $('bSave').disabled = !can;
-    if (!saveArmed) $('bSave').textContent = toDest ? 'Save' : 'Save over';
-    $('bSave').title = toDest
-      ? 'Write every frame into ' + s.dest.label + '. Change\u2026 in the bar below picks another folder.'
-      : (can
-        ? 'Write every frame back over the files it was opened from. No moving files about after.'
-        : (s && s.handles && s.handles.length
-          ? 'The name no longer matches the files this sprite was opened from. Set it back, use Export frames, or pick a folder with Change\u2026 below.'
-          : 'Nothing here came from a file opened this session. Open PNGs, drop files on the window, or pick a folder with Change\u2026 below.'));
-    $('pbChange').style.display = '';
-  } else {
-    $('bSave').style.display = 'none';   // Firefox and Safari cannot write files in place
-    $('pbChange').style.display = 'none';
-  }
-  $('empty').style.display = s ? 'none' : 'flex';
-  $('canvasWrap').style.display = s ? 'flex' : 'none';
-  $('stagebar').style.display = s ? 'flex' : 'none';
-  $('frames').style.display = s ? 'flex' : 'none';
-  $('framesHd').style.display = s ? 'block' : 'none';
-  if (!s) { drawStrip(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept(); return; }
-
-  if (S.zoom > maxZoomFor(s)) S.zoom = maxZoomFor(s);   // never size a canvas the browser refuses
-  var z = S.zoom, dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-  var W = s.w * z, H = s.h * z;
-  // only remake the canvas when its size actually changed; remaking it every
-  // pointermove reallocates the whole backing store
-  var needW = Math.round(W * dpr), needH = Math.round(H * dpr);
-  if (cv.width !== needW || cv.height !== needH) {
-    cv.style.width = W + 'px'; cv.style.height = H + 'px';
-    cv.width = needW; cv.height = needH;
+function pinCanvas() {
+  var host = $('canvasHost'), wrap = $('canvasWrap');
+  var vw = host.clientWidth, vh = host.clientHeight;
+  if (vw < 1 || vh < 1) return null;
+  var dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  if (vw * dpr > MAX_BACK || vh * dpr > MAX_BACK) dpr *= MAX_BACK / Math.max(vw * dpr, vh * dpr);
+  cv.style.width = vw + 'px';
+  cv.style.height = vh + 'px';
+  if (vw !== viewW || vh !== viewH || dpr !== viewDpr) {
+    viewW = vw; viewH = vh; viewDpr = dpr;
+    cv.width = Math.max(1, Math.round(vw * dpr));
+    cv.height = Math.max(1, Math.round(vh * dpr));
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.imageSmoothingEnabled = false;
-  ctx.clearRect(0, 0, W, H);
+  return { wrap: wrap, host: host, vw: vw, vh: vh };
+}
+function paintCanvas() {
+  var s = spr(); if (!s) return;
+  blitF = null;
+  var z = S.zoom;
+  var W = s.w * z, H = s.h * z;
+  var sizer = $('canvasSizer');
+  sizer.style.width = W + 'px';
+  sizer.style.height = H + 'px';
 
-  // checkerboard under the sprite so clear pixels are unmistakable: one pattern
-  // fill, not one fillRect per cell
+  var view = pinCanvas();
+  if (!view) return;
+  var ox = sizer.getBoundingClientRect().left - view.host.getBoundingClientRect().left;
+  var oy = sizer.getBoundingClientRect().top - view.host.getBoundingClientRect().top;
+  var vw = view.vw, vh = view.vh;
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, vw, vh);
+
+  ctx.save();
+  ctx.translate(ox, oy);
+  ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
   ctx.fillStyle = checkerPattern();
   ctx.fillRect(0, 0, W, H);
 
@@ -847,10 +865,34 @@ function redraw() {
   }
   ctx.drawImage(blit(s.frames[s.cur], s.w, s.h), 0, 0, W, H);
 
-  // gridlines, as one repeating pattern per zoom level
+  // gridlines only for the sprite pixels in the window, so 48× on a 1000 px
+  // picture is a few dozen strokes, not two thousand
   if (S.grid && z >= 4) {
-    ctx.fillStyle = gridPattern(z);
-    ctx.fillRect(0, 0, W, H);
+    var x0 = Math.max(0, Math.floor(-ox / z));
+    var x1 = Math.min(s.w, Math.ceil((vw - ox) / z));
+    var y0 = Math.max(0, Math.floor(-oy / z));
+    var y1 = Math.min(s.h, Math.ceil((vh - oy) / z));
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,.07)';
+    ctx.beginPath();
+    for (var x = x0; x <= x1; x++) {
+      if (x % 8 === 0) continue;
+      ctx.moveTo(x * z + .5, y0 * z); ctx.lineTo(x * z + .5, y1 * z);
+    }
+    for (var y = y0; y <= y1; y++) {
+      if (y % 8 === 0) continue;
+      ctx.moveTo(x0 * z, y * z + .5); ctx.lineTo(x1 * z, y * z + .5);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.16)';
+    ctx.beginPath();
+    for (var x8 = Math.ceil(x0 / 8) * 8; x8 <= x1; x8 += 8) {
+      ctx.moveTo(x8 * z + .5, y0 * z); ctx.lineTo(x8 * z + .5, y1 * z);
+    }
+    for (var y8 = Math.ceil(y0 / 8) * 8; y8 <= y1; y8 += 8) {
+      ctx.moveTo(x0 * z, y8 * z + .5); ctx.lineTo(x1 * z, y8 * z + .5);
+    }
+    ctx.stroke();
   }
 
   // guides: the feet line and the centre line
@@ -876,12 +918,75 @@ function redraw() {
     ctx.strokeRect(b.x * z + .5, b.y * z + .5, b.w * z - 1, b.h * z - 1);
     ctx.setLineDash([]);
   }
+  ctx.restore();
 
-  $('zoomLabel').textContent = (z < 1 ? '1/' + Math.round(1 / z) : z) + 'x';
+  $('zoomLabel').textContent = z + 'x';
   $('sizeLabel').textContent = s.w + ' x ' + s.h;
+}
+function requestCanvas() {
+  if (canvasRaf) return;
+  canvasRaf = requestAnimationFrame(function () {
+    canvasRaf = 0;
+    paintCanvas();
+  });
+}
+function redraw() {
+  if (canvasRaf) { cancelAnimationFrame(canvasRaf); canvasRaf = 0; }
+  var s = spr();
+  var heavy = isHeavy(s);
+  if (!heavy || deepCheck) CURCHK = s ? checkSprite(s) : null;
+  else CURCHK = { bad: [], warn: [], ok: [] };
+  if (!CURCHK || !CURCHK.bad.length) $('bForce').style.display = 'none';
+  // shown wherever saving in place is possible at all, and greyed with the reason when
+  // this particular sprite cannot do it, so the button teaches rather than hides
+  if (FS_OK) {
+    var toDest = !!(s && s.dest);
+    var can = toDest || canSaveOver(s);
+    $('bSave').style.display = '';
+    $('bSave').disabled = !can;
+    if (!saveArmed) $('bSave').textContent = toDest ? 'Save' : 'Save over';
+    $('bSave').title = toDest
+      ? 'Write every frame into ' + s.dest.label + '. Change\u2026 in the bar below picks another folder.'
+      : (can
+        ? 'Write every frame back over the files it was opened from. No moving files about after.'
+        : (s && s.handles && s.handles.length
+          ? 'The name no longer matches the files this sprite was opened from. Set it back, use Export frames, or pick a folder with Change\u2026 below.'
+          : 'Nothing here came from a file opened this session. Open PNGs, drop files on the window, or pick a folder with Change\u2026 below.'));
+    $('pbChange').style.display = '';
+  } else {
+    $('bSave').style.display = 'none';   // Firefox and Safari cannot write files in place
+    $('pbChange').style.display = 'none';
+  }
+  $('empty').style.display = s ? 'none' : 'flex';
+  $('canvasHost').style.display = s ? 'block' : 'none';
+  $('stagebar').style.display = s ? 'flex' : 'none';
+  $('frames').style.display = s ? 'flex' : 'none';
+  $('framesHd').style.display = s ? 'block' : 'none';
+  if (!s) { drawStrip(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept(); return; }
+
+  paintCanvas();
   $('bUndo').disabled = s.hi <= 0;
   $('bRedo').disabled = s.hi >= s.hist.length - 1;
-  if (!busy) { drawStrip(); drawFrames(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept(); }
+  drawStrip(); drawFrames(); drawPathBar(); drawKept();
+  if (heavy && !deepCheck) {
+    drawPreview();
+    $('checks').innerHTML = '<div class="hint">Large picture — live checks are loading…</div>';
+    $('palette').innerHTML = '';
+    $('palHint').textContent = 'Large pictures skip the live palette until checks finish.';
+    scheduleHeavyPanels();
+    return;
+  }
+  drawPreview(); drawChecks(); drawPalette();
+}
+function scheduleHeavyPanels() {
+  if (panelTimer) return;
+  panelTimer = setTimeout(function () {
+    panelTimer = null;
+    if (!isHeavy(spr())) return;
+    deepCheck = true;
+    redraw();
+    deepCheck = false;
+  }, 0);
 }
 
 // ---------- side panels ----------
@@ -891,19 +996,14 @@ function drawStrip() {
   S.sprites.forEach(function (s, i) {
     var d = document.createElement('div');
     d.className = 'item' + (i === S.si ? ' on' : '');
-    var c = document.createElement('canvas');
-    var tk = Math.min(1, 96 / Math.max(s.w, s.h));
-    c.width = Math.max(1, Math.round(s.w * tk)); c.height = Math.max(1, Math.round(s.h * tk));
-    var scc = c.getContext('2d');
-    scc.imageSmoothingEnabled = false;
-    scc.drawImage(blit(s.frames[0], s.w, s.h), 0, 0, c.width, c.height);
+    var c = thumb(s.frames[0], s.w, s.h, 32);
     var t = document.createElement('div');
     t.className = 't';
     t.innerHTML = '<b></b><span></span>';
     t.querySelector('b').textContent = s.key;
     t.querySelector('span').textContent = s.w + 'x' + s.h + ', ' + s.frames.length + (s.frames.length === 1 ? ' frame' : ' frames');
     d.appendChild(c); d.appendChild(t);
-    if ((i === S.si ? (CURCHK || checkSprite(s)) : checkCached(s)).bad.length) {
+    if (!isHeavy(s) && (i === S.si ? (CURCHK || checkSprite(s)) : checkCached(s)).bad.length) {
       var flag = document.createElement('i');
       flag.className = 'flag';
       flag.title = 'The packer will refuse this one';
@@ -926,12 +1026,11 @@ function drawFrames() {
     var d = document.createElement('div');
     d.className = 'fr' + (i === s.cur ? ' on' : '');
     var c = document.createElement('canvas');
-    var tk = Math.min(1, 96 / Math.max(s.w, s.h));
-    c.width = Math.max(1, Math.round(s.w * tk)); c.height = Math.max(1, Math.round(s.h * tk));
+    c.width = 44; c.height = 44;
     var cc = c.getContext('2d');
     cc.imageSmoothingEnabled = false;
-    cc.fillStyle = S.ground.tiles[0]; cc.fillRect(0, 0, c.width, c.height);
-    cc.drawImage(blit(f, s.w, s.h), 0, 0, c.width, c.height);
+    cc.fillStyle = S.ground.tiles[0]; cc.fillRect(0, 0, 44, 44);
+    cc.drawImage(blit(f, s.w, s.h), 0, 0, 44, 44);
     var lab = document.createElement('div');
     lab.textContent = i;
     d.appendChild(c); d.appendChild(lab);
@@ -993,6 +1092,11 @@ function moveFrame(from, to) {
 }
 
 function colourList(s, which) {
+  if (isHeavy(s) && !deepCheck) return [];
+  var rev = s._rev || 0;
+  if (!s._colCache || s._colRev !== rev) { s._colCache = {}; s._colRev = rev; }
+  var key = which + ':' + (which === 'all' ? '' : s.cur);
+  if (s._colCache[key]) return s._colCache[key];
   var m = new Map();
   var fs = which === 'all' ? s.frames : [s.frames[s.cur]];
   fs.forEach(function (f) {
@@ -1002,8 +1106,10 @@ function colourList(s, which) {
       m.set(k, (m.get(k) || 0) + 1);
     }
   });
-  return Array.from(m.entries()).sort(function (a, b) { return b[1] - a[1]; })
+  var out = Array.from(m.entries()).sort(function (a, b) { return b[1] - a[1]; })
     .map(function (e) { return [(e[0] >> 16) & 255, (e[0] >> 8) & 255, e[0] & 255]; });
+  s._colCache[key] = out;
+  return out;
 }
 function drawPalette() {
   var p = $('palette'), s = spr();
@@ -1013,7 +1119,8 @@ function drawPalette() {
   var seen = {};
   cols.forEach(function (c) { seen[rgb2hex(c)] = 1; });
   if (!seen[cur]) cols.unshift(S.color.slice());
-  cols.forEach(function (c) {
+  var shown = cols.slice(0, PAL_MAX);
+  shown.forEach(function (c) {
     var h = rgb2hex(c);
     var d = document.createElement('div');
     d.className = 'sw' + (h === cur ? ' on' : '');
@@ -1024,7 +1131,8 @@ function drawPalette() {
     p.appendChild(d);
   });
   $('palHint').textContent = s
-    ? (cols.length + ' in the palette. Click one to draw with it.')
+    ? (cols.length + ' in the palette. Click one to draw with it.' +
+      (cols.length > PAL_MAX ? ' Showing the ' + PAL_MAX + ' most used.' : ''))
     : 'The palette fills up from the colours in the open sprite.';
 }
 
@@ -1377,6 +1485,14 @@ function saveStore() {
   drawKept();
 }
 function loadStore() {
+  if (location.hash === '#forget') {
+    try { window.localStorage.removeItem(STORE_KEY); } catch (e) { /* nothing to do */ }
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* keep the hash if the browser refuses */ }
+    S.store.at = 0; S.store.bytes = 0; S.store.why = '';
+    drawKept();
+    say('Started empty. Whatever was kept has been forgotten.', 'good');
+    return;
+  }
   if (!S.store.on) { drawKept(); return; }
   var text = null;
   try { text = window.localStorage.getItem(STORE_KEY); } catch (e) { text = null; }
@@ -1391,8 +1507,19 @@ function loadStore() {
   }
   S.store.at = data.at || 0;
   S.store.bytes = text.length;
-  var jobs = data.sprites.map(function (rec) {
-    return Promise.all(rec.frames.map(function (u) {
+  say('Bringing back saved work…', 'good');
+  var made = [], idx = 0, wantSi = typeof data.si === 'number' && data.si >= 0 ? data.si : 0;
+  function step() {
+    if (idx >= data.sprites.length) {
+      if (!made.length) { drawKept(); return; }
+      S.sprites = made.concat(S.sprites);
+      selectSprite(Math.min(wantSi, made.length - 1));
+      say('Brought back ' + made.length + (made.length === 1 ? ' sprite' : ' sprites') + ' saved ' + when(S.store.at) + '.', 'good');
+      drawKept();
+      return;
+    }
+    var rec = data.sprites[idx++];
+    Promise.all(rec.frames.map(function (u) {
       return new Promise(function (res) {
         var im = new Image();
         im.onload = function () { res(toPixels(im).px); };
@@ -1401,20 +1528,15 @@ function loadStore() {
       });
     })).then(function (frames) {
       frames = frames.filter(Boolean);
-      if (!frames.length) return null;
-      var s = makeSprite(rec.key || 'sprite', rec.w, rec.h, frames, rec.family);
-      s.bytes = Array.isArray(rec.bytes) ? rec.bytes : [];
-      return s;
+      if (frames.length) {
+        var s = makeSprite(rec.key || 'sprite', rec.w, rec.h, frames, rec.family);
+        s.bytes = Array.isArray(rec.bytes) ? rec.bytes : [];
+        made.push(s);
+      }
+      setTimeout(step, 0);
     });
-  });
-  Promise.all(jobs).then(function (list) {
-    var made = list.filter(Boolean);
-    if (!made.length) { drawKept(); return; }
-    S.sprites = made.concat(S.sprites);
-    selectSprite(Math.min(typeof data.si === 'number' && data.si >= 0 ? data.si : 0, made.length - 1));
-    say('Brought back ' + made.length + (made.length === 1 ? ' sprite' : ' sprites') + ' saved ' + when(S.store.at) + '.', 'good');
-    drawKept();
-  });
+  }
+  setTimeout(step, 0);
 }
 function when(ms) {
   if (!ms) return 'earlier';
@@ -1569,15 +1691,16 @@ function setColor(c) {
 // ---------- pointer ----------
 var drag = null;
 function pxAt(e) {
-  var s = spr(), r = cv.getBoundingClientRect();
+  var r = $('canvasSizer').getBoundingClientRect();
   return {
-    x: Math.floor((e.clientX - r.left) / (r.width / s.w)),
-    y: Math.floor((e.clientY - r.top) / (r.height / s.h))
+    x: Math.floor((e.clientX - r.left) / S.zoom),
+    y: Math.floor((e.clientY - r.top) / S.zoom)
   };
 }
-cv.addEventListener('pointerdown', function (e) {
+var stage = $('canvasWrap');
+stage.addEventListener('pointerdown', function (e) {
   var s = spr(); if (!s) return;
-  cv.setPointerCapture(e.pointerId);
+  stage.setPointerCapture(e.pointerId);
   var p = pxAt(e);
   if (S.tool === 'pick') { eyedrop(p.x, p.y); return; }
   if (S.tool === 'fill') { fill(p.x, p.y); commit(); redraw(); return; }
@@ -1602,13 +1725,13 @@ cv.addEventListener('pointerdown', function (e) {
     };
     strokeSeen = new Uint8Array(s.w * s.h);
     paint(drag.x0, drag.y0, drag.erase);
-    redraw();
+    requestCanvas();
     return;
   }
   strokeSeen = new Uint8Array(s.w * s.h);
   drag = { mode: 'draw', erase: S.tool === 'eraser' || e.button === 2, lx: p.x, ly: p.y };
   paint(p.x, p.y, drag.erase);
-  redraw();
+  requestCanvas();
 });
 // the line tool only makes the lines pixel art wants: flat, upright, or a true diagonal.
 // The cursor's angle is rounded to the nearest of the three.
@@ -1619,7 +1742,7 @@ function snapEnd(x0, y0, x, y) {
   var n = Math.round((ax + ay) / 2);   // one step across for every step down
   return { x: x0 + (dx < 0 ? -n : n), y: y0 + (dy < 0 ? -n : n) };
 }
-cv.addEventListener('pointermove', function (e) {
+stage.addEventListener('pointermove', function (e) {
   var s = spr(); if (!s) return;
   var p = pxAt(e);
   $('posLabel').textContent = (p.x >= 0 && p.y >= 0 && p.x < s.w && p.y < s.h) ? (p.x + ', ' + p.y) : '';
@@ -1642,7 +1765,7 @@ cv.addEventListener('pointermove', function (e) {
   } else if (drag.mode === 'move') {
     stampLift(p.x - drag.gx, p.y - drag.gy);
   }
-  redraw();
+  requestCanvas();
 });
 function endDrag() {
   if (!drag) return;
@@ -1651,48 +1774,34 @@ function endDrag() {
   if (was === 'draw' || was === 'move' || was === 'line') commit();
   redraw();
 }
-cv.addEventListener('pointerup', endDrag);
-cv.addEventListener('pointercancel', endDrag);
-cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-cv.addEventListener('pointerleave', function () { $('posLabel').textContent = ''; });
-// the zoom ladder. Below 1 the picture is smaller than life, which is how a large
-// image fits on screen at all; the grid only draws from 4 up, as before.
-var ZOOMS = [0.125, 0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 20, 24, 32, 48];
-function zoomStep(z, dir) {
-  var bi = 0, bd = 1e9;
-  for (var i = 0; i < ZOOMS.length; i++) { var d = Math.abs(ZOOMS[i] - z); if (d < bd) { bd = d; bi = i; } }
-  return ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, bi + dir))];
-}
-// the deepest zoom this sprite can take before the canvas outgrows what browsers
-// will allocate. A 16 px creature never feels this; a 1000 by 2000 image does.
-function maxZoomFor(s) {
-  var dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-  var cap = 16000 / dpr;
-  var z = ZOOMS[0];
-  for (var i = 0; i < ZOOMS.length; i++) if (s.w * ZOOMS[i] <= cap && s.h * ZOOMS[i] <= cap) z = ZOOMS[i];
-  return z;
-}
+stage.addEventListener('pointerup', endDrag);
+stage.addEventListener('pointercancel', endDrag);
+stage.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+stage.addEventListener('pointerleave', function () { $('posLabel').textContent = ''; });
 // zoom around a point: whatever sprite pixel sits under the anchor stays under it.
 // No anchor given means the middle of the view, for the buttons and the keys.
 function zoomAt(nz, cx, cy) {
   var s = spr(); if (!s) return;
-  nz = Math.max(ZOOMS[0], Math.min(maxZoomFor(s), nz));
+  nz = Math.max(1, Math.min(MAX_ZOOM, nz));
   if (nz === S.zoom) return;
-  var wrap = $('canvasWrap'), r = cv.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+  var wrap = $('canvasWrap'), sizer = $('canvasSizer'), wr = wrap.getBoundingClientRect();
   if (cx == null) { cx = wr.left + wrap.clientWidth / 2; cy = wr.top + wrap.clientHeight / 2; }
+  var r = sizer.getBoundingClientRect();
   var px = (cx - r.left) / S.zoom, py = (cy - r.top) / S.zoom;
   S.zoom = nz;
-  redraw();
-  var r2 = cv.getBoundingClientRect();
+  sizer.style.width = (s.w * nz) + 'px';
+  sizer.style.height = (s.h * nz) + 'px';
+  var r2 = sizer.getBoundingClientRect();
   wrap.scrollLeft += (r2.left + px * nz) - cx;
   wrap.scrollTop += (r2.top + py * nz) - cy;
+  redraw();
 }
 
 // a mouse wheel sends one notch of about 100 per click, a trackpad sends a stream of
 // tiny ones. Stepping on every event made a light two-finger drag jump ten levels, so
 // gather the distance up and only step once a notch's worth has built.
 var wheelAcc = 0, wheelAt = 0;
-cv.addEventListener('wheel', function (e) {
+stage.addEventListener('wheel', function (e) {
   if (!spr()) return;
   e.preventDefault();
   var d = e.deltaY;
@@ -1701,10 +1810,11 @@ cv.addEventListener('wheel', function (e) {
   wheelAt = e.timeStamp;
   wheelAcc += d;
   var NOTCH = 90, nz = S.zoom;
-  while (wheelAcc <= -NOTCH) { wheelAcc += NOTCH; nz = zoomStep(nz, 1); }
-  while (wheelAcc >= NOTCH) { wheelAcc -= NOTCH; nz = zoomStep(nz, -1); }
+  while (wheelAcc <= -NOTCH) { wheelAcc += NOTCH; nz = Math.min(MAX_ZOOM, nz + (nz < 8 ? 1 : 4)); }
+  while (wheelAcc >= NOTCH) { wheelAcc -= NOTCH; nz = Math.max(1, nz - (nz <= 8 ? 1 : 4)); }
   if (nz !== S.zoom) zoomAt(nz, e.clientX, e.clientY);
 }, { passive: false });
+stage.addEventListener('scroll', function () { if (spr()) requestCanvas(); }, { passive: true });
 
 // ---------- loading files ----------
 function baseName(n) { return n.replace(/\.[^.]+$/, ''); }
@@ -1743,8 +1853,17 @@ function openFiles(files) {
   // One unreadable file must never lose the rest of the drop.
   Promise.all(list.map(function (f) {
     return decode(f).then(function (img) {
-      var d = toPixels(img); d.name = baseName(f.name); d.size = f.size; d.handle = f.handle || null; return d;
-    }).catch(function () { return { failed: f.name }; });
+      var d = toPixels(img);
+      if (d.w > MAX_SIDE || d.h > MAX_SIDE) {
+        throw new Error('too-big:' + d.w + 'x' + d.h);
+      }
+      d.name = baseName(f.name); d.size = f.size; d.handle = f.handle || null; return d;
+    }).catch(function (err) {
+      var msg = f.name;
+      var m = err && String(err.message || '').match(/^too-big:(.+)$/);
+      if (m) msg = f.name + ' (' + m[1] + '; this editor opens up to ' + MAX_SIDE + ')';
+      return { failed: msg };
+    });
   })).then(function (all) {
     var bad = all.filter(function (d) { return d.failed; }).map(function (d) { return d.failed; });
     var good = all.filter(function (d) { return !d.failed; });
@@ -1793,6 +1912,7 @@ function checkAlpha() {
   var s = spr();
   var bar = $('alphabar');
   if (!s) { bar.className = ''; return; }
+  if (isHeavy(s) && !deepCheck) { bar.className = ''; return; }
   var n = rulesOn() ? countSoft(s) : 0;
   if (!n || s.softDismissed) { bar.className = ''; return; }
   $('alphaText').textContent = 'This sprite has ' + n + ' pixels that are only part see-through. ' +
@@ -1822,19 +1942,28 @@ function selectSprite(i) {
   else $('key').value = '';   // no sprite, no name: the path bar should not name a ghost
   setPlaying(false);
   checkAlpha();
-  redraw();              // this is what gives the canvas area a real size
-  if (s) { fitZoom(); redraw(); }
+  // show the stage first so Fit can measure it, and pick zoom BEFORE the first
+  // paint — a 1000 px sprite at the default 16× zoom is what locked the page.
+  if (s) {
+    $('empty').style.display = 'none';
+    $('canvasHost').style.display = 'block';
+    $('stagebar').style.display = 'flex';
+    $('frames').style.display = 'flex';
+    $('framesHd').style.display = 'block';
+    $('canvasWrap').scrollLeft = 0;
+    $('canvasWrap').scrollTop = 0;
+    fitZoom();
+  }
+  redraw();
 }
 function fitZoom() {
   var s = spr(); if (!s) return;
   var box = $('canvasWrap').clientHeight - 40;
   var boxw = $('canvasWrap').clientWidth - 40;
-  if (box < 8 || boxw < 8) { S.zoom = Math.min(16, maxZoomFor(s)); return; }
-  // the largest ladder step that still shows the whole picture; a huge image lands
-  // below 1x instead of exploding to a canvas the browser refuses to make
-  var fit = Math.min(box / s.h, boxw / s.w), z = ZOOMS[0];
-  for (var i = 0; i < ZOOMS.length; i++) if (ZOOMS[i] <= fit) z = ZOOMS[i];
-  S.zoom = Math.min(maxZoomFor(s), z);
+  var z = (box >= 8 && boxw >= 8) ? Math.floor(Math.min(box / s.h, boxw / s.w)) : 0;
+  S.zoom = Math.max(1, Math.min(MAX_ZOOM, z || (Math.max(s.w, s.h) <= 64 ? 16 : 1)));
+  $('canvasWrap').scrollLeft = 0;
+  $('canvasWrap').scrollTop = 0;
 }
 
 // ---------- export ----------
@@ -2151,7 +2280,11 @@ $('fileFrame').onchange = function (e) {
   e.target.value = '';
   if (!s || !files.length) return;
   Promise.all(files.map(function (f) {
-    return decode(f).then(toPixels).catch(function () { return { failed: f.name }; });
+    return decode(f).then(function (img) {
+      var d = toPixels(img);
+      if (d.w > MAX_SIDE || d.h > MAX_SIDE) throw new Error('too-big');
+      return d;
+    }).catch(function () { return { failed: f.name }; });
   })).then(function (all) {
     var wrong = [], unread = [];
     all.forEach(function (d) {
@@ -2168,7 +2301,7 @@ $('fileFrame').onchange = function (e) {
   });
 };
 $('bNew').onclick = function () {
-  var n = Math.max(4, Math.min(128, parseInt($('newSize').value, 10) || 16));
+  var n = Math.max(4, Math.min(1024, parseInt($('newSize').value, 10) || 16));
   var name = 'sprite' + (S.sprites.length + 1);
   S.sprites.push(makeSprite(name, n, n, [blank(n, n)], cleanName($('family').value)));
   selectSprite(S.sprites.length - 1);
@@ -2264,8 +2397,8 @@ $('bUndo').onclick = undo;
 $('bRedo').onclick = redo;
 $('bFlip').onclick = flipFrame;
 $('bForget').onclick = forgetAll;
-$('zIn').onclick = function () { zoomAt(zoomStep(S.zoom, 1)); };
-$('zOut').onclick = function () { zoomAt(zoomStep(S.zoom, -1)); };
+$('zIn').onclick = function () { zoomAt(S.zoom + (S.zoom < 8 ? 1 : 4)); };
+$('zOut').onclick = function () { zoomAt(S.zoom - (S.zoom <= 8 ? 1 : 4)); };
 $('zFit').onclick = function () { fitZoom(); redraw(); };
 $('bGrid').onclick = function () { S.grid = !S.grid; this.className = S.grid ? 'on' : ''; redraw(); };
 $('bGuides').onclick = function () { S.guides = !S.guides; this.className = S.guides ? 'on' : ''; redraw(); };
@@ -2361,7 +2494,7 @@ window.addEventListener('keydown', function (e) {
 window.addEventListener('keyup', function (e) {
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') commit();
 });
-window.addEventListener('resize', function () { drawPreview(); });
+window.addEventListener('resize', function () { if (spr()) paintCanvas(); drawPreview(); });
 // last chance to write, for the tab that gets closed mid-stroke
 window.addEventListener('beforeunload', function () { if (saveTimer) { clearTimeout(saveTimer); saveStore(); } });
 
