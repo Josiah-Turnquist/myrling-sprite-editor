@@ -207,6 +207,30 @@ if (location.hash === '#forget') {
     padding:8px 10px; border-bottom:1px solid var(--line); color:var(--hot); font-weight:600;
   }
   #settings .pad{padding:10px}
+  #gen{
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(12,14,18,.72); z-index:30;
+  }
+  #gen.show{display:flex}
+  #gen .box{
+    width:min(480px,94vw); max-height:84vh; overflow:auto;
+    background:var(--panel); border:1px solid var(--line); border-radius:6px;
+  }
+  #gen .mhd{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 10px; border-bottom:1px solid var(--line); color:var(--hot); font-weight:600;
+  }
+  #gen .pad{padding:10px}
+  #gen textarea{
+    width:100%; font:inherit; color:inherit; background:#0f1116;
+    border:1px solid var(--line); border-radius:3px; padding:6px; resize:vertical;
+  }
+  #gen select{background:var(--panel2); border:1px solid var(--line); color:inherit; border-radius:3px; padding:3px}
+  .plThumb{
+    width:64px; height:64px; image-rendering:pixelated; background:#0d0f13;
+    border:1px solid var(--line); border-radius:2px; cursor:pointer; margin:2px;
+  }
+  .plThumb:hover{border-color:#4d6386}
 </style>
 </head>
 <body>
@@ -240,6 +264,7 @@ if (location.hash === '#forget') {
     <span class="sep"></span>
     <button id="bClose" title="Close this sprite and forget it">Close</button>
     <button id="bSettings" title="The keys, yours to change. Cmd+, opens this too.">Settings</button>
+    <button id="bGen" title="Generate sprites with PixelLab. Every generation is kept.">Generate&hellip;</button>
     <span id="status"></span>
   </header>
 
@@ -392,6 +417,38 @@ if (location.hash === '#forget') {
         - and + zoom, or the wheel &nbsp; Space play
       </div>
       <div class="row" style="margin-top:10px"><button id="bKeysReset" style="width:100%">Back to the usual keys</button></div>
+    </div>
+  </div>
+</div>
+<div id="gen">
+  <div class="box">
+    <div class="mhd">Generate with PixelLab<button id="bGenClose">Done</button></div>
+    <div class="pad">
+      <div class="row" style="flex-wrap:nowrap">
+        <input id="plKey" type="password" class="mono" placeholder="PixelLab API key" style="flex:1; min-width:0">
+      </div>
+      <div class="hint" style="margin:4px 0 8px">
+        The key stays in this browser and is sent only to api.pixellab.ai, when you press
+        Generate. Each image spends PixelLab credits — the answer says how much.
+      </div>
+      <textarea id="plPrompt" rows="2" placeholder="a moss-covered bog troll, side view, facing right, standing pose"></textarea>
+      <div class="row" style="margin-top:6px; align-items:center">
+        <span class="dim">Size</span>
+        <select id="plSize">
+          <option>32</option><option>48</option><option>64</option><option>128</option>
+          <option value="16">16 — PixelLab may refuse, it wants a 32x32 area</option>
+        </select>
+        <span class="dim">How many</span>
+        <select id="plCount"><option>1</option><option>2</option><option selected>4</option><option>6</option></select>
+        <label class="hint" style="display:flex; align-items:center; gap:4px">
+          <input type="checkbox" id="plClear" checked> clear background</label>
+        <button id="bGenGo" style="margin-left:auto">Generate</button>
+      </div>
+      <div id="plOut" class="row" style="margin-top:8px"></div>
+      <div style="border-top:1px solid var(--line); margin:10px -10px 8px"></div>
+      <div class="hint" id="plHistNote" style="margin-bottom:4px"></div>
+      <div id="plHist" class="row"></div>
+      <div class="row" style="margin-top:8px"><button id="bPlSaveAll" style="width:100%">Save the whole history to a folder&hellip;</button></div>
     </div>
   </div>
 </div>
@@ -2383,6 +2440,155 @@ $('pbCopyPath').onclick = function () {
 $('pbCopyCmd').onclick = function () { copyText('npm run pack-art', 'the command'); };
 $('bSettings').onclick = openSettings;
 $('bSettingsClose').onclick = closeSettings;
+// ---------- PixelLab: generated sprites, with every generation kept ----------
+// One dialog: describe a creature, get a handful of candidates, click one to open it
+// as a sprite where the checks panel judges it like anything drawn by hand. Every
+// image that ever comes back is kept in the history below, and the whole history can
+// be written into a real folder as PNG files.
+var PL_URL = 'https://api.pixellab.ai/v1';
+var PL_KEY_KEY = 'myrling-pixellab-key';
+var PL_HIST_KEY = 'myrling-pixellab-history-v1';
+var plHist = (function () {
+  try { return JSON.parse(window.localStorage.getItem(PL_HIST_KEY) || '[]') || []; }
+  catch (e) { return []; }
+})();
+var plHistWhy = '';
+function plSaveHist() {
+  try { window.localStorage.setItem(PL_HIST_KEY, JSON.stringify(plHist)); plHistWhy = ''; }
+  catch (e) { plHistWhy = 'The browser is out of room, so new generations only last until this tab closes. Save the history to a folder below.'; }
+  drawPlHist();
+}
+// the Mac app carries the call natively (no cross-origin wall in WebKit); a browser
+// asks PixelLab directly. Either way the key rides along and is stored nowhere else.
+function plCall(path, body, key) {
+  var wk = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.eldermyr;
+  if (wk) {
+    return wk.postMessage({ op: 'pixellab', path: path, key: key, body: JSON.stringify(body) })
+      .then(function (r) { return JSON.parse(r.json); });
+  }
+  return fetch(PL_URL + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+    body: JSON.stringify(body)
+  }).then(function (res) {
+    return res.text().then(function (tx) {
+      var j = null; try { j = JSON.parse(tx); } catch (e) { /* not json */ }
+      if (!res.ok) {
+        var why = j && (typeof j.detail === 'string' ? j.detail : (j.detail && j.detail[0] && j.detail[0].msg)) || ('PixelLab said ' + res.status);
+        throw new Error(why);
+      }
+      return j;
+    });
+  });
+}
+function plThumb(rec) {
+  var img = new Image();
+  img.className = 'plThumb';
+  img.src = rec.png;
+  img.title = rec.prompt + ' — ' + rec.w + 'x' + rec.h + ', ' + when(rec.at) + '. Click to open as a sprite.';
+  img.onclick = function () { plOpen(rec); };
+  return img;
+}
+function plOpen(rec) {
+  var im = new Image();
+  im.onload = function () {
+    var d = toPixels(im);
+    var slug = cleanName(rec.prompt.split(/\s+/).slice(0, 2).join('')) || 'generated';
+    var sp = makeSprite(slug, d.w, d.h, [d.px], cleanName($('family').value));
+    S.sprites.push(sp);
+    selectSprite(S.sprites.length - 1);
+    closeGen();
+    checkAlpha(); scheduleSave();
+    say('Opened as a sprite. The checks say what the packer would think of it.', 'good');
+  };
+  im.onerror = function () { say('Could not read that image back', 'bad'); };
+  im.src = rec.png;
+}
+function drawPlHist() {
+  var box = $('plHist');
+  box.innerHTML = '';
+  plHist.forEach(function (rec) { box.appendChild(plThumb(rec)); });
+  $('plHistNote').textContent = plHistWhy ||
+    (plHist.length ? plHist.length + ' kept, every one since the first. Click any to open it.' : 'Nothing yet. Everything you generate is kept here.');
+}
+function plGenerate() {
+  var key = $('plKey').value.trim();
+  if (!key) { say('Paste your PixelLab API key first. It stays in this browser.', 'bad'); return; }
+  try { window.localStorage.setItem(PL_KEY_KEY, key); } catch (e) { /* then it lasts the tab */ }
+  var prompt = $('plPrompt').value.trim();
+  if (!prompt) { say('Say what to draw first', 'bad'); return; }
+  var n = parseInt($('plCount').value, 10) || 1;
+  var size = parseInt($('plSize').value, 10) || 32;
+  $('plOut').innerHTML = '';
+  $('bGenGo').disabled = true; $('bGenGo').textContent = 'Generating\u2026';
+  var spent = 0, failed = [];
+  var jobs = [];
+  for (var i = 0; i < n; i++) {
+    jobs.push(plCall('/generate-image-pixflux', {
+      description: prompt,
+      image_size: { width: size, height: size },
+      no_background: !!$('plClear').checked
+    }, key).then(function (r) {
+      var uri = r && r.image && r.image.base64 ? String(r.image.base64) : null;
+      if (!uri) throw new Error('no image came back');
+      if (uri.indexOf('data:') !== 0) uri = 'data:image/png;base64,' + uri;
+      if (r.usage && r.usage.usd) spent += r.usage.usd;
+      var rec = { at: Date.now(), prompt: prompt, w: size, h: size, png: uri };
+      plHist.unshift(rec);
+      $('plOut').appendChild(plThumb(rec));
+      return rec;
+    }, function (e) { failed.push(String(e && e.message || e)); return null; }));
+  }
+  Promise.all(jobs).then(function (made) {
+    $('bGenGo').disabled = false; $('bGenGo').textContent = 'Generate';
+    plSaveHist();
+    var ok = made.filter(Boolean).length;
+    var msg = ok ? 'Made ' + ok + (ok > 1 ? ' images' : ' image') + (spent ? ' for about $' + spent.toFixed(2) : '') + '. Click one to open it as a sprite.' : '';
+    if (failed.length) msg += (msg ? ' ' : '') + failed.length + ' failed: ' + failed[0];
+    say(msg, failed.length ? 'bad' : 'good');
+  });
+}
+function plSaveAll() {
+  if (!plHist.length) { say('Nothing generated yet', 'bad'); return; }
+  if (!window.showDirectoryPicker) { say('This browser cannot pick a folder. Chrome, Edge or the Mac app can.', 'bad'); return; }
+  window.showDirectoryPicker().then(function (dh) {
+    return askWrite(dh).then(function (ok) {
+      if (!ok) { say('The browser was not allowed to write there. Nothing was saved.', 'bad'); return; }
+      var chain = Promise.resolve(), wrote = 0;
+      plHist.forEach(function (rec) {
+        chain = chain.then(function () {
+          var name = 'pixellab-' + rec.at + '-' + (cleanName(rec.prompt.split(/\s+/).slice(0, 3).join('-')) || 'image') + '.png';
+          var bin = atob(rec.png.split(',')[1]);
+          var arr = new Uint8Array(bin.length);
+          for (var j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
+          return dh.getFileHandle(name, { create: true }).then(function (h) {
+            return h.createWritable().then(function (w) {
+              return w.write(new Blob([arr], { type: 'image/png' })).then(function () { return w.close(); });
+            });
+          }).then(function () { wrote++; });
+        });
+      });
+      return chain.then(function () {
+        say('Saved all ' + wrote + ' generation' + (wrote === 1 ? '' : 's') + ' into ' + (dh.dir || dh.name), 'good');
+      }, function () {
+        say('Stopped after ' + wrote + '. The folder may have moved.', 'bad');
+      });
+    });
+  }).catch(function (e) { if (!e || e.name !== 'AbortError') say('The folder picker did not open. Nothing was saved.', 'bad'); });
+}
+function genOpen() { return $('gen').className === 'show'; }
+function openGen() {
+  try { $('plKey').value = window.localStorage.getItem(PL_KEY_KEY) || $('plKey').value; } catch (e) { /* fine */ }
+  drawPlHist();
+  $('gen').className = 'show';
+  $('plPrompt').focus();
+}
+function closeGen() { $('gen').className = ''; }
+$('bGen').onclick = openGen;
+$('bGenClose').onclick = closeGen;
+$('gen').onclick = function (e) { if (e.target === this) closeGen(); };
+$('bGenGo').onclick = plGenerate;
+$('bPlSaveAll').onclick = plSaveAll;
 $('settings').onclick = function (e) { if (e.target === this) closeSettings(); };
 $('bKeysReset').onclick = function () {
   KEYS = {};
@@ -2461,6 +2667,10 @@ window.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' || (meta && e.key === ',')) { e.preventDefault(); closeSettings(); }
     return;
   }
+  if (genOpen()) {
+    if (e.key === 'Escape') { e.preventDefault(); closeGen(); }
+    return;
+  }
   if (meta && e.key === ',') { e.preventDefault(); openSettings(); return; }
   if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if (meta && e.key.toLowerCase() === 'c') { e.preventDefault(); copySel(false); return; }
@@ -2518,7 +2728,8 @@ window.EDITOR = {
   nudge: nudge, exportNames: exportNames, STORE_KEY: STORE_KEY,
   saveOver: saveOver, canSaveOver: canSaveOver, handleFor: handleFor,
   copySel: copySel, pasteClip: pasteClip, snapEnd: snapEnd, setTool: setTool,
-  showKeys: showKeys, drawPathBar: drawPathBar, moveFrame: moveFrame
+  showKeys: showKeys, drawPathBar: drawPathBar, moveFrame: moveFrame,
+  pl: { generate: plGenerate, open: plOpen, hist: function () { return plHist; }, openGen: openGen }
 };
 </script>
 </body>

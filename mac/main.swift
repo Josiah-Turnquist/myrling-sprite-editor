@@ -34,6 +34,7 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
     case "claim": claim(body, replyHandler)
     case "pickdir": pickDir(replyHandler)
     case "writeto": writeTo(body, replyHandler)
+    case "pixellab": pixellab(body, replyHandler)
     default: replyHandler(nil, "Unknown op " + op)
     }
   }
@@ -90,6 +91,34 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
     }
     do { try data.write(to: dir.appendingPathComponent(name), options: .atomic); reply(["ok": true], nil) }
     catch { reply(nil, error.localizedDescription) }
+  }
+
+  // the page's PixelLab calls travel natively so WebKit's cross-origin wall never
+  // matters. Pinned to api.pixellab.ai and its generate paths; this is not a proxy.
+  private func pixellab(_ body: [String: Any], _ reply: @escaping (Any?, String?) -> Void) {
+    guard let path = body["path"] as? String, path.hasPrefix("/generate-image"), !path.contains(".."),
+          let key = body["key"] as? String, !key.isEmpty,
+          let json = body["body"] as? String,
+          let url = URL(string: "https://api.pixellab.ai/v1" + path) else {
+      reply(nil, "Nothing to ask PixelLab"); return
+    }
+    var req = URLRequest(url: url)
+    req.httpMethod = "POST"
+    req.timeoutInterval = 120
+    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    req.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
+    req.httpBody = json.data(using: .utf8)
+    URLSession.shared.dataTask(with: req) { data, resp, err in
+      DispatchQueue.main.async {
+        if let err = err { reply(nil, err.localizedDescription); return }
+        guard let data = data, let text = String(data: data, encoding: .utf8) else {
+          reply(nil, "An empty answer came back"); return
+        }
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code < 200 || code >= 300 { reply(nil, "PixelLab said \(code): " + String(text.prefix(300))); return }
+        reply(["json": text], nil)
+      }
+    }.resume()
   }
 
   private func write(_ body: [String: Any], _ reply: @escaping (Any?, String?) -> Void) {

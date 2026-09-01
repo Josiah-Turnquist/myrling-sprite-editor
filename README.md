@@ -126,6 +126,23 @@ Plain words about how it behaves:
   the browser cannot keep file permissions across visits, so open the files again to get
   the button back.
 
+## Generating with PixelLab
+
+**Generate…** in the top bar asks [PixelLab](https://www.pixellab.ai) to draw for you:
+describe a creature, pick a size and how many, and a handful of candidates comes back.
+Click one and it opens as a sprite, where the checks panel judges it like anything drawn
+by hand — generated art usually needs its soft pixels snapped and its palette thinned,
+and the editor already knows how to say so.
+
+You bring your own PixelLab API key. It is kept in your browser and sent only to
+api.pixellab.ai, when you press Generate; each image spends PixelLab credits and the
+status bar says roughly what a batch cost. In the Mac app the call travels natively.
+
+**Every generation is kept.** The history at the bottom of the dialog holds every image
+that ever came back, newest first, each one a click away from becoming a sprite again —
+a prompt you liked last week is still there. One button writes the whole history into a
+folder of PNG files, named by date and prompt, if you want it on disk or in a repo.
+
 ## Opening art
 
 - **Open PNGs** or drop files anywhere on the window. Several at once is fine.
