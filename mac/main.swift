@@ -159,7 +159,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     Tool(id: "trim", label: "Trim", symbol: "rectangle.dashed", tip: "Trim the canvas to the painted pixels", js: "EDITOR.image.trim()"),
     Tool(id: "flipH", label: "Flip", symbol: "arrow.left.and.right", tip: "Flip left to right", js: "EDITOR.image.flipH()"),
     Tool(id: "flipV", label: "Flip vertical", symbol: "arrow.up.and.down", tip: "Flip top to bottom", js: "EDITOR.image.flipV()"),
-    Tool(id: "rotate", label: "Rotate", symbol: "rotate.right", tip: "Rotate a quarter turn clockwise", js: "EDITOR.image.rotate()")
+    Tool(id: "rotate", label: "Rotate", symbol: "rotate.right", tip: "Rotate a quarter turn clockwise", js: "EDITOR.image.rotate()"),
+    Tool(id: "grid", label: "Grid", symbol: "grid", tip: "Show or hide the pixel grid (G)", js: "document.getElementById('bGrid').click()"),
+    Tool(id: "guides", label: "Guides", symbol: "ruler", tip: "Show or hide the feet line and the centre line", js: "document.getElementById('bGuides').click()")
   ]
   func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
     var ids: [NSToolbarItem.Identifier] = []
@@ -311,7 +313,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     view.addItem(.separator())
     pageItem(view, "Zoom In", "document.getElementById('zIn').click()", "=")
     pageItem(view, "Zoom Out", "document.getElementById('zOut').click()", "-")
-    pageItem(view, "Fit", "document.getElementById('zFit').click()", "0")
+    pageItem(view, "Fit", "EDITOR.fitView()", "0")
     viewItem.submenu = view
     return main
   }

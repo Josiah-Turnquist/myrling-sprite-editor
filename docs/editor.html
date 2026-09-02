@@ -35,7 +35,7 @@ if (location.hash === '#forget') {
   }
   button:hover{background:#262c36; color:var(--hot)}
   button:active{background:#2e3644}
-  button.on{background:var(--sel); border-color:var(--sel); color:var(--selText)}
+  button.on{background:#1f232b; border-color:var(--green); color:var(--hot)}
   button.primary{background:var(--green); border-color:var(--green); color:#131519; font-weight:600}
   button.primary:hover{background:#9bd05e; color:#131519}
   button.danger{border-color:#6b3a33; color:#e5a396}
@@ -98,11 +98,12 @@ if (location.hash === '#forget') {
   #topbar .logo{width:13px; height:13px; background:var(--green); flex:none}
   #topbar .name{color:var(--hot); font-weight:600; font-size:13px}
   #topbar .sep{width:1px; height:20px; background:var(--line); margin:0 2px; flex:none}
-  #bSettings{width:32px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center}
+  #bSettings{width:28px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center; border:0; background:transparent; color:var(--dim)}
+  #bSettings:hover{background:var(--panel2); color:var(--hot)}
   #bSettings svg{width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
   #family{width:84px; color:var(--dim); background:transparent; border-color:transparent; text-align:right; padding:3px 4px}
   #family:hover,#family:focus{background:#131519; border-color:var(--line); color:var(--hot)}
-  #key{width:132px; font-family:var(--mono)}
+  #key{width:auto; min-width:120px; max-width:260px; flex:0 1 auto; font-family:var(--mono); text-overflow:ellipsis}
   #pbPath{
     font:10px var(--mono); color:var(--dim); cursor:pointer; white-space:nowrap; overflow:hidden;
     text-overflow:ellipsis; min-width:0; flex:0 1 auto; max-width:34%;
@@ -120,8 +121,14 @@ if (location.hash === '#forget') {
     position:absolute; left:14px; top:66px; bottom:84px; width:var(--leftW); z-index:4;
     display:flex; flex-direction:column; gap:10px;
   }
-  #spritesPanel{display:flex; flex-direction:column; padding:6px; flex:none; max-height:46%; overflow:auto; position:relative}
-  #stripList{overflow:auto}
+  #spritesPanel{display:flex; flex-direction:column; padding:6px; flex:none; max-height:46%; overflow:hidden; position:relative}
+  #stripList{overflow-y:auto; flex:1; min-height:0; scrollbar-width:thin; scrollbar-color:var(--line) transparent; padding-bottom:12px}
+  #stripList::-webkit-scrollbar{width:6px}
+  #stripList::-webkit-scrollbar-thumb{background:var(--line); border-radius:3px}
+  #spritesPanel::after{
+    content:""; position:absolute; left:6px; right:6px; bottom:6px; height:16px; pointer-events:none;
+    background:linear-gradient(rgba(25,28,34,0), var(--panel)); border-radius:0 0 8px 8px;
+  }
   .item{
     display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:6px; cursor:pointer; position:relative;
   }
@@ -170,6 +177,8 @@ if (location.hash === '#forget') {
   #toolsPanel .acts{display:flex; justify-content:space-around; padding:2px 0}
   #toolsPanel .acts button{font-size:15px; padding:2px 8px}
   .mac #bImage,.mac #bFlip{display:none}
+  .mac #toolsPanel .acts,.mac #toolsPanel .div{display:none}
+  .mac #bGrid,.mac #bGuides{display:none}
   #imgMenu{
     display:none; flex-direction:column; gap:2px; padding:6px; margin-top:4px;
     background:var(--panel2); border:1px solid var(--line); border-radius:8px;
@@ -216,22 +225,18 @@ if (location.hash === '#forget') {
   .fr.markR{box-shadow:3px 0 0 0 #6b86ad}
   #frameActs{display:flex; gap:4px; align-items:center; flex:none}
   #frameActs .fbtn{
-    width:46px; height:44px; border:1px solid var(--line); border-radius:6px; background:var(--panel2);
-    color:var(--dim); padding:0; flex:none; display:flex; flex-direction:column; align-items:center;
-    justify-content:center; gap:2px; font-size:9px; line-height:1;
+    height:26px; padding:0 9px; flex:none; display:inline-flex; align-items:center; gap:5px;
+    font-size:11px; line-height:1; white-space:nowrap;
   }
-  #frameActs .fbtn svg{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
-  #frameActs .fbtn span{font-size:8.5px; white-space:nowrap}
-  #frameActs .fbtn:hover{color:var(--hot); border-color:#4d6386}
-  #frameActs .fbtn.add{border-style:dashed; background:transparent}
+  #frameActs .fbtn svg{width:12px; height:12px; stroke:currentColor; fill:none; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round}
   #frameActs .fbtn.del:hover{color:#eda99c; border-color:#6b3a33; background:#2a1c19}
   #frameActs .fgap{width:1px; height:32px; background:var(--line); flex:none; margin:0 4px}
-  #zoomLabel{font:12px var(--mono); width:34px; text-align:center; flex:none}
+  #zoomLabel{font:12px var(--mono); width:44px; height:24px; padding:0; text-align:center; flex:none}
   #stagebar button.z{width:24px; height:24px; padding:0}
 
   /* right inspector */
   #side{
-    position:absolute; top:66px; right:14px; bottom:14px; width:var(--sideW); z-index:4;
+    position:absolute; top:66px; right:14px; max-height:calc(100% - 80px); width:var(--sideW); z-index:4;
     display:flex; flex-direction:column; overflow:hidden;
   }
   #tabs{display:flex; gap:2px; padding:8px 8px 0; border-bottom:1px solid var(--line); flex:none}
@@ -242,7 +247,7 @@ if (location.hash === '#forget') {
   #tabs button.on{background:var(--panel2); color:var(--hot)}
   #warnBadge{background:rgba(201,162,74,.15); color:var(--warn); border-radius:8px; font-size:9px; padding:1px 5px; display:none}
   #warnBadge.bad{background:rgba(209,104,90,.15); color:#eda99c}
-  .pane{flex:1; overflow:auto; display:none}
+  .pane{flex:1 1 auto; min-height:0; overflow:auto; display:none}
   .pane.on{display:block}
   .pane .sec{padding:10px 12px 0}
   .pane .sec.tight{padding-top:6px}
@@ -392,6 +397,7 @@ if (location.hash === '#forget') {
     </datalist>
     <span class="dim">/</span>
     <input id="key" type="text" placeholder="treeent" title="The sprite's name. Files are name-0.png, name-1.png">
+    <span id="dimNote" class="dim" style="font:11px var(--mono); flex:none"></span>
     <span id="pbPath" class="pick" title="Where saving writes. Click to pick a different folder.">art-live/creatures/</span>
     <div style="flex:1"></div>
     <span id="lookPill" class="pill" style="display:none"></span>
@@ -458,9 +464,8 @@ if (location.hash === '#forget') {
     <button id="bOnion" class="on" title="Show the frame before this one, faintly">Onion</button>
     <div class="sep"></div>
     <button id="zOut" class="z" title="Zoom out">&#8722;</button>
-    <span id="zoomLabel">16x</span>
+    <button id="zoomLabel" title="Fit (0)">16x</button>
     <button id="zIn" class="z" title="Zoom in">+</button>
-    <button id="zFit" title="Fit the whole sprite in the window">Fit</button>
     <button id="bGrid" class="on">Grid</button>
     <button id="bGuides" class="on" title="The feet line and the centre line">Guides</button>
   </div>
@@ -554,7 +559,7 @@ if (location.hash === '#forget') {
     <div id="keptText"></div>
     <div class="row" style="margin-top:8px"><button id="bForget" style="width:100%">Forget all</button></div>
   </div>
-  <div id="sizeNote"><span id="sizeLabel"></span> <span id="posLabel"></span></div>
+  <div id="sizeNote" title="Where the pointer is, in pixels"><span id="posLabel">&mdash;</span></div>
   <div id="status"></div>
 
   <!-- shells for ids the engine still speaks to but the redesign has no place for -->
@@ -1413,7 +1418,7 @@ function paintCanvas() {
   ctx.restore();
 
   $('zoomLabel').textContent = z + 'x';
-  $('sizeLabel').textContent = s.w + ' x ' + s.h;
+  $('dimNote').textContent = '\u00b7 ' + s.w + '\u00d7' + s.h;
 }
 function requestCanvas() {
   if (canvasRaf) return;
@@ -2413,7 +2418,7 @@ function snapEnd(x0, y0, x, y) {
 stage.addEventListener('pointermove', function (e) {
   var s = spr(); if (!s) return;
   var p = pxAt(e);
-  $('posLabel').textContent = (p.x >= 0 && p.y >= 0 && p.x < s.w && p.y < s.h) ? (p.x + ', ' + p.y) : '';
+  $('posLabel').textContent = (p.x >= 0 && p.y >= 0 && p.x < s.w && p.y < s.h) ? (p.x + ', ' + p.y) : '\u2014';
   if (!drag) return;
   if (drag.mode === 'draw') {
     line(drag.lx, drag.ly, p.x, p.y, drag.erase);
@@ -2445,7 +2450,7 @@ function endDrag() {
 stage.addEventListener('pointerup', endDrag);
 stage.addEventListener('pointercancel', endDrag);
 stage.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-stage.addEventListener('pointerleave', function () { $('posLabel').textContent = ''; });
+stage.addEventListener('pointerleave', function () { $('posLabel').textContent = '\u2014'; });
 // zoom around a point: whatever sprite pixel sits under the anchor stays under it.
 // No anchor given means the middle of the view, for the buttons and the keys.
 function zoomAt(nz, cx, cy) {
@@ -2606,7 +2611,7 @@ function selectSprite(i) {
   dropSelection(true);
   S.si = (i >= 0 && i < S.sprites.length) ? i : (S.sprites.length ? Math.max(0, Math.min(i, S.sprites.length - 1)) : -1);
   var s = spr();
-  if (s) { $('key').value = s.key; $('family').value = s.family; s.softDismissed = false; }
+  if (s) { $('key').value = s.key; $('key').title = s.key; $('family').value = s.family; s.softDismissed = false; }
   else $('key').value = '';   // no sprite, no name: the path bar should not name a ghost
   setPlaying(false);
   checkAlpha();
@@ -2674,7 +2679,7 @@ function exportAll(oneOnly, force) {
   var s = spr(); if (!s) return;
   s.key = cleanName($('key').value) || 'sprite';
   s.family = cleanName($('family').value) || 'creatures';
-  $('key').value = s.key; $('family').value = s.family;
+  $('key').value = s.key; $('key').title = s.key; $('family').value = s.family;
   touched(s); scheduleSave();
 
   var r = checkSprite(s);
@@ -2744,7 +2749,7 @@ function saveOver(force) {
   var s = spr(); if (!s) return false;
   s.key = cleanName($('key').value) || 'sprite';
   s.family = cleanName($('family').value) || 'creatures';
-  $('key').value = s.key; $('family').value = s.family;
+  $('key').value = s.key; $('key').title = s.key; $('family').value = s.family;
   touched(s); scheduleSave();
 
   var r = checkSprite(s);
@@ -3088,7 +3093,7 @@ $('key').oninput = function () { drawPathBar(); };
 $('key').onchange = function () {
   var s = spr(); if (!s) { drawPathBar(); return; }
   s.key = cleanName($('key').value) || 'sprite';
-  $('key').value = s.key;
+  $('key').value = s.key; $('key').title = s.key;
   touched(s); scheduleSave(); redraw();
 };
 $('family').oninput = function () { drawPathBar(); };
@@ -3129,7 +3134,15 @@ function showTab(which) {
 $('tabGame').onclick = function () { showTab('Game'); };
 $('tabColour').onclick = function () { showTab('Colour'); };
 $('tabChecks').onclick = function () { showTab('Checks'); };
-$('lookPill').onclick = function () { showTab('Checks'); };
+$('lookPill').onclick = function () {
+  showTab('Checks');
+  var first = document.querySelector('#checks .chk.bad') || document.querySelector('#checks .chk.warn');
+  if (first) {
+    first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    first.style.transition = 'none'; first.style.background = 'rgba(201,162,74,.16)';
+    setTimeout(function () { first.style.transition = 'background 1s'; first.style.background = ''; }, 800);
+  }
+};
 $('bPlay2').onclick = function () { setPlaying(!S.playing); };
 $('bEditRefs').onclick = function () { refsEditing = !refsEditing; drawRefs(); };
 $('bAddRef').onclick = function () { addRefSprite($('refDraft').value); $('refDraft').value = ''; };
@@ -3352,7 +3365,7 @@ $('bFlip').onclick = flipFrame;
 $('bForget').onclick = forgetAll;
 $('zIn').onclick = function () { zoomAt(S.zoom + (S.zoom < 8 ? 1 : 4)); };
 $('zOut').onclick = function () { zoomAt(S.zoom - (S.zoom <= 8 ? 1 : 4)); };
-$('zFit').onclick = function () { fitZoom(); redraw(); };
+$('zoomLabel').onclick = function () { fitZoom(); redraw(); };
 $('bGrid').onclick = function () { S.grid = !S.grid; this.className = S.grid ? 'on' : ''; redraw(); };
 $('bGuides').onclick = function () { S.guides = !S.guides; this.className = S.guides ? 'on' : ''; redraw(); };
 $('bOnion').onclick = function () { S.onion = !S.onion; this.className = S.onion ? 'on' : ''; redraw(); };
@@ -3459,6 +3472,7 @@ window.addEventListener('keydown', function (e) {
   switch (e.key) {
     case 'z': case 'Z': if (e.shiftKey) { redo(); } break;
     case '+': case '=': $('zIn').click(); break;
+    case '0': $('zoomLabel').click(); break;
     case '-': case '_': $('zOut').click(); break;
     case 'Escape': dropSelection(); redraw(); break;
     case 'Delete': case 'Backspace': if (S.sel) { e.preventDefault(); clearSelection(); } break;
@@ -3499,6 +3513,7 @@ window.EDITOR = {
   showKeys: showKeys, drawPathBar: drawPathBar, moveFrame: moveFrame,
   pl: { generate: plGenerate, open: plOpen, hist: function () { return plHist; }, openGen: openGen },
   refs: function () { return REF_LIST; }, addRefSprite: addRefSprite, drawRefs: drawRefs,
+  fitView: function () { fitZoom(); redraw(); },
   image: { size: openSizeModal, resizeCanvas: resizeCanvas, byEdges: resizeByEdges, scale: scaleSprite, scaleImage: scaleImageOnly,
            crop: cropToSelection, trim: trimSprite, flipH: flipFrame, flipV: flipVertical, rotate: rotateSprite },
   showTab: showTab, RULE_DEFS: RULE_DEFS, rulesChanged: rulesChanged, closeSprite: closeSprite
