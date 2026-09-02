@@ -21,6 +21,17 @@ and the landing page lives at
 Saving in place works there too — the page is served over HTTPS, so Chrome and Edge
 allow it. After editing `index.html`, `make site` refreshes the hosted copy.
 
+## The window
+
+The canvas is the whole window. Everything else floats over it: the top bar with the
+sprite's folder and name, a Sprites panel and a Tools panel down the left, a frames dock
+along the bottom, and one tabbed inspector on the right — **Game size**, **Colour** and
+**Checks**. The path after the name says where saving will write; click it to pick a
+different folder. When a sprite has something to look at, an amber pill in the top bar
+says how many, and red when the packer would refuse it; either one jumps to the Checks
+tab. **+** in the Sprites panel opens PNGs or starts a blank sprite, and the small ×
+beside a sprite closes it (twice, on purpose).
+
 ## Made for one game, useful for yours
 
 The rules baked into this editor — square frames, at most 32 colours, every pixel fully
@@ -80,10 +91,12 @@ This section is the Eldermyr team's workflow. If that is not you, the short vers
 Export downloads `name-0.png`, `name-1.png` and so on, Save over writes them back where
 they came from, and the path bar is yours to repoint at your own game's art folder.
 
-The bar under the top row says the exact path and the exact command, and follows the name
-as you type it:
+The path after the name in the top bar says exactly where the files go, and follows the
+name as you type it:
 
-    Goes to  art-live/creatures/miretoad-0.png, miretoad-1.png     Then run  npm run pack-art
+    creatures / miretoad   → art-live/creatures/miretoad-0.png, miretoad-1.png
+
+Hover it for the command to run after: `npm run pack-art`.
 
 **Folder** is the folder under `art-live`. `creatures` for an enemy. The others the game
 uses are `bosses`, `items`, `hero`, `steeds`, `gates` and `stairs`.
@@ -107,8 +120,8 @@ The button is greyed out until the sprite in front of you actually came from fil
 session — hover it and it says exactly what to do to turn it on. In Firefox and Safari it
 never appears, because those browsers do not let a page write files.
 
-The destination is yours to change before saving: **Change…** in the path bar opens a
-real folder picker, the bar then shows the folder you chose, and Save writes every frame
+The destination is yours to change before saving: click the path in the top bar and a
+real folder picker opens, the path then shows the folder you chose, and Save writes every frame
 of the sprite there — including a sprite that never came from files at all. Pick your
 game's art folder once and a brand new creature saves straight into it.
 
@@ -162,12 +175,18 @@ the packer would refuse it as it is.
 
 ## The rules the game holds you to
 
-The checks panel on the right is live, and it splits the same way the packer does. All
-of the refusals answer to one checkbox above the panel: **Hold me to the game's rules**,
-on out of the box. Untick it and the editor stops refusing soft pixels, extra colours
-and non-square pictures — what you paint, part see-through pixels included, is exactly
-what exports. For Eldermyr art leave it on, because the packer itself still refuses
-those files.
+The Checks tab is live, and it splits the same way the packer does. Every check is a
+rule with a name, and the rules are yours: **Edit rules** lists them, each with a switch
+and a ×, and a box to write a rule of your own. A rule you write is listed in the checks
+as a reminder — the editor cannot judge free text — until someone wires it to a check
+in `index.html`. **Back to Eldermyr's rules** puts everything back.
+
+Above the list, one master checkbox — **Hold me to this game's rules while I draw** —
+governs the three rules that change what leaves in a file: solid pixels, the colour
+ceiling and squareness. Untick it and the editor stops refusing soft pixels, extra
+colours and non-square pictures — what you paint, part see-through pixels included, is
+exactly what exports. For Eldermyr art leave it on, because the packer itself still
+refuses those files.
 
 **Red is refused.** The packer writes nothing and exits with an error:
 
@@ -259,8 +278,11 @@ own, so this draws it the size a player actually sees, on the game's own ground,
 game's own shadow under it, next to three creatures already in the game: a grave rat, the
 hero, and a wild ogre.
 
-- **Window** picks how big the player's window is. 3 screen pixels to a drawn pixel is the
-  normal case; 2 is a small window and 4 is a large one.
+- **Window** is how many screen pixels a drawn pixel gets: 1× to 8×. The game runs at
+  2, 3 and 4; the bigger steps are for games that scale everything up. The choice is kept.
+- **Edit references** swaps the creatures yours stands beside. The game's own three are
+  the defaults; add any open sprite by name, or pick a PNG, and drop any you do not want.
+  Your list is kept in the browser.
 - The faint squares are map tiles. A 16 pixel creature is about two thirds of a tile.
 - **Ground** switches between the realm's grass, dirt path, stone, sand, snow, burnt ground
   and dungeon floor, in the colours the game paints them.
