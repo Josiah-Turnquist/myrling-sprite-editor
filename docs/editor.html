@@ -255,8 +255,9 @@ if (location.hash === '#forget') {
   #alphabar{
     position:absolute; top:64px; left:50%; transform:translateX(-50%); z-index:6; display:none; align-items:center; gap:8px;
     padding:6px 10px; border-radius:8px; background:#33231f; border:1px solid #563a33; color:#eab8ad; box-shadow:var(--shadow);
-    max-width:min(760px,70%);
+    width:max-content; max-width:min(760px,80%); min-width:min(520px,80%);
   }
+  #alphabar span{flex:1}
   #alphabar.show{display:flex}
   #drop{
     position:fixed; inset:0; display:none; align-items:center; justify-content:center;
@@ -757,7 +758,7 @@ function paint(x, y, erase) {
 function blendPx(f, w, x, y, c, o) {
   var i = (y * w + x) * 4;
   var da = f[i + 3] / 255;
-  if (rulesOn()) {
+  if (hardOn()) {
     f[i]     = Math.round(c[0] * o + f[i] * da * (1 - o) + c[0] * (1 - da) * (1 - o));
     f[i + 1] = Math.round(c[1] * o + f[i + 1] * da * (1 - o) + c[1] * (1 - da) * (1 - o));
     f[i + 2] = Math.round(c[2] * o + f[i + 2] * da * (1 - o) + c[2] * (1 - da) * (1 - o));
@@ -2234,7 +2235,7 @@ function checkAlpha() {
   var bar = $('alphabar');
   if (!s) { bar.className = ''; return; }
   if (isHeavy(s) && !deepCheck) { bar.className = ''; return; }
-  var n = rulesOn() ? countSoft(s) : 0;
+  var n = hardOn() ? countSoft(s) : 0;
   if (!n || s.softDismissed) { bar.className = ''; return; }
   $('alphaText').textContent = 'This sprite has ' + n + ' pixels that are only part see-through. ' +
     'The game needs every pixel fully solid or fully clear, so it will refuse this as it is.';
@@ -2298,7 +2299,7 @@ function frameCanvas(s, i) {
   // with the rules on, nothing leaves here part see-through; with them off, the file
   // keeps exactly what was painted
   for (var j = 0; j < src.length; j += 4) {
-    if (!rulesOn()) {
+    if (!hardOn()) {
       id.data[j] = src[j]; id.data[j + 1] = src[j + 1]; id.data[j + 2] = src[j + 2]; id.data[j + 3] = src[j + 3];
       continue;
     }
@@ -2343,7 +2344,7 @@ function exportAll(oneOnly, force) {
 
   var names = exportNames(s);
   var idx = oneOnly ? [s.cur] : s.frames.map(function (_, i) { return i; });
-  var soft = rulesOn() ? countSoft(s) : 0;
+  var soft = hardOn() ? countSoft(s) : 0;
   var chain = Promise.resolve();
   idx.forEach(function (i) { chain = chain.then(function () { return saveFrame(s, i, names[i]); }); });
   chain.then(function () {
@@ -2412,7 +2413,7 @@ function saveOver(force) {
 
   // a chosen folder takes every frame, whatever the files were called before
   if (s.dest && s.dest.handle) {
-    var dsoft = rulesOn() ? countSoft(s) : 0;
+    var dsoft = hardOn() ? countSoft(s) : 0;
     askWrite(s.dest.handle).then(function (ok) {
       if (!ok) { say('The browser was not allowed to write in ' + s.dest.label + '. Nothing was touched.', 'bad'); return; }
       var dchain = Promise.resolve();
@@ -2443,7 +2444,7 @@ function saveOver(force) {
   // the name changed under the button between redraws: fall back to plain export
   if (!inPlace.length) { exportAll(false, force); return false; }
 
-  var soft = rulesOn() ? countSoft(s) : 0;
+  var soft = hardOn() ? countSoft(s) : 0;
   var wrote = [], blocked = [], failed = [];
   var chain = Promise.resolve();
   inPlace.forEach(function (p) {
@@ -2492,6 +2493,8 @@ function saveUI() {
 }
 // the game-rules toggle lives in the same kept corner of the browser
 function rulesOn() { return UI.rules !== false; }
+// soft pixels are only a problem while the master switch AND the solid-pixel rule are on
+function hardOn() { return rulesOn() && ruleOn('hard'); }
 $('rulesBox').checked = rulesOn();
 $('rulesBox').onchange = function () {
   UI.rules = this.checked;
