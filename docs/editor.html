@@ -156,6 +156,13 @@ if (location.hash === '#forget') {
   .tool .n{font-size:12px; flex:1}
   .tool.on .keycap{color:#b8c6da}
   #toolsPanel .div{height:1px; background:var(--line); margin:6px 2px}
+  #toolsHead.grab{cursor:grab}
+  #toolsHead.grab:active{cursor:grabbing}
+  #toolsHead .icon{font-size:12px; padding:0 5px; line-height:16px}
+  #toolsPanel.floating{position:absolute; z-index:6; width:var(--leftW); margin:0}
+  #toolsPanel.folded > :not(.ph){display:none}
+  #toolsPanel.folded .ph{padding-bottom:4px}
+  #leftcol.solo #spritesPanel{max-height:100%}
   #toolsPanel .acts{display:flex; justify-content:space-around; padding:2px 0}
   #toolsPanel .acts button{font-size:15px; padding:2px 8px}
 
@@ -376,7 +383,13 @@ if (location.hash === '#forget') {
       <div id="stripList"></div>
     </div>
     <div id="toolsPanel" class="panel">
-      <div class="ph"><span class="lab">Tools</span></div>
+      <div class="ph grab" id="toolsHead" title="Drag to move this panel anywhere. Double click puts it back.">
+        <span class="lab">Tools</span>
+        <span>
+          <button id="bToolsDock" class="quiet icon" title="Put the panel back in the column" style="display:none">&#8676;</button>
+          <button id="bToolsFold" class="quiet icon" title="Fold the panel to its title">&#9662;</button>
+        </span>
+      </div>
       <div id="tools"></div>
       <div class="div"></div>
       <div class="acts">
@@ -2566,6 +2579,65 @@ function wireGrip(id, which) {
 wireGrip('gripL', 'leftW');
 wireGrip('gripR', 'sideW');
 applyPanels();
+
+// the tools panel folds to its title, and its title is a handle: drag it anywhere and
+// it leaves the column to float on its own; double click the title to dock it again.
+// Where it sits and whether it is folded are kept with the other UI choices.
+function toolsApply() {
+  var p = $('toolsPanel');
+  p.className = 'panel' + (UI.toolsFold ? ' folded' : '') + (UI.toolsPos ? ' floating' : '');
+  $('bToolsFold').innerHTML = UI.toolsFold ? '&#9656;' : '&#9662;';
+  $('bToolsFold').title = UI.toolsFold ? 'Open the panel' : 'Fold the panel to its title';
+  $('bToolsDock').style.display = UI.toolsPos ? '' : 'none';
+  $('leftcol').className = UI.toolsPos ? 'solo' : '';
+  if (UI.toolsPos) {
+    if (p.parentNode !== $('app')) $('app').appendChild(p);
+    toolsPlace(UI.toolsPos.x, UI.toolsPos.y);
+  } else if (p.parentNode !== $('leftcol')) {
+    $('leftcol').appendChild(p);
+    p.style.left = ''; p.style.top = '';
+  }
+}
+function toolsPlace(x, y) {
+  var p = $('toolsPanel'), app = $('app');
+  var maxX = app.clientWidth - p.offsetWidth - 6, maxY = app.clientHeight - 30;
+  x = Math.max(6, Math.min(maxX, x)); y = Math.max(6, Math.min(maxY, y));
+  p.style.left = x + 'px'; p.style.top = y + 'px';
+  UI.toolsPos = { x: x, y: y };
+}
+$('bToolsFold').onclick = function (e) { e.stopPropagation(); UI.toolsFold = !UI.toolsFold; saveUI(); toolsApply(); };
+$('bToolsDock').onclick = function (e) { e.stopPropagation(); delete UI.toolsPos; saveUI(); toolsApply(); say('Tools are back in the column', 'good'); };
+$('toolsHead').addEventListener('dblclick', function (e) {
+  if (e.target.tagName === 'BUTTON') return;
+  delete UI.toolsPos; saveUI(); toolsApply();
+});
+$('toolsHead').addEventListener('pointerdown', function (e) {
+  if (e.target.tagName === 'BUTTON' || e.button !== 0) return;
+  e.preventDefault();
+  var head = this, p = $('toolsPanel'), app = $('app');
+  var r = p.getBoundingClientRect(), ar = app.getBoundingClientRect();
+  var offX = e.clientX - r.left, offY = e.clientY - r.top, moved = false;
+  try { head.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointers */ }
+  var mv = function (ev) {
+    if (!moved && Math.abs(ev.clientX - e.clientX) < 3 && Math.abs(ev.clientY - e.clientY) < 3) return;
+    if (!moved) {
+      // lift it out of the column at the spot it already occupies, so nothing jumps
+      moved = true;
+      UI.toolsPos = { x: r.left - ar.left, y: r.top - ar.top };
+      toolsApply();
+    }
+    toolsPlace(ev.clientX - ar.left - offX, ev.clientY - ar.top - offY);
+  };
+  var up = function () {
+    head.removeEventListener('pointermove', mv);
+    if (moved) saveUI();
+  };
+  head.addEventListener('pointermove', mv);
+  head.addEventListener('pointerup', up, { once: true });
+  head.addEventListener('pointercancel', up, { once: true });
+});
+window.addEventListener('resize', function () { if (UI.toolsPos) toolsPlace(UI.toolsPos.x, UI.toolsPos.y); });
+toolsApply();
 
 // the game-rules toggle lives in the same kept corner of the browser
 function rulesOn() { return UI.rules !== false; }
