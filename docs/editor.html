@@ -68,7 +68,7 @@ if (location.hash === '#forget') {
   .lab{font-size:10px; letter-spacing:.08em; color:var(--dim); font-weight:600; text-transform:uppercase}
 
   /* ---------- the stage: the canvas is the whole window, the panels float over it ---------- */
-  #app{position:relative; width:100%; height:100%; overflow:hidden}
+  #app{position:relative; width:100%; height:100%; overflow:hidden; --leftW:172px; --sideW:320px}
   #canvasHost{position:absolute; inset:0; display:none}
   #cv{
     position:absolute; inset:0; z-index:0; display:block;
@@ -76,12 +76,12 @@ if (location.hash === '#forget') {
   }
   #canvasWrap{
     position:absolute; inset:0; z-index:1; overflow:auto; display:flex; cursor:crosshair;
-    padding:70px 350px 88px 200px;   /* the gap between the floating panels */
+    padding:70px calc(var(--sideW) + 30px) 88px calc(var(--leftW) + 28px);   /* the gap between the floating panels */
   }
   #canvasSizer{margin:auto; flex:0 0 auto; pointer-events:none; box-shadow:0 0 0 1px var(--line)}
   #empty{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center;
-    color:var(--dim); padding:24px; line-height:1.8; padding-left:200px; padding-right:350px;
+    color:var(--dim); padding:24px; line-height:1.8; padding-left:calc(var(--leftW) + 28px); padding-right:calc(var(--sideW) + 30px);
   }
   #empty b{color:var(--text); font-weight:600; display:block; margin-bottom:6px}
 
@@ -115,7 +115,7 @@ if (location.hash === '#forget') {
 
   /* left column */
   #leftcol{
-    position:absolute; left:14px; top:66px; bottom:84px; width:172px; z-index:4;
+    position:absolute; left:14px; top:66px; bottom:84px; width:var(--leftW); z-index:4;
     display:flex; flex-direction:column; gap:10px;
   }
   #spritesPanel{display:flex; flex-direction:column; padding:6px; flex:none; max-height:46%; overflow:auto; position:relative}
@@ -161,11 +161,11 @@ if (location.hash === '#forget') {
 
   /* bottom dock */
   #stagebar{
-    position:absolute; bottom:14px; left:196px; right:346px; height:56px; z-index:4;
+    position:absolute; bottom:14px; left:calc(var(--leftW) + 24px); right:calc(var(--sideW) + 26px); height:56px; z-index:4;
     display:none; align-items:center; gap:8px; padding:0 12px;
   }
   #stagebar .sep{width:1px; height:32px; background:var(--line); flex:none}
-  #frames{display:flex; gap:6px; align-items:center; flex:1; min-width:0; overflow-x:auto; padding:2px 0}
+  #frames{display:flex; gap:6px; align-items:center; flex:1; min-width:102px; overflow-x:auto; padding:2px 0}
   .fr{position:relative; flex:0 0 auto; cursor:pointer; width:40px; height:40px; border:2px solid var(--line); border-radius:6px; background:#131519; overflow:hidden}
   .fr canvas{width:36px; height:36px; image-rendering:pixelated; display:block}
   .fr div{position:absolute; right:2px; bottom:0; font:9px var(--mono); color:var(--dim); margin:0; text-shadow:0 0 2px #000}
@@ -173,15 +173,24 @@ if (location.hash === '#forget') {
   .fr.on div{color:var(--hot)}
   .fr.markL{box-shadow:-3px 0 0 0 #6b86ad}
   .fr.markR{box-shadow:3px 0 0 0 #6b86ad}
-  #frames .fbtn{width:40px; height:40px; border:1px dashed var(--line); border-radius:6px; background:transparent; color:var(--dim); font-size:17px; padding:0; flex:none}
-  #frames .fbtn.thin{width:22px; border:0; font-size:15px}
-  #frames .fbtn:hover{color:var(--hot); background:var(--panel2)}
+  #frameActs{display:flex; gap:4px; align-items:center; flex:none}
+  #frameActs .fbtn{
+    width:46px; height:44px; border:1px solid var(--line); border-radius:6px; background:var(--panel2);
+    color:var(--dim); padding:0; flex:none; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:2px; font-size:9px; line-height:1;
+  }
+  #frameActs .fbtn svg{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
+  #frameActs .fbtn span{font-size:8.5px; white-space:nowrap}
+  #frameActs .fbtn:hover{color:var(--hot); border-color:#4d6386}
+  #frameActs .fbtn.add{border-style:dashed; background:transparent}
+  #frameActs .fbtn.del:hover{color:#eda99c; border-color:#6b3a33; background:#2a1c19}
+  #frameActs .fgap{width:1px; height:32px; background:var(--line); flex:none; margin:0 4px}
   #zoomLabel{font:12px var(--mono); width:34px; text-align:center; flex:none}
   #stagebar button.z{width:24px; height:24px; padding:0}
 
   /* right inspector */
   #side{
-    position:absolute; top:66px; right:14px; bottom:14px; width:320px; z-index:4;
+    position:absolute; top:66px; right:14px; bottom:14px; width:var(--sideW); z-index:4;
     display:flex; flex-direction:column; overflow:hidden;
   }
   #tabs{display:flex; gap:2px; padding:8px 8px 0; border-bottom:1px solid var(--line); flex:none}
@@ -236,14 +245,20 @@ if (location.hash === '#forget') {
   .master{display:flex; gap:8px; padding:8px 0; font-size:11px; color:var(--text); line-height:1.45; cursor:pointer; align-items:flex-start}
 
   /* corners, toasts, veils */
-  #keptNote{position:absolute; left:196px; bottom:80px; z-index:4; font-size:11px; color:var(--dim); cursor:pointer}
+  #keptNote{position:absolute; left:calc(var(--leftW) + 24px); bottom:80px; z-index:4; font-size:11px; color:var(--dim); cursor:pointer}
   #keptNote:hover{color:var(--hot)}
   #keptPop{
-    position:absolute; left:196px; bottom:100px; z-index:6; width:280px; display:none; padding:10px;
+    position:absolute; left:calc(var(--leftW) + 24px); bottom:100px; z-index:6; width:280px; display:none; padding:10px;
     font-size:11px; line-height:1.55; color:var(--text);
   }
   #keptPop.show{display:block}
-  #sizeNote{position:absolute; right:346px; bottom:80px; z-index:4; font:11px var(--mono); color:var(--dim)}
+  #sizeNote{position:absolute; right:calc(var(--sideW) + 26px); bottom:80px; z-index:4; font:11px var(--mono); color:var(--dim)}
+  /* the grips: drag a panel's inner edge; double click puts it back */
+  .grip{position:absolute; top:66px; bottom:84px; width:10px; z-index:5; cursor:col-resize}
+  .grip::after{content:""; position:absolute; top:0; bottom:0; left:4px; width:2px; border-radius:1px; background:transparent}
+  .grip:hover::after,.grip.held::after{background:#4d6386}
+  #gripL{left:calc(var(--leftW) + 10px)}
+  #gripR{right:calc(var(--sideW) + 10px); bottom:14px}
   #status{
     position:absolute; left:50%; bottom:84px; transform:translateX(-50%); z-index:7; max-width:min(720px,60%);
     padding:6px 12px; border-radius:8px; background:var(--panel); border:1px solid var(--line); box-shadow:var(--shadow);
@@ -373,6 +388,7 @@ if (location.hash === '#forget') {
 
   <div id="stagebar" class="panel">
     <div id="frames"></div>
+    <div id="frameActs"></div>
     <div class="sep"></div>
     <button id="bPlay" title="Run the frames at game size. Space does this too.">&#9654; Play</button>
     <button id="bOnion" class="on" title="Show the frame before this one, faintly">Onion</button>
@@ -463,6 +479,8 @@ if (location.hash === '#forget') {
     </div>
   </div>
 
+  <div id="gripL" class="grip" title="Drag to make the sprites and tools panels wider or narrower. Double click puts it back."></div>
+  <div id="gripR" class="grip" title="Drag to make the inspector wider or narrower. Double click puts it back."></div>
   <div id="keptNote" title="What this browser is keeping. Click for details.">kept in this browser</div>
   <div id="keptPop" class="panel">
     <div id="keptText"></div>
@@ -1204,7 +1222,7 @@ function closeSprite(i) {
 function drawFrames() {
   var s = spr(), wrap = $('frames');
   wrap.innerHTML = '';
-  if (!s) return;
+  if (!s) { $('frameActs').innerHTML = ''; return; }
   var unmark = function () {
     Array.prototype.forEach.call(wrap.children, function (n) {
       n.className = String(n.className).replace(/ mark[LR]/g, '');
@@ -1251,19 +1269,32 @@ function drawFrames() {
     };
     wrap.appendChild(d);
   });
-  var mk = function (label, fn, title, thin) {
-    var b = document.createElement('button');
-    b.className = 'fbtn' + (thin ? ' thin' : '');
-    b.textContent = label; b.onclick = fn; b.title = title;
-    wrap.appendChild(b);
+  // the frame buttons: an icon each, drawn inline, with the word under it
+  var ICON = {
+    add: '<path d="M5 12h14M12 5v14"/>',
+    copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    del: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/>',
+    file: '<path d="M16 5h6M19 2v6M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5M21 15l-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/><circle cx="9" cy="9" r="2"/>'
   };
-  mk('+', function () { dropSelection(); s.frames.push(blank(s.w, s.h)); s.cur = s.frames.length - 1; commit(); redraw(); }, 'Add a blank frame');
-  mk('\u29c9', function () { dropSelection(); s.frames.splice(s.cur + 1, 0, s.frames[s.cur].slice()); s.cur++; commit(); redraw(); }, 'Copy this frame', true);
-  mk('\u00d7', function () {
+  // the buttons live beside the strip, not in it, so a long strip scrolls and they stay
+  var acts = $('frameActs');
+  acts.innerHTML = '';
+  var gap = document.createElement('div'); gap.className = 'fgap'; acts.appendChild(gap);
+  var mk = function (kind, label, fn, title) {
+    var b = document.createElement('button');
+    b.className = 'fbtn ' + kind;
+    b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICON[kind] + '</svg><span></span>';
+    b.lastChild.textContent = label;
+    b.onclick = fn; b.title = title;
+    acts.appendChild(b);
+  };
+  mk('add', 'Add', function () { dropSelection(); s.frames.push(blank(s.w, s.h)); s.cur = s.frames.length - 1; commit(); redraw(); }, 'Add a blank frame after the last');
+  mk('copy', 'Copy', function () { dropSelection(); s.frames.splice(s.cur + 1, 0, s.frames[s.cur].slice()); s.cur++; commit(); redraw(); }, 'Duplicate this frame next to itself');
+  mk('del', 'Delete', function () {
     if (s.frames.length < 2) { say('A sprite needs at least one frame', 'bad'); return; }
     dropSelection(); s.frames.splice(s.cur, 1); s.cur = Math.min(s.cur, s.frames.length - 1); commit(); redraw();
-  }, 'Delete this frame', true);
-  mk('\u2913', function () { $('fileFrame').click(); }, 'Load a PNG as another frame of this sprite', true);
+  }, 'Delete this frame');
+  mk('file', 'From file', function () { $('fileFrame').click(); }, 'Load a PNG as another frame of this sprite');
 }
 
 var frameDrag = null;   // the frame being dragged along the row, by index
@@ -2491,6 +2522,50 @@ var UI = (function () {
 function saveUI() {
   try { window.localStorage.setItem(UI_KEY, JSON.stringify(UI)); } catch (e) { /* nowhere to keep it */ }
 }
+// the panels resize at their inner edges; widths are kept with the other UI choices
+function applyPanels() {
+  var l = Math.max(140, Math.min(340, UI.leftW || 172));
+  var r = Math.max(260, Math.min(560, UI.sideW || 320));
+  $('app').style.setProperty('--leftW', l + 'px');
+  $('app').style.setProperty('--sideW', r + 'px');
+}
+function wireGrip(id, which) {
+  var h = $(id);
+  h.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    try { h.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointers */ }
+    h.className = 'grip held';
+    var x0 = e.clientX;
+    var w0 = (which === 'leftW' ? $('leftcol') : $('side')).getBoundingClientRect().width;
+    var mv = function (ev) {
+      var d = ev.clientX - x0;
+      UI[which] = Math.round(which === 'leftW' ? w0 + d : w0 - d);
+      applyPanels();
+      if (spr()) paintCanvas();
+      drawPreview();
+    };
+    var up = function () {
+      h.removeEventListener('pointermove', mv);
+      h.className = 'grip';
+      saveUI();
+      if (spr()) paintCanvas();
+      drawPreview();
+    };
+    h.addEventListener('pointermove', mv);
+    h.addEventListener('pointerup', up, { once: true });
+    h.addEventListener('pointercancel', up, { once: true });
+  });
+  h.addEventListener('dblclick', function () {
+    delete UI[which];
+    applyPanels(); saveUI();
+    if (spr()) paintCanvas();
+    drawPreview();
+  });
+}
+wireGrip('gripL', 'leftW');
+wireGrip('gripR', 'sideW');
+applyPanels();
+
 // the game-rules toggle lives in the same kept corner of the browser
 function rulesOn() { return UI.rules !== false; }
 // soft pixels are only a problem while the master switch AND the solid-pixel rule are on
