@@ -158,7 +158,9 @@ if (location.hash === '#forget') {
   #toolsPanel .div{height:1px; background:var(--line); margin:6px 2px}
   #toolsHead.grab{cursor:grab}
   #toolsHead.grab:active{cursor:grabbing}
-  #toolsHead .icon{font-size:12px; padding:0 5px; line-height:16px}
+  #toolsHead .icon{padding:2px; width:24px; height:22px; display:inline-flex; align-items:center; justify-content:center; color:var(--text)}
+  #toolsHead .icon svg{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round}
+  #toolsHead .icon:hover{color:var(--hot); background:var(--sel)}
   #toolsPanel.floating{position:absolute; z-index:6; width:var(--leftW); margin:0}
   #toolsPanel.folded > :not(.ph){display:none}
   #toolsPanel.folded .ph{padding-bottom:4px}
@@ -394,8 +396,8 @@ if (location.hash === '#forget') {
       <div class="ph grab" id="toolsHead" title="Drag to move this panel anywhere. Double click puts it back.">
         <span class="lab">Tools</span>
         <span>
-          <button id="bToolsDock" class="quiet icon" title="Put the panel back in the column" style="display:none">&#8676;</button>
-          <button id="bToolsFold" class="quiet icon" title="Fold the panel to its title">&#9662;</button>
+          <button id="bToolsDock" class="quiet icon" title="Put the panel back in the column" style="display:none"><svg viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/><path d="M19 5v14"/></svg></button>
+          <button id="bToolsFold" class="quiet icon" title="Fold the panel to its title"><svg viewBox="0 0 24 24"><path id="foldPath" d="M6 9l6 6 6-6"/></svg></button>
         </span>
       </div>
       <div id="tools"></div>
@@ -2598,7 +2600,7 @@ applyPanels();
 function toolsApply() {
   var p = $('toolsPanel');
   p.className = 'panel' + (UI.toolsFold ? ' folded' : '') + (UI.toolsPos ? ' floating' : '');
-  $('bToolsFold').innerHTML = UI.toolsFold ? '&#9656;' : '&#9662;';
+  $('foldPath').setAttribute('d', UI.toolsFold ? 'M9 6l6 6-6 6' : 'M6 9l6 6 6-6');
   $('bToolsFold').title = UI.toolsFold ? 'Open the panel' : 'Fold the panel to its title';
   $('bToolsDock').style.display = UI.toolsPos ? '' : 'none';
   $('leftcol').className = UI.toolsPos ? 'solo' : '';
