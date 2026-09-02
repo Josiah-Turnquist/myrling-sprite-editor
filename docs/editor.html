@@ -216,8 +216,16 @@ if (location.hash === '#forget') {
   .lnk{color:var(--dim); cursor:pointer; font-size:11px}
   .lnk:hover{color:var(--hot)}
   .lnk.on{color:var(--green)}
-  .seg{display:flex; background:#131519; border:1px solid var(--line); border-radius:6px; padding:2px}
-  .seg button{padding:3px 8px; font-size:11px; border-radius:4px; border:0; background:transparent; color:var(--dim)}
+  .winrow{display:flex; align-items:center; gap:8px; flex-wrap:wrap; position:relative}
+  .chip{
+    font-size:10px; color:var(--dim); background:#131519; border:1px solid var(--line); border-radius:6px;
+    padding:3px 7px; cursor:pointer; margin-left:auto; white-space:nowrap;
+  }
+  .chip:hover{color:var(--hot); border-color:#4d6386}
+  #speedPop{position:absolute; right:12px; top:calc(100% + 6px); z-index:7; width:220px; padding:10px; display:none}
+  #speedPop.show{display:block}
+  .seg{display:flex; background:#131519; border:1px solid var(--line); border-radius:6px; padding:2px; flex:none}
+  .seg button{padding:3px 6px; font-size:11px; border-radius:4px; border:0; background:transparent; color:var(--dim)}
   .seg button.on{background:var(--sel); color:var(--selText)}
   #preview{display:block; width:100%; border-radius:6px; background:#0d0f13}
   .bgs{display:flex; gap:5px}
@@ -428,12 +436,16 @@ if (location.hash === '#forget') {
         <button id="bPlay2" style="padding:3px 10px; font-size:11px">&#9654; Play</button>
       </div>
       <div class="sec tight"><canvas id="preview" height="150"></canvas></div>
-      <div class="sec" style="display:flex; align-items:center; gap:8px">
+      <div class="sec winrow">
         <span class="hint" style="font-size:11px">Window</span>
         <div class="seg" id="scales"></div>
-        <div style="flex:1"></div>
-        <input id="fps" type="range" min="1" max="20" value="6" title="Frames a second when playing">
-        <span id="fpsLabel" class="mono dim" style="font-size:10px; width:30px; text-align:right">6 / s</span>
+        <span id="fpsChip" class="chip mono" title="How fast Play runs. Click to change.">6 / s</span>
+        <div id="speedPop" class="panel">
+          <div class="lab" style="margin-bottom:6px">Speed</div>
+          <input id="fps" type="range" min="1" max="20" value="6">
+          <div id="fpsLabel" class="hint" style="margin-top:4px; color:var(--text)">6 frames a second</div>
+          <div class="hint" style="margin-top:4px">Eldermyr walks its creatures at 6. Space plays and stops.</div>
+        </div>
       </div>
       <div class="sec" style="display:flex; align-items:center; gap:8px">
         <span class="hint" style="font-size:11px">Ground</span>
@@ -2814,7 +2826,7 @@ $('pbPath').onclick = function () {
 // the rest of the redesign's wiring: the add menu, the tabs, references, rules, corners
 $('bAdd').onclick = function (e) { e.stopPropagation(); $('addMenu').className = $('addMenu').className === 'show' ? '' : 'show'; };
 $('addMenu').onclick = function (e) { e.stopPropagation(); };
-document.addEventListener('click', function () { $('addMenu').className = ''; $('keptPop').className = 'panel'; });
+document.addEventListener('click', function () { $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; });
 $('keptNote').onclick = function (e) { e.stopPropagation(); $('keptPop').className = $('keptPop').className === 'panel show' ? 'panel' : 'panel show'; };
 $('keptPop').onclick = function (e) { e.stopPropagation(); };
 function showTab(which) {
@@ -3033,9 +3045,14 @@ $('bOnion').onclick = function () { S.onion = !S.onion; this.className = S.onion
 $('bPlay').onclick = function () { setPlaying(!S.playing); };
 $('fps').oninput = function () {
   S.fps = parseInt(this.value, 10);
-  $('fpsLabel').textContent = S.fps + ' / s';
+  $('fpsLabel').textContent = S.fps + (S.fps === 1 ? ' frame a second' : ' frames a second');
+  $('fpsChip').textContent = S.fps + ' / s';
+  UI.fps = S.fps; saveUI();
   if (S.playing) setPlaying(true);
 };
+if (UI.fps >= 1 && UI.fps <= 20) { $('fps').value = UI.fps; $('fps').oninput.call($('fps')); }
+$('fpsChip').onclick = function (e) { e.stopPropagation(); $('speedPop').className = $('speedPop').className === 'panel show' ? 'panel' : 'panel show'; };
+$('speedPop').onclick = function (e) { e.stopPropagation(); };
 $('pick').oninput = function () { setColor(hex2rgb(this.value)); };
 $('hex').oninput = function () { var c = hex2rgb(this.value); if (c) setColor(c); };
 $('hex').onchange = function () {
@@ -3100,8 +3117,8 @@ window.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { e.preventDefault(); closeGen(); }
     return;
   }
-  if (e.key === 'Escape' && ($('addMenu').className === 'show' || $('keptPop').className === 'panel show')) {
-    $('addMenu').className = ''; $('keptPop').className = 'panel'; return;
+  if (e.key === 'Escape' && ($('addMenu').className === 'show' || $('keptPop').className === 'panel show' || $('speedPop').className === 'panel show')) {
+    $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; return;
   }
   if (meta && e.key === ',') { e.preventDefault(); openSettings(); return; }
   if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
