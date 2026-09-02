@@ -144,9 +144,49 @@ final class DropCatchingWebView: WKWebView {
   }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, NSToolbarDelegate {
   var window: NSWindow!
   var webView: DropCatchingWebView!
+
+  // the title bar toolbar: each button presses one of the page's own image operations,
+  // so the toolbar and the Image menu in the page can never disagree
+  struct Tool { let id: String; let label: String; let symbol: String; let tip: String; let js: String }
+  let tools: [Tool] = [
+    Tool(id: "undo", label: "Undo", symbol: "arrow.uturn.backward", tip: "Undo (Cmd+Z)", js: "EDITOR.undo()"),
+    Tool(id: "redo", label: "Redo", symbol: "arrow.uturn.forward", tip: "Redo (Shift+Z)", js: "EDITOR.redo()"),
+    Tool(id: "size", label: "Canvas size", symbol: "arrow.up.left.and.arrow.down.right", tip: "Grow, shrink or scale the canvas", js: "EDITOR.image.size()"),
+    Tool(id: "crop", label: "Crop", symbol: "crop", tip: "Crop to the selected box", js: "EDITOR.image.crop()"),
+    Tool(id: "trim", label: "Trim", symbol: "rectangle.dashed", tip: "Trim the canvas to the painted pixels", js: "EDITOR.image.trim()"),
+    Tool(id: "flipH", label: "Flip", symbol: "arrow.left.and.right", tip: "Flip left to right", js: "EDITOR.image.flipH()"),
+    Tool(id: "flipV", label: "Flip vertical", symbol: "arrow.up.and.down", tip: "Flip top to bottom", js: "EDITOR.image.flipV()"),
+    Tool(id: "rotate", label: "Rotate", symbol: "rotate.right", tip: "Rotate a quarter turn clockwise", js: "EDITOR.image.rotate()")
+  ]
+  func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+    var ids: [NSToolbarItem.Identifier] = []
+    for (i, t) in tools.enumerated() {
+      if i == 2 || i == 5 { ids.append(.space) }
+      ids.append(NSToolbarItem.Identifier(t.id))
+    }
+    return ids
+  }
+  func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+    return tools.map { NSToolbarItem.Identifier($0.id) } + [.space, .flexibleSpace]
+  }
+  func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar: Bool) -> NSToolbarItem? {
+    guard let t = tools.first(where: { $0.id == id.rawValue }) else { return nil }
+    let item = NSToolbarItem(itemIdentifier: id)
+    item.label = t.label
+    item.paletteLabel = t.label
+    item.toolTip = t.tip
+    item.image = NSImage(systemSymbolName: t.symbol, accessibilityDescription: t.label)
+    item.target = self
+    item.action = #selector(toolbarAction(_:))
+    item.isBordered = true
+    return item
+  }
+  @objc func toolbarAction(_ sender: NSToolbarItem) {
+    if let t = tools.first(where: { $0.id == sender.itemIdentifier.rawValue }) { webView.evaluateJavaScript(t.js) }
+  }
 
   func applicationDidFinishLaunching(_ note: Notification) {
     let config = WKWebViewConfiguration()
@@ -168,6 +208,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                       backing: .buffered, defer: false)
     window.title = "Myrling"
     window.minSize = NSSize(width: 900, height: 620)
+    let bar = NSToolbar(identifier: "myrling-main")
+    bar.delegate = self
+    bar.displayMode = .iconOnly
+    bar.allowsUserCustomization = true
+    bar.autosavesConfiguration = true
+    window.toolbar = bar
+    window.toolbarStyle = .unified
+    window.titleVisibility = .hidden
     window.contentView = webView
     window.center()
     window.setFrameAutosaveName("Myrling")
@@ -245,6 +293,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
     edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
     editItem.submenu = edit
+    let imageItem = NSMenuItem(); main.addItem(imageItem)
+    let image = NSMenu(title: "Image")
+    pageItem(image, "Canvas Size…", "EDITOR.image.size()")
+    pageItem(image, "Crop to Selection", "EDITOR.image.crop()")
+    pageItem(image, "Trim to Pixels", "EDITOR.image.trim()")
+    image.addItem(.separator())
+    pageItem(image, "Flip Left–Right", "EDITOR.image.flipH()")
+    pageItem(image, "Flip Top–Bottom", "EDITOR.image.flipV()")
+    pageItem(image, "Rotate 90° Clockwise", "EDITOR.image.rotate()")
+    imageItem.submenu = image
     let viewItem = NSMenuItem(); main.addItem(viewItem)
     let view = NSMenu(title: "View")
     pageItem(view, "Grid", "document.getElementById('bGrid').click()")

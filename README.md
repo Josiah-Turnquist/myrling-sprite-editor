@@ -262,6 +262,22 @@ own line.
 
 Zoom with the wheel over the canvas, with `-` and `+`, or with Fit.
 
+## The whole picture
+
+**Image ▾** in the Tools panel — and, in the Mac app, the buttons in the title bar and
+the Image menu — works on every frame at once, as one undo step:
+
+- **Canvas size…** grows, shrinks or scales the picture, three ways. *By edge* adds pixels
+  to a side with a positive number and takes them away with a negative one. *To a size*
+  takes a width and height, with an anchor for which part of the picture stays put (feet
+  on the ground, centred, out of the box). *Scale* takes a factor and applies it to the
+  picture and the canvas, the canvas only, or the picture only inside the same canvas —
+  nearest neighbour, so pixels stay crisp. The dialog says what the numbers add up to
+  before you press Apply.
+- **Crop to selection** cuts the canvas down to the box you dragged with the Select tool.
+- **Trim to the pixels** cuts it down to what is painted, so the bottom row is the feet.
+- **Flip** left–right or top–bottom, and **rotate** a quarter turn clockwise.
+
 ## Frames and the walk cycle
 
 The frames row is under the canvas. Add, copy and delete are there, and the frames

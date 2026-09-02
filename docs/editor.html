@@ -167,6 +167,34 @@ if (location.hash === '#forget') {
   #leftcol.solo #spritesPanel{max-height:100%}
   #toolsPanel .acts{display:flex; justify-content:space-around; padding:2px 0}
   #toolsPanel .acts button{font-size:15px; padding:2px 8px}
+  #imgMenu{
+    display:none; flex-direction:column; gap:2px; padding:6px; margin-top:4px;
+    background:var(--panel2); border:1px solid var(--line); border-radius:8px;
+  }
+  #imgMenu.show{display:flex}
+  #imgMenu button{text-align:left; background:transparent; border-color:transparent}
+  #imgMenu button:hover{background:var(--sel); color:var(--selText)}
+  #sizeModal{
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(12,14,18,.72); z-index:30;
+  }
+  #sizeModal.show{display:flex}
+  #sizeModal .box{
+    width:min(440px,92vw); max-height:84vh; overflow:auto;
+    background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
+  }
+  #sizeModal .mhd{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 10px; border-bottom:1px solid var(--line); color:var(--hot); font-weight:600;
+  }
+  #sizeModal .pad{padding:10px}
+  #sizeModal .master{padding:6px 0}
+  .szgrid{display:grid; grid-template-columns:auto 64px auto 64px; gap:6px 8px; align-items:center; margin:2px 0 8px 22px}
+  #sizeModal select{background:var(--panel2); border:1px solid var(--line); color:inherit; border-radius:6px; padding:3px}
+  #szAnchor{display:grid; grid-template-columns:repeat(3,16px); gap:3px}
+  #szAnchor b{width:16px; height:16px; border:1px solid var(--line); border-radius:3px; cursor:pointer; background:#131519; display:block}
+  #szAnchor b:hover{border-color:#4d6386}
+  #szAnchor b.on{background:var(--green); border-color:var(--green)}
 
   /* bottom dock */
   #stagebar{
@@ -406,6 +434,15 @@ if (location.hash === '#forget') {
         <button id="bUndo" class="quiet" title="Undo, Cmd+Z">&#8630;</button>
         <button id="bRedo" class="quiet" title="Redo, Shift+Z">&#8631;</button>
         <button id="bFlip" class="quiet" title="Mirror left to right. Creatures are drawn facing right.">&#8651;</button>
+        <button id="bImage" class="quiet" title="Resize, scale, crop, trim, flip, rotate" style="font-size:12px">Image &#9662;</button>
+      </div>
+      <div id="imgMenu">
+        <button data-act="size">Canvas size&hellip;</button>
+        <button data-act="crop">Crop to selection</button>
+        <button data-act="trim">Trim to the pixels</button>
+        <button data-act="flipH">Flip left &harr; right</button>
+        <button data-act="flipV">Flip top &harr; bottom</button>
+        <button data-act="rotate">Rotate 90&deg; clockwise</button>
       </div>
     </div>
   </div>
@@ -536,6 +573,54 @@ if (location.hash === '#forget') {
         - and + zoom, or the wheel &nbsp; Space play
       </div>
       <div class="row" style="margin-top:10px"><button id="bKeysReset" style="width:100%">Back to the usual keys</button></div>
+    </div>
+  </div>
+</div>
+<div id="sizeModal">
+  <div class="box">
+    <div class="mhd">Canvas size<button id="bSizeClose">Cancel</button></div>
+    <div class="pad">
+      <div class="hint" id="szNow" style="margin:0 0 8px"></div>
+
+      <label class="master"><input type="radio" name="szMode" value="edge" checked>
+        <span><b>By edge.</b> Add pixels to a side with a positive number, take them away with a negative one.</span></label>
+      <div class="szgrid" id="szEdge">
+        <span class="hint">Top</span><input id="szT" type="number" value="0">
+        <span class="hint">Bottom</span><input id="szB" type="number" value="0">
+        <span class="hint">Left</span><input id="szL" type="number" value="0">
+        <span class="hint">Right</span><input id="szR" type="number" value="0">
+      </div>
+
+      <label class="master"><input type="radio" name="szMode" value="size">
+        <span><b>To a size.</b> The pixels stay the size they are; the anchor says which part of the picture stays put.</span></label>
+      <div class="row" style="margin:2px 0 6px 22px; align-items:center">
+        <input id="szW" type="number" min="1" max="4096" style="width:64px"> <span class="dim">&times;</span>
+        <input id="szH" type="number" min="1" max="4096" style="width:64px">
+        <label class="hint" style="display:flex; align-items:center; gap:4px; margin-left:6px"><input type="checkbox" id="szSquare" checked> keep square</label>
+      </div>
+
+      <label class="master"><input type="radio" name="szMode" value="scale">
+        <span><b>Scale.</b> Nearest neighbour, so pixels stay crisp; whole multiples like 16 &rarr; 32 are the clean ones.</span></label>
+      <div class="row" style="margin:2px 0 6px 22px; align-items:center">
+        <span class="hint">by</span>
+        <input id="szF" type="number" min="0.05" max="64" step="0.5" value="2" style="width:64px">
+        <span class="hint">&times;, on</span>
+        <select id="szWhat">
+          <option value="both">the picture and the canvas</option>
+          <option value="canvas">the canvas only, picture stays</option>
+          <option value="image">the picture only, canvas stays</option>
+        </select>
+      </div>
+
+      <div class="row" id="szAnchorRow" style="margin:6px 0 4px; align-items:center; gap:10px">
+        <span class="hint" style="font-size:11px">Stays put</span>
+        <div id="szAnchor" title="Which part of the picture stays where it is"></div>
+        <span class="hint" id="szAnchorNote"></span>
+      </div>
+
+      <div class="hint" id="szBecomes" style="margin:8px 0 4px; color:var(--text)"></div>
+      <div class="hint">Every frame changes together, and one undo takes it all back.</div>
+      <div class="row" style="margin-top:10px"><button id="bSizeGo" class="primary" style="width:100%">Apply</button></div>
     </div>
   </div>
 </div>
@@ -948,6 +1033,202 @@ function nudge(dx, dy) {
   }
   s.frames[s.cur] = out;
   redraw();
+}
+
+// ---------- the whole picture: canvas size, scale, crop, trim, flip, rotate ----------
+// each one changes every frame together and lands as a single undo step
+function padFrame(f, w, h, nw, nh, ox, oy) {
+  var out = blank(nw, nh);
+  for (var y = 0; y < h; y++) {
+    var ty = y + oy; if (ty < 0 || ty >= nh) continue;
+    for (var x = 0; x < w; x++) {
+      var tx = x + ox; if (tx < 0 || tx >= nw) continue;
+      var si = (y * w + x) * 4, di = (ty * nw + tx) * 4;
+      out[di] = f[si]; out[di + 1] = f[si + 1]; out[di + 2] = f[si + 2]; out[di + 3] = f[si + 3];
+    }
+  }
+  return out;
+}
+function resampleFrame(f, w, h, nw, nh) {
+  var out = blank(nw, nh);
+  for (var y = 0; y < nh; y++) {
+    var sy = Math.min(h - 1, Math.floor(y * h / nh));
+    for (var x = 0; x < nw; x++) {
+      var sx = Math.min(w - 1, Math.floor(x * w / nw));
+      var si = (sy * w + sx) * 4, di = (y * nw + x) * 4;
+      out[di] = f[si]; out[di + 1] = f[si + 1]; out[di + 2] = f[si + 2]; out[di + 3] = f[si + 3];
+    }
+  }
+  return out;
+}
+function clampSide(n) { return Math.max(1, Math.min(MAX_SIDE, Math.round(n))); }
+function applyFrames(s, nw, nh, fn) {
+  dropSelection(true);
+  s.frames = s.frames.map(function (f) { return fn(f, s.w, s.h); });
+  s.w = nw; s.h = nh;
+  s.cur = Math.min(s.cur, s.frames.length - 1);
+  s.bytes = [];
+  commit(); checkAlpha();
+  fitZoom(); redraw();
+}
+// grow or shrink by a given amount on each side; a negative number takes pixels away
+function resizeByEdges(top, bottom, left, right) {
+  var s = spr(); if (!s) return;
+  var nw = clampSide(s.w + left + right), nh = clampSide(s.h + top + bottom);
+  applyFrames(s, nw, nh, function (f, w, h) { return padFrame(f, w, h, nw, nh, left, top); });
+  say('Canvas is ' + nw + ' by ' + nh + ' now', 'good');
+}
+// grow or shrink to a size; the anchor (0, .5, 1 on each axis) says which part stays put
+function resizeCanvas(nw, nh, ax, ay) {
+  var s = spr(); if (!s) return;
+  nw = clampSide(nw); nh = clampSide(nh);
+  var ox = Math.round((nw - s.w) * ax), oy = Math.round((nh - s.h) * ay);
+  applyFrames(s, nw, nh, function (f, w, h) { return padFrame(f, w, h, nw, nh, ox, oy); });
+  say('Canvas is ' + nw + ' by ' + nh + ' now', 'good');
+}
+function scaleSprite(nw, nh) {
+  var s = spr(); if (!s) return;
+  nw = clampSide(nw); nh = clampSide(nh);
+  applyFrames(s, nw, nh, function (f, w, h) { return resampleFrame(f, w, h, nw, nh); });
+  say('Scaled to ' + nw + ' by ' + nh + ', nearest neighbour', 'good');
+}
+// scale the picture but keep the canvas: the resampled picture is set back into a
+// canvas of the old size, anchored, so it is cropped or padded as needed
+function scaleImageOnly(factor, ax, ay) {
+  var s = spr(); if (!s) return;
+  var iw = clampSide(s.w * factor), ih = clampSide(s.h * factor), W = s.w, H = s.h;
+  var ox = Math.round((W - iw) * ax), oy = Math.round((H - ih) * ay);
+  applyFrames(s, W, H, function (f, w, h) { return padFrame(resampleFrame(f, w, h, iw, ih), iw, ih, W, H, ox, oy); });
+  say('Picture scaled to ' + iw + ' by ' + ih + ' inside the same ' + W + ' by ' + H + ' canvas', 'good');
+}
+function cropTo(x, y, w, h) {
+  var s = spr(); if (!s) return;
+  applyFrames(s, w, h, function (f, fw, fh) { return padFrame(f, fw, fh, w, h, -x, -y); });
+}
+function cropToSelection() {
+  var s = spr(); if (!s) return;
+  if (!S.sel) { say('Drag a box with the Select tool first, then crop to it.', 'bad'); return; }
+  var b = S.sel;
+  cropTo(b.x, b.y, b.w, b.h);
+  say('Cropped to ' + b.w + ' by ' + b.h, 'good');
+}
+function trimSprite() {
+  var s = spr(); if (!s) return;
+  var x0 = s.w, y0 = s.h, x1 = -1, y1 = -1;
+  s.frames.forEach(function (f) {
+    for (var y = 0; y < s.h; y++) for (var x = 0; x < s.w; x++) {
+      if (f[(y * s.w + x) * 4 + 3] === 0) continue;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+  });
+  if (x1 < 0) { say('Nothing painted, nothing to trim to', 'bad'); return; }
+  if (x0 === 0 && y0 === 0 && x1 === s.w - 1 && y1 === s.h - 1) { say('The picture already fills the canvas', 'good'); return; }
+  cropTo(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+  say('Trimmed to the painted pixels, ' + (x1 - x0 + 1) + ' by ' + (y1 - y0 + 1) + '. The bottom row is the feet now.', 'good');
+}
+function flipVertical() {
+  var s = spr(); if (!s) return;
+  applyFrames(s, s.w, s.h, function (f, w, h) {
+    var out = new Uint8ClampedArray(f.length);
+    for (var y = 0; y < h; y++) out.set(f.subarray(y * w * 4, (y + 1) * w * 4), (h - 1 - y) * w * 4);
+    return out;
+  });
+  say('Flipped top to bottom. Mind the feet: the game plants the bottom row.', 'good');
+}
+function rotateSprite() {
+  var s = spr(); if (!s) return;
+  var nw = s.h, nh = s.w;
+  applyFrames(s, nw, nh, function (f, w, h) {
+    var out = blank(nw, nh);
+    for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
+      var si = (y * w + x) * 4, di = (x * nw + (h - 1 - y)) * 4;
+      out[di] = f[si]; out[di + 1] = f[si + 1]; out[di + 2] = f[si + 2]; out[di + 3] = f[si + 3];
+    }
+    return out;
+  });
+  say('Rotated a quarter turn clockwise', 'good');
+}
+
+// the canvas size dialog: by edge, to a size, or by a scale factor
+var szAnchorX = 0.5, szAnchorY = 1;   // feet on the ground, centred
+function sizeOpen() { return $('sizeModal').className === 'show'; }
+function szMode() { return document.querySelector('input[name=szMode]:checked').value; }
+function drawSzAnchor() {
+  var g = $('szAnchor');
+  g.innerHTML = '';
+  [0, 0.5, 1].forEach(function (ay) {
+    [0, 0.5, 1].forEach(function (ax) {
+      var b = document.createElement('b');
+      b.className = (ax === szAnchorX && ay === szAnchorY) ? 'on' : '';
+      b.onclick = function () { szAnchorX = ax; szAnchorY = ay; drawSzAnchor(); };
+      g.appendChild(b);
+    });
+  });
+  var v = szAnchorY === 1 ? 'Feet stay on the ground' : (szAnchorY === 0 ? 'The top stays put' : 'The middle stays put');
+  var h = szAnchorX === 0.5 ? ', centred.' : (szAnchorX === 0 ? ', against the left edge.' : ', against the right edge.');
+  $('szAnchorNote').textContent = v + h;
+  szPreview();
+}
+// what the numbers add up to, said before Apply
+function szPreview() {
+  var s = spr(); if (!s) return;
+  var m = szMode(), txt = '';
+  var num = function (id) { return parseFloat($(id).value) || 0; };
+  if (m === 'edge') {
+    var nw = s.w + num('szL') + num('szR'), nh = s.h + num('szT') + num('szB');
+    txt = 'Becomes ' + clampSide(nw) + ' by ' + clampSide(nh) + '.';
+  } else if (m === 'size') {
+    txt = 'Becomes ' + clampSide(num('szW') || s.w) + ' by ' + clampSide(num('szH') || s.h) + '.';
+  } else {
+    var f = num('szF') || 1, what = $('szWhat').value;
+    var iw = clampSide(s.w * f), ih = clampSide(s.h * f);
+    txt = what === 'both' ? 'Becomes ' + iw + ' by ' + ih + ', picture and canvas.'
+      : what === 'canvas' ? 'Canvas becomes ' + iw + ' by ' + ih + '; the picture stays ' + s.w + ' by ' + s.h + '.'
+      : 'Picture becomes ' + iw + ' by ' + ih + ' inside the same ' + s.w + ' by ' + s.h + ' canvas' + (iw > s.w || ih > s.h ? ', so some of it is cropped away.' : '.');
+  }
+  $('szBecomes').textContent = txt;
+  $('szAnchorRow').style.display = (m === 'edge' || (m === 'scale' && $('szWhat').value === 'both')) ? 'none' : '';
+}
+function openSizeModal() {
+  var s = spr(); if (!s) { say('Nothing open', 'bad'); return; }
+  ['szT', 'szB', 'szL', 'szR'].forEach(function (id) { $(id).value = 0; });
+  $('szW').value = s.w; $('szH').value = s.h;
+  $('szSquare').checked = s.w === s.h;
+  $('szNow').textContent = 'It is ' + s.w + ' by ' + s.h + ' now, ' + s.frames.length + (s.frames.length === 1 ? ' frame.' : ' frames.');
+  drawSzAnchor();
+  $('sizeModal').className = 'show';
+  $('szT').focus(); $('szT').select();
+}
+function closeSizeModal() { $('sizeModal').className = ''; }
+function applySize() {
+  var s = spr(); if (!s) return;
+  var num = function (id) { return parseFloat($(id).value) || 0; };
+  var m = szMode();
+  if (m === 'edge') {
+    var T = Math.round(num('szT')), B = Math.round(num('szB')), L = Math.round(num('szL')), R = Math.round(num('szR'));
+    if (!T && !B && !L && !R) { say('Nothing to add or take away', 'bad'); return; }
+    if (s.w + L + R < 1 || s.h + T + B < 1) { say('That takes away more than there is', 'bad'); return; }
+    closeSizeModal();
+    resizeByEdges(T, B, L, R);
+    return;
+  }
+  if (m === 'size') {
+    var nw = parseInt($('szW').value, 10), nh = parseInt($('szH').value, 10);
+    if (!(nw >= 1) || !(nh >= 1)) { say('Give it a width and a height, whole pixels', 'bad'); return; }
+    if (nw > MAX_SIDE || nh > MAX_SIDE) { say('This editor goes up to ' + MAX_SIDE + ' a side', 'bad'); return; }
+    closeSizeModal();
+    if (nw === s.w && nh === s.h) { say('Same size as before, nothing changed'); return; }
+    resizeCanvas(nw, nh, szAnchorX, szAnchorY);
+    return;
+  }
+  var f = num('szF');
+  if (!(f > 0)) { say('The factor has to be more than nothing', 'bad'); return; }
+  if (s.w * f > MAX_SIDE || s.h * f > MAX_SIDE) { say('That would pass ' + MAX_SIDE + ' a side', 'bad'); return; }
+  var what = $('szWhat').value;
+  closeSizeModal();
+  if (what === 'both') scaleSprite(s.w * f, s.h * f);
+  else if (what === 'canvas') resizeCanvas(s.w * f, s.h * f, szAnchorX, szAnchorY);
+  else scaleImageOnly(f, szAnchorX, szAnchorY);
 }
 
 // ---------- copy and paste ----------
@@ -2828,7 +3109,7 @@ $('pbPath').onclick = function () {
 // the rest of the redesign's wiring: the add menu, the tabs, references, rules, corners
 $('bAdd').onclick = function (e) { e.stopPropagation(); $('addMenu').className = $('addMenu').className === 'show' ? '' : 'show'; };
 $('addMenu').onclick = function (e) { e.stopPropagation(); };
-document.addEventListener('click', function () { $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; });
+document.addEventListener('click', function () { $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; $('imgMenu').className = ''; });
 $('keptNote').onclick = function (e) { e.stopPropagation(); $('keptPop').className = $('keptPop').className === 'panel show' ? 'panel' : 'panel show'; };
 $('keptPop').onclick = function (e) { e.stopPropagation(); };
 function showTab(which) {
@@ -2875,6 +3156,31 @@ $('bRulesReset').onclick = function () {
 if (UI.tab === 'Colour' || UI.tab === 'Checks') showTab(UI.tab);
 $('bSettings').onclick = openSettings;
 $('bSettingsClose').onclick = closeSettings;
+var IMAGE_ACTS = {
+  size: openSizeModal, crop: cropToSelection, trim: trimSprite,
+  flipH: flipFrame, flipV: flipVertical, rotate: rotateSprite
+};
+$('bImage').onclick = function (e) { e.stopPropagation(); $('imgMenu').className = $('imgMenu').className === 'show' ? '' : 'show'; };
+$('imgMenu').onclick = function (e) {
+  e.stopPropagation();
+  var b = e.target.closest('button'); if (!b) return;
+  $('imgMenu').className = '';
+  if (!spr()) { say('Nothing open', 'bad'); return; }
+  IMAGE_ACTS[b.getAttribute('data-act')]();
+};
+$('bSizeClose').onclick = closeSizeModal;
+$('bSizeGo').onclick = applySize;
+$('sizeModal').onclick = function (e) { if (e.target === this) closeSizeModal(); };
+$('szW').oninput = function () { if ($('szSquare').checked) $('szH').value = this.value; };
+$('szH').oninput = function () { if ($('szSquare').checked) $('szW').value = this.value; };
+$('szSquare').onchange = function () { if (this.checked) $('szH').value = $('szW').value; };
+['szT', 'szB', 'szL', 'szR', 'szW', 'szH', 'szF'].forEach(function (id) {
+  $(id).onkeydown = function (e) { if (e.key === 'Enter') applySize(); if (e.key === 'Escape') closeSizeModal(); };
+  var prev = $(id).oninput;
+  $(id).oninput = function () { if (prev) prev.call(this); szPreview(); };
+});
+$('szWhat').onchange = szPreview;
+Array.prototype.forEach.call(document.querySelectorAll('input[name=szMode]'), function (r) { r.onchange = szPreview; });
 // ---------- PixelLab: generated sprites, with every generation kept ----------
 // One dialog: describe a creature, get a handful of candidates, click one to open it
 // as a sprite where the checks panel judges it like anything drawn by hand. Every
@@ -3119,6 +3425,11 @@ window.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { e.preventDefault(); closeGen(); }
     return;
   }
+  if (sizeOpen()) {
+    if (e.key === 'Escape') { e.preventDefault(); closeSizeModal(); }
+    return;
+  }
+  if (e.key === 'Escape' && $('imgMenu').className === 'show') { $('imgMenu').className = ''; return; }
   if (e.key === 'Escape' && ($('addMenu').className === 'show' || $('keptPop').className === 'panel show' || $('speedPop').className === 'panel show')) {
     $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; return;
   }
@@ -3182,6 +3493,8 @@ window.EDITOR = {
   showKeys: showKeys, drawPathBar: drawPathBar, moveFrame: moveFrame,
   pl: { generate: plGenerate, open: plOpen, hist: function () { return plHist; }, openGen: openGen },
   refs: function () { return REF_LIST; }, addRefSprite: addRefSprite, drawRefs: drawRefs,
+  image: { size: openSizeModal, resizeCanvas: resizeCanvas, byEdges: resizeByEdges, scale: scaleSprite, scaleImage: scaleImageOnly,
+           crop: cropToSelection, trim: trimSprite, flipH: flipFrame, flipV: flipVertical, rotate: rotateSprite },
   showTab: showTab, RULE_DEFS: RULE_DEFS, rulesChanged: rulesChanged, closeSprite: closeSprite
 };
 </script>
