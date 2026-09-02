@@ -1536,7 +1536,7 @@ function drawLook(s, r) {
   if (!s || !r) { pill.style.display = 'none'; badge.style.display = 'none'; return; }
   var nb = r.bad.length, nw = r.warn.length;
   if (nb) { pill.textContent = nb + ' refused'; pill.className = 'pill bad'; pill.style.display = ''; }
-  else if (nw) { pill.textContent = nw + ' to look at'; pill.className = 'pill'; pill.style.display = ''; }
+  else if (nw) { pill.textContent = nw + (nw === 1 ? ' warning flag' : ' warning flags'); pill.className = 'pill'; pill.style.display = ''; }
   else { pill.style.display = 'none'; }
   if (nb || nw) { badge.textContent = nb + nw; badge.className = nb ? 'bad' : ''; badge.style.display = ''; }
   else badge.style.display = 'none';

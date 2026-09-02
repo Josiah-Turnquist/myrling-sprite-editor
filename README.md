@@ -27,8 +27,8 @@ The canvas is the whole window. Everything else floats over it: the top bar with
 sprite's folder and name, a Sprites panel and a Tools panel down the left, a frames dock
 along the bottom, and one tabbed inspector on the right — **Game size**, **Colour** and
 **Checks**. The path after the name says where saving will write; click it to pick a
-different folder. When a sprite has something to look at, an amber pill in the top bar
-says how many, and red when the packer would refuse it; either one jumps to the Checks
+different folder. When a sprite has warning flags, an amber pill in the top bar counts
+them, and turns red when the packer would refuse it; either one jumps to the Checks
 tab. **+** in the Sprites panel opens PNGs or starts a blank sprite, and the small ×
 beside a sprite closes it (twice, on purpose).
 
