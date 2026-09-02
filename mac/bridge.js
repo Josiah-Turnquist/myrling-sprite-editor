@@ -5,6 +5,9 @@
 (function () {
   var port = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.eldermyr;
   if (!port || window.showOpenFilePicker) return;
+  // the page can dress for the Mac: the title bar toolbar and the menu bar carry the
+  // image operations here, so the page's own copies of them stay out of the way
+  document.documentElement.classList.add('mac');
 
   function bytesFromB64(b64) {
     var bin = atob(b64), a = new Uint8Array(bin.length);

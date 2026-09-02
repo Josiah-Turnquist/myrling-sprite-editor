@@ -98,6 +98,8 @@ if (location.hash === '#forget') {
   #topbar .logo{width:13px; height:13px; background:var(--green); flex:none}
   #topbar .name{color:var(--hot); font-weight:600; font-size:13px}
   #topbar .sep{width:1px; height:20px; background:var(--line); margin:0 2px; flex:none}
+  #bSettings{width:32px; height:28px; padding:0; display:inline-flex; align-items:center; justify-content:center}
+  #bSettings svg{width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
   #family{width:84px; color:var(--dim); background:transparent; border-color:transparent; text-align:right; padding:3px 4px}
   #family:hover,#family:focus{background:#131519; border-color:var(--line); color:var(--hot)}
   #key{width:132px; font-family:var(--mono)}
@@ -167,6 +169,7 @@ if (location.hash === '#forget') {
   #leftcol.solo #spritesPanel{max-height:100%}
   #toolsPanel .acts{display:flex; justify-content:space-around; padding:2px 0}
   #toolsPanel .acts button{font-size:15px; padding:2px 8px}
+  .mac #bImage,.mac #bFlip{display:none}
   #imgMenu{
     display:none; flex-direction:column; gap:2px; padding:6px; margin-top:4px;
     background:var(--panel2); border:1px solid var(--line); border-radius:8px;
@@ -397,7 +400,7 @@ if (location.hash === '#forget') {
     <button id="bExport" title="Download every frame as PNG files">Export</button>
     <button id="bSave" class="primary" style="display:none"
             title="Write every frame back over the files it was opened from. No moving files about after.">Save over</button>
-    <button id="bSettings" class="icon" title="Settings: the keys, yours to change. Cmd+, opens this too.">&#9881;</button>
+    <button id="bSettings" class="icon" title="Settings: the keys, yours to change. Cmd+, opens this too."><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
   </div>
 
   <div id="alphabar">
@@ -593,7 +596,7 @@ if (location.hash === '#forget') {
 
       <label class="master"><input type="radio" name="szMode" value="size">
         <span><b>To a size.</b> The pixels stay the size they are; the anchor says which part of the picture stays put.</span></label>
-      <div class="row" style="margin:2px 0 6px 22px; align-items:center">
+      <div class="row" id="szSizeRow" style="margin:2px 0 6px 22px; align-items:center">
         <input id="szW" type="number" min="1" max="4096" style="width:64px"> <span class="dim">&times;</span>
         <input id="szH" type="number" min="1" max="4096" style="width:64px">
         <label class="hint" style="display:flex; align-items:center; gap:4px; margin-left:6px"><input type="checkbox" id="szSquare" checked> keep square</label>
@@ -601,7 +604,7 @@ if (location.hash === '#forget') {
 
       <label class="master"><input type="radio" name="szMode" value="scale">
         <span><b>Scale.</b> Nearest neighbour, so pixels stay crisp; whole multiples like 16 &rarr; 32 are the clean ones.</span></label>
-      <div class="row" style="margin:2px 0 6px 22px; align-items:center">
+      <div class="row" id="szScaleRow" style="margin:2px 0 6px 22px; align-items:center">
         <span class="hint">by</span>
         <input id="szF" type="number" min="0.05" max="64" step="0.5" value="2" style="width:64px">
         <span class="hint">&times;, on</span>
@@ -1187,6 +1190,9 @@ function szPreview() {
       : 'Picture becomes ' + iw + ' by ' + ih + ' inside the same ' + s.w + ' by ' + s.h + ' canvas' + (iw > s.w || ih > s.h ? ', so some of it is cropped away.' : '.');
   }
   $('szBecomes').textContent = txt;
+  $('szEdge').style.display = m === 'edge' ? '' : 'none';
+  $('szSizeRow').style.display = m === 'size' ? '' : 'none';
+  $('szScaleRow').style.display = m === 'scale' ? '' : 'none';
   $('szAnchorRow').style.display = (m === 'edge' || (m === 'scale' && $('szWhat').value === 'both')) ? 'none' : '';
 }
 function openSizeModal() {
