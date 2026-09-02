@@ -165,7 +165,8 @@ if (location.hash === '#forget') {
     display:none; align-items:center; gap:8px; padding:0 12px;
   }
   #stagebar .sep{width:1px; height:32px; background:var(--line); flex:none}
-  #frames{display:flex; gap:6px; align-items:center; flex:1; min-width:102px; overflow-x:auto; padding:2px 0}
+  #frames{display:flex; gap:6px; align-items:center; flex:1; min-width:102px; overflow-x:auto; padding:2px 0; scrollbar-width:none}
+  #frames::-webkit-scrollbar{display:none}
   .fr{position:relative; flex:0 0 auto; cursor:pointer; width:40px; height:40px; border:2px solid var(--line); border-radius:6px; background:#131519; overflow:hidden}
   .fr canvas{width:36px; height:36px; image-rendering:pixelated; display:block}
   .fr div{position:absolute; right:2px; bottom:0; font:9px var(--mono); color:var(--dim); margin:0; text-shadow:0 0 2px #000}
@@ -2969,6 +2970,14 @@ $('hex').onchange = function () {
   var c = hex2rgb(this.value);
   if (c) setColor(c); else { say('That is not a colour like #8bc250', 'bad'); this.value = rgb2hex(S.color); }
 };
+
+// the frame strip scrolls sideways with the wheel, now that its scrollbar is hidden
+$('frames').addEventListener('wheel', function (e) {
+  var el = this;
+  if (el.scrollWidth <= el.clientWidth) return;
+  e.preventDefault();
+  el.scrollLeft += (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY);
+}, { passive: false });
 
 // drag and drop, anywhere on the window
 var dragDepth = 0;
