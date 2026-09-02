@@ -2622,11 +2622,11 @@ function toolsPlace(x, y) {
 $('bToolsFold').onclick = function (e) { e.stopPropagation(); UI.toolsFold = !UI.toolsFold; saveUI(); toolsApply(); };
 $('bToolsDock').onclick = function (e) { e.stopPropagation(); delete UI.toolsPos; saveUI(); toolsApply(); say('Tools are back in the column', 'good'); };
 $('toolsHead').addEventListener('dblclick', function (e) {
-  if (e.target.tagName === 'BUTTON') return;
+  if (e.target.closest('button')) return;
   delete UI.toolsPos; saveUI(); toolsApply();
 });
 $('toolsHead').addEventListener('pointerdown', function (e) {
-  if (e.target.tagName === 'BUTTON' || e.button !== 0) return;
+  if (e.target.closest('button') || e.button !== 0) return;   // the icons are buttons, and their svg is not a handle
   e.preventDefault();
   var head = this, p = $('toolsPanel'), app = $('app');
   var r = p.getBoundingClientRect(), ar = app.getBoundingClientRect();
