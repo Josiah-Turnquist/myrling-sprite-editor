@@ -163,7 +163,8 @@ if (location.hash === '#forget') {
   }
   .tool:hover{background:#20242c; color:var(--hot)}
   .tool.on{background:var(--sel); color:var(--selText)}
-  .tool .g{font-size:14px; width:18px; text-align:center; line-height:1}
+  .tool .g{width:18px; height:14px; display:flex; align-items:center; justify-content:center}
+  .tool .g svg{width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round}
   .tool .n{font-size:12px; flex:1}
   .tool.on .keycap{color:#b8c6da}
   #toolsPanel .div{height:1px; background:var(--line); margin:6px 2px}
@@ -231,6 +232,7 @@ if (location.hash === '#forget') {
   .fr canvas{width:36px; height:36px; image-rendering:pixelated; display:block}
   .fr div{position:absolute; right:2px; bottom:0; font:9px var(--mono); color:var(--dim); margin:0; text-shadow:0 0 2px #000}
   .fr.on{border-color:var(--green)}
+  #frames.kb .fr.on{box-shadow:0 0 0 2px rgba(139,194,80,.45)}
   .fr.on div{color:var(--hot)}
   .fr.markL{box-shadow:-3px 0 0 0 #6b86ad}
   .fr.markR{box-shadow:3px 0 0 0 #6b86ad}
@@ -1558,6 +1560,7 @@ function closeSprite(i) {
 function drawFrames() {
   var s = spr(), wrap = $('frames');
   wrap.innerHTML = '';
+  wrap.className = frameFocus ? 'kb' : '';
   if (!s) { $('frameActs').innerHTML = ''; return; }
   var unmark = function () {
     Array.prototype.forEach.call(wrap.children, function (n) {
@@ -1576,7 +1579,7 @@ function drawFrames() {
     var lab = document.createElement('div');
     lab.textContent = i;
     d.appendChild(c); d.appendChild(lab);
-    d.onclick = function () { dropSelection(); s.cur = i; redraw(); };
+    d.onclick = function () { dropSelection(); s.cur = i; frameFocus = true; redraw(); };
     // frames rearrange by dragging; the blue edge says which side it will land on
     d.draggable = true;
     d.title = 'Drag to another spot to reorder the frames';
@@ -1626,20 +1629,8 @@ function drawFrames() {
     acts.appendChild(b);
   };
   mk('add', 'Add', function () { dropSelection(); s.frames.push(blank(s.w, s.h)); s.cur = s.frames.length - 1; commit(); redraw(); }, 'Add a blank frame after the last');
-  mk('copy', 'Copy', function () {
-    FRAME_CLIP = { w: s.w, h: s.h, px: s.frames[s.cur].slice(), from: s.key, n: s.cur };
-    drawFrames();
-    say('Copied frame ' + s.cur + '. Paste puts it after the current frame, here or in another sprite of the same size.', 'good');
-  }, 'Copy this frame, to paste here or into another sprite');
-  mk('paste', 'Paste', function () {
-    if (!FRAME_CLIP) { say('Nothing copied yet. Copy a frame first.', 'bad'); return; }
-    if (FRAME_CLIP.w !== s.w || FRAME_CLIP.h !== s.h) {
-      say('That frame is ' + FRAME_CLIP.w + ' by ' + FRAME_CLIP.h + ' and this sprite is ' + s.w + ' by ' + s.h + '. Sizes have to match.', 'bad');
-      return;
-    }
-    dropSelection(); s.frames.splice(s.cur + 1, 0, FRAME_CLIP.px.slice()); s.cur++; commit(); checkAlpha(); redraw();
-    say('Pasted after frame ' + (s.cur - 1) + (FRAME_CLIP.from !== s.key ? ', from ' + FRAME_CLIP.from : ''), 'good');
-  }, 'Put the copied frame after this one');
+  mk('copy', 'Copy', copyFrame, 'Copy this frame, to paste here or into another sprite. Cmd+C with a frame clicked does this too.');
+  mk('paste', 'Paste', pasteFrame, 'Put the copied frame after this one. Cmd+V with a frame clicked does this too.');
   var pasteBtn = acts.querySelector('.fbtn.paste');
   if (pasteBtn) pasteBtn.disabled = !FRAME_CLIP;
   mk('del', 'Delete', function () {
@@ -1651,6 +1642,31 @@ function drawFrames() {
 
 var frameDrag = null;   // the frame being dragged along the row, by index
 var FRAME_CLIP = null;  // one copied frame, for pasting here or into another sprite
+var frameFocus = false; // a frame tile was clicked last, so copy and paste keys mean frames
+function copyFrame() {
+  var s = spr(); if (!s) return;
+  FRAME_CLIP = { w: s.w, h: s.h, px: s.frames[s.cur].slice(), from: s.key, n: s.cur };
+  drawFrames();
+  say('Copied frame ' + s.cur + '. Paste puts it after the current frame, here or in another sprite of the same size.', 'good');
+}
+function pasteFrame() {
+  var s = spr(); if (!s) return;
+  if (!FRAME_CLIP) { say('Nothing copied yet. Copy a frame first.', 'bad'); return; }
+  if (FRAME_CLIP.w !== s.w || FRAME_CLIP.h !== s.h) {
+    say('That frame is ' + FRAME_CLIP.w + ' by ' + FRAME_CLIP.h + ' and this sprite is ' + s.w + ' by ' + s.h + '. Sizes have to match.', 'bad');
+    return;
+  }
+  dropSelection(); s.frames.splice(s.cur + 1, 0, FRAME_CLIP.px.slice()); s.cur++; commit(); checkAlpha(); redraw();
+  say('Pasted after frame ' + (s.cur - 1) + (FRAME_CLIP.from !== s.key ? ', from ' + FRAME_CLIP.from : ''), 'good');
+}
+function cutFrame() {
+  var s = spr(); if (!s) return;
+  if (s.frames.length < 2) { say('A sprite needs at least one frame. Copied it instead.', 'bad'); copyFrame(); return; }
+  FRAME_CLIP = { w: s.w, h: s.h, px: s.frames[s.cur].slice(), from: s.key, n: s.cur };
+  var was = s.cur;
+  dropSelection(); s.frames.splice(s.cur, 1); s.cur = Math.min(s.cur, s.frames.length - 1); commit(); checkAlpha(); redraw();
+  say('Cut frame ' + was + '. Paste puts it back after the current frame, here or in another sprite.', 'good');
+}
 function moveFrame(from, to) {
   var s = spr(); if (!s) return;
   if (from === to || from + 1 === to) { drawFrames(); return; }   // dropped where it already sits
@@ -2295,7 +2311,16 @@ var TOOLS = [
   ['pencil', 'Pencil'], ['eraser', 'Eraser'], ['fill', 'Fill'],
   ['line', 'Line'], ['pick', 'Pick'], ['select', 'Select']
 ];
-var TOOL_GLYPH = { pencil: '\u270e', eraser: '\u25ea', fill: '\u25cd', line: '\u2571', pick: '\u2299', select: '\u2b1a' };
+// the tool icons, drawn inline from Lucide's shapes so nothing is fetched
+var TOOL_GLYPH = {
+  pencil: '<path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
+  eraser: '<path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L13 3.2c.8-.8 2-.8 2.8 0l5 5c.8.8.8 2 0 2.8L11 21M22 21H7M5 11l9 9"/>',
+  fill: '<path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11zM5 2l5 5M2 13h15M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4z"/>',
+  line: '<path d="M4 20L20 4"/>',
+  pick: '<path d="m2 22 1-1h3l9-9M3 21v-3l9-9M15 6l3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4z"/>',
+  select: '<path d="M5 3a2 2 0 0 0-2 2M19 3a2 2 0 0 1 2 2M21 19a2 2 0 0 1-2 2M5 21a2 2 0 0 1-2-2M9 3h1M9 21h1M14 3h1M14 21h1M3 9v1M21 9v1M3 14v1M21 14v1"/>'
+};
+function toolSvg(id) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + TOOL_GLYPH[id] + '</svg>'; }
 function buildTools() {
   var g = $('tools');
   g.innerHTML = '';
@@ -2303,7 +2328,7 @@ function buildTools() {
     var b = document.createElement('button');
     b.className = 'tool' + (S.tool === t[0] ? ' on' : '');
     b.innerHTML = '<span class="g"></span><span class="n"></span><span class="keycap"></span>';
-    b.children[0].textContent = TOOL_GLYPH[t[0]] || '';
+    b.children[0].innerHTML = toolSvg(t[0]) || '';
     b.children[1].textContent = t[1];
     b.children[2].textContent = (KEYS[t[0]] || '').toUpperCase();
     b.onclick = function () { setTool(t[0]); };
@@ -2407,6 +2432,7 @@ function pxAt(e) {
 var stage = $('canvasWrap');
 stage.addEventListener('pointerdown', function (e) {
   var s = spr(); if (!s) return;
+  if (frameFocus) { frameFocus = false; $('frames').className = ''; }
   stage.setPointerCapture(e.pointerId);
   var p = pxAt(e);
   if (S.tool === 'pick') { eyedrop(p.x, p.y); return; }
@@ -3531,9 +3557,13 @@ window.addEventListener('keydown', function (e) {
   }
   if (meta && e.key === ',') { e.preventDefault(); openSettings(); return; }
   if (meta && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
-  if (meta && e.key.toLowerCase() === 'c') { e.preventDefault(); copySel(false); return; }
-  if (meta && e.key.toLowerCase() === 'x') { e.preventDefault(); copySel(true); return; }
-  if (meta && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClip(); return; }
+  if (meta && e.key.toLowerCase() === 'c') { e.preventDefault(); if (frameFocus || !S.sel) copyFrame(); else copySel(false); return; }
+  if (meta && e.key.toLowerCase() === 'x') { e.preventDefault(); if (frameFocus || !S.sel) cutFrame(); else copySel(true); return; }
+  if (meta && e.key.toLowerCase() === 'v') {
+    e.preventDefault();
+    if (frameFocus || (!S.sel && !CLIP && FRAME_CLIP)) pasteFrame(); else pasteClip();
+    return;
+  }
   if (meta && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
   if (meta && e.key.toLowerCase() === 's') {
     e.preventDefault();
