@@ -171,6 +171,15 @@ if (location.hash === '#forget') {
   #toolsHead .icon svg{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round}
   #toolsHead .icon:hover{color:var(--hot); background:var(--sel)}
   #toolsPanel.floating{position:absolute; z-index:6; width:var(--leftW); margin:0}
+  #toolsPanel.dockedRight{width:var(--sideW); overflow:auto}
+  #toolsPanel:not(.dockedRight){max-height:none !important}
+  #toolsPanel .crow{display:flex; align-items:center; gap:8px; padding:4px 6px}
+  #toolsPanel .crow #hex{width:82px}
+  #snapHint{
+    position:absolute; z-index:5; display:none; pointer-events:none; border-radius:12px;
+    border:2px dashed var(--green); background:rgba(139,194,80,.08);
+  }
+  #snapHint.show{display:block}
   #toolsPanel.folded > :not(.ph){display:none}
   #toolsPanel.folded .ph{padding-bottom:4px}
   #leftcol.solo #spritesPanel{max-height:100%}
@@ -453,6 +462,20 @@ if (location.hash === '#forget') {
         <button data-act="flipV">Flip top &harr; bottom</button>
         <button data-act="rotate">Rotate 90&deg; clockwise</button>
       </div>
+      <div class="div"></div>
+      <div class="lab" style="padding:2px 6px 4px">Colour</div>
+      <div class="crow">
+        <input id="pick" type="color" value="#8bc250">
+        <input id="hex" type="text" value="#8bc250">
+      </div>
+      <div class="crow">
+        <span class="hint" style="font-size:11px">Opacity</span>
+        <input id="alpha" type="range" min="5" max="100" value="100" style="flex:1; min-width:0"
+               title="Paint blends with what is underneath. Over a colour the pixel stays solid.">
+        <span id="alphaPct">100%</span>
+      </div>
+      <div class="crow"><div id="palette"></div></div>
+      <div class="crow hint" id="palHint" style="padding-top:0"></div>
     </div>
   </div>
 
@@ -473,7 +496,6 @@ if (location.hash === '#forget') {
   <div id="side" class="panel">
     <div id="tabs">
       <button id="tabGame" class="on">Game size</button>
-      <button id="tabColour">Colour</button>
       <button id="tabChecks">Checks <span id="warnBadge"></span></button>
     </div>
 
@@ -512,22 +534,6 @@ if (location.hash === '#forget') {
       <div style="height:14px"></div>
     </div>
 
-    <div id="paneColour" class="pane">
-      <div class="sec" style="display:flex; align-items:center; gap:8px; padding-top:14px">
-        <input id="pick" type="color" value="#8bc250">
-        <input id="hex" type="text" value="#8bc250">
-      </div>
-      <div class="sec" style="display:flex; align-items:center; gap:8px">
-        <span class="hint" style="font-size:11px">Opacity</span>
-        <input id="alpha" type="range" min="5" max="100" value="100" style="flex:1"
-               title="Paint blends with what is underneath. Over a colour the pixel stays solid.">
-        <span id="alphaPct">100%</span>
-      </div>
-      <div class="sec" style="padding-top:14px"><div id="palette"></div></div>
-      <div class="sec hint" id="palHint"></div>
-      <div style="height:14px"></div>
-    </div>
-
     <div id="paneChecks" class="pane">
       <div class="sec" style="display:flex; align-items:center; justify-content:space-between; padding-top:12px">
         <span class="hint" style="font-size:11px">Your game&#8217;s rules</span>
@@ -552,6 +558,7 @@ if (location.hash === '#forget') {
     </div>
   </div>
 
+  <div id="snapHint"></div>
   <div id="gripL" class="grip" title="Drag to make the sprites and tools panels wider or narrower. Double click puts it back."></div>
   <div id="gripR" class="grip" title="Drag to make the inspector wider or narrower. Double click puts it back."></div>
   <div id="keptNote" title="What this browser is keeping. Click for details.">kept in this browser</div>
@@ -1823,6 +1830,7 @@ function drawChecks() {
   r.ok.forEach(function (t) { add('ok', t); });
   if (!box.children.length) box.innerHTML = '<div class="hint">Every rule is off. Nothing to say.</div>';
   drawRulesEdit();
+  toolsFollow();
 }
 // the amber pill in the top bar and the badge on the Checks tab
 function drawLook(s, r) {
@@ -2848,6 +2856,7 @@ function applyPanels() {
   var r = Math.max(260, Math.min(560, UI.sideW || 320));
   $('app').style.setProperty('--leftW', l + 'px');
   $('app').style.setProperty('--sideW', r + 'px');
+  toolsFollow();
 }
 function wireGrip(id, which) {
   var h = $(id);
@@ -2889,20 +2898,41 @@ applyPanels();
 // the tools panel folds to its title, and its title is a handle: drag it anywhere and
 // it leaves the column to float on its own; double click the title to dock it again.
 // Where it sits and whether it is folded are kept with the other UI choices.
+function toolsDock() {
+  return UI.toolsDock || (UI.toolsPos ? 'free' : 'left');
+}
 function toolsApply() {
-  var p = $('toolsPanel');
-  p.className = 'panel' + (UI.toolsFold ? ' folded' : '') + (UI.toolsPos ? ' floating' : '');
+  var p = $('toolsPanel'), dock = toolsDock();
+  p.className = 'panel' + (UI.toolsFold ? ' folded' : '') + (dock !== 'left' ? ' floating' : '') + (dock === 'right' ? ' dockedRight' : '');
   $('foldPath').setAttribute('d', UI.toolsFold ? 'M9 6l6 6-6 6' : 'M6 9l6 6 6-6');
   $('bToolsFold').title = UI.toolsFold ? 'Open the panel' : 'Fold the panel to its title';
-  $('bToolsDock').style.display = UI.toolsPos ? '' : 'none';
-  $('leftcol').className = UI.toolsPos ? 'solo' : '';
-  if (UI.toolsPos) {
-    if (p.parentNode !== $('app')) $('app').appendChild(p);
-    toolsPlace(UI.toolsPos.x, UI.toolsPos.y);
-  } else if (p.parentNode !== $('leftcol')) {
-    $('leftcol').appendChild(p);
+  $('bToolsDock').style.display = dock === 'left' ? 'none' : '';
+  $('leftcol').className = dock === 'left' ? '' : 'solo';
+  if (dock === 'left') {
+    if (p.parentNode !== $('leftcol')) $('leftcol').appendChild(p);
     p.style.left = ''; p.style.top = '';
+    return;
   }
+  if (p.parentNode !== $('app')) $('app').appendChild(p);
+  if (dock === 'right') toolsFollow();
+  else toolsPlace(UI.toolsPos.x, UI.toolsPos.y);
+}
+// the two slots a dragged panel can snap into, in app coordinates
+function toolsSlots() {
+  var ar = $('app').getBoundingClientRect(), p = $('toolsPanel');
+  var sp = $('spritesPanel').getBoundingClientRect(), sd = $('side').getBoundingClientRect();
+  return [
+    { id: 'left', x: sp.left - ar.left, y: sp.bottom - ar.top + 10, w: sp.width, h: p.offsetHeight },
+    { id: 'right', x: sd.left - ar.left, y: sd.bottom - ar.top + 10, w: sd.width, h: p.offsetHeight }
+  ];
+}
+// docked on the right, the panel sits under the inspector and follows it as it grows
+function toolsFollow() {
+  if (toolsDock() !== 'right') return;
+  var p = $('toolsPanel'), slot = toolsSlots()[1];
+  p.style.left = slot.x + 'px'; p.style.top = slot.y + 'px';
+  // under a tall inspector the panel scrolls rather than running off the window
+  p.style.maxHeight = Math.max(80, $('app').clientHeight - slot.y - 14) + 'px';
 }
 function toolsPlace(x, y) {
   var p = $('toolsPanel'), app = $('app');
@@ -2911,38 +2941,58 @@ function toolsPlace(x, y) {
   p.style.left = x + 'px'; p.style.top = y + 'px';
   UI.toolsPos = { x: x, y: y };
 }
+function toolsSetDock(dock) {
+  UI.toolsDock = dock;
+  if (dock !== 'free') delete UI.toolsPos;
+  saveUI(); toolsApply();
+}
 $('bToolsFold').onclick = function (e) { e.stopPropagation(); UI.toolsFold = !UI.toolsFold; saveUI(); toolsApply(); };
-$('bToolsDock').onclick = function (e) { e.stopPropagation(); delete UI.toolsPos; saveUI(); toolsApply(); say('Tools are back in the column', 'good'); };
+$('bToolsDock').onclick = function (e) { e.stopPropagation(); toolsSetDock('left'); say('Tools are back in the column', 'good'); };
 $('toolsHead').addEventListener('dblclick', function (e) {
   if (e.target.closest('button')) return;
-  delete UI.toolsPos; saveUI(); toolsApply();
+  toolsSetDock('left');
 });
 $('toolsHead').addEventListener('pointerdown', function (e) {
   if (e.target.closest('button') || e.button !== 0) return;   // the icons are buttons, and their svg is not a handle
   e.preventDefault();
-  var head = this, p = $('toolsPanel'), app = $('app');
+  var head = this, p = $('toolsPanel'), app = $('app'), hint = $('snapHint');
   var r = p.getBoundingClientRect(), ar = app.getBoundingClientRect();
-  var offX = e.clientX - r.left, offY = e.clientY - r.top, moved = false;
+  var offX = e.clientX - r.left, offY = e.clientY - r.top, moved = false, snap = null;
   try { head.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointers */ }
   var mv = function (ev) {
     if (!moved && Math.abs(ev.clientX - e.clientX) < 3 && Math.abs(ev.clientY - e.clientY) < 3) return;
     if (!moved) {
-      // lift it out of the column at the spot it already occupies, so nothing jumps
+      // lift it out of wherever it sits, at the spot it already occupies, so nothing jumps
       moved = true;
+      UI.toolsDock = 'free';
       UI.toolsPos = { x: r.left - ar.left, y: r.top - ar.top };
       toolsApply();
     }
-    toolsPlace(ev.clientX - ar.left - offX, ev.clientY - ar.top - offY);
+    var x = ev.clientX - ar.left - offX, y = ev.clientY - ar.top - offY;
+    toolsPlace(x, y);
+    // near a slot, show the ghost of where it will land
+    snap = null;
+    toolsSlots().forEach(function (sl) {
+      if (Math.abs(x - sl.x) < 60 && Math.abs(y - sl.y) < 60) snap = sl;
+    });
+    if (snap) {
+      hint.style.left = snap.x + 'px'; hint.style.top = snap.y + 'px';
+      hint.style.width = snap.w + 'px'; hint.style.height = snap.h + 'px';
+      hint.className = 'show';
+    } else hint.className = '';
   };
   var up = function () {
     head.removeEventListener('pointermove', mv);
-    if (moved) saveUI();
+    hint.className = '';
+    if (!moved) return;
+    if (snap) { toolsSetDock(snap.id); say(snap.id === 'right' ? 'Tools sit under the inspector now' : 'Tools are back in the column', 'good'); }
+    else saveUI();
   };
   head.addEventListener('pointermove', mv);
   head.addEventListener('pointerup', up, { once: true });
   head.addEventListener('pointercancel', up, { once: true });
 });
-window.addEventListener('resize', function () { if (UI.toolsPos) toolsPlace(UI.toolsPos.x, UI.toolsPos.y); });
+window.addEventListener('resize', function () { var d = toolsDock(); if (d === 'free') toolsPlace(UI.toolsPos.x, UI.toolsPos.y); else if (d === 'right') toolsFollow(); });
 toolsApply();
 
 // the game-rules toggle lives in the same kept corner of the browser
@@ -3124,15 +3174,16 @@ document.addEventListener('click', function () { $('addMenu').className = ''; $(
 $('keptNote').onclick = function (e) { e.stopPropagation(); $('keptPop').className = $('keptPop').className === 'panel show' ? 'panel' : 'panel show'; };
 $('keptPop').onclick = function (e) { e.stopPropagation(); };
 function showTab(which) {
+  if (which !== 'Checks') which = 'Game';   // Colour lives in the tools panel now
   UI.tab = which; saveUI();
-  ['Game', 'Colour', 'Checks'].forEach(function (n) {
+  ['Game', 'Checks'].forEach(function (n) {
     $('tab' + n).className = n === which ? 'on' : '';
     $('pane' + n).className = 'pane' + (n === which ? ' on' : '');
   });
   if (which === 'Game') drawPreview();
+  toolsFollow();
 }
 $('tabGame').onclick = function () { showTab('Game'); };
-$('tabColour').onclick = function () { showTab('Colour'); };
 $('tabChecks').onclick = function () { showTab('Checks'); };
 $('lookPill').onclick = function () {
   showTab('Checks');
