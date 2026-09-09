@@ -125,6 +125,12 @@ real folder picker opens, the path then shows the folder you chose, and Save wri
 of the sprite there — including a sprite that never came from files at all. Pick your
 game's art folder once and a brand new creature saves straight into it.
 
+**The editor remembers where the work is.** Open files or pick a folder, and from then on
+every picker starts there and a brand new sprite saves there too, so you set the folder
+once rather than every time. The Mac app keeps that place between launches. A browser
+cannot hold onto a folder across visits, so after a reload the path bar says which folder
+it was and asks you to open it again rather than pretending it is still set.
+
 Plain words about how it behaves:
 
 - The browser asks **once per file** the first time, with its own "save changes" prompt.

@@ -18,9 +18,28 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
   private var dropped: [String: URL] = [:]   // name -> file, from the last drop onto the window
   private var nextId = 0
 
+  // where the work is: every panel opens here, and lands here again next launch
+  private let lastDirKey = "myrlingLastDir"
+  private var lastDir: URL? {
+    get {
+      guard let p = UserDefaults.standard.string(forKey: lastDirKey) else { return nil }
+      var isDir: ObjCBool = false
+      guard FileManager.default.fileExists(atPath: p, isDirectory: &isDir), isDir.boolValue else { return nil }
+      return URL(fileURLWithPath: p)
+    }
+    set { UserDefaults.standard.set(newValue?.path, forKey: lastDirKey) }
+  }
+  func notePlace(_ url: URL, isDirectory: Bool = false) {
+    lastDir = isDirectory ? url : url.deletingLastPathComponent()
+  }
+  func startPanel(_ panel: NSOpenPanel) {
+    if let d = lastDir { panel.directoryURL = d }
+  }
+
   // the native drop layer saw these before the page did; the page claims them by name
   func noteDrop(_ urls: [URL]) {
     for u in urls { dropped[u.lastPathComponent] = u }
+    if let first = urls.first { notePlace(first) }
   }
 
   func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage,
@@ -44,8 +63,10 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
     panel.allowsMultipleSelection = true
     panel.canChooseDirectories = false
     panel.allowedContentTypes = [.png]
+    startPanel(panel)
     panel.begin { resp in
       guard resp == .OK, !panel.urls.isEmpty else { reply(["cancelled": true], nil); return }
+      self.notePlace(panel.urls[0])
       var out: [[String: Any]] = []
       for url in panel.urls {
         guard let data = try? Data(contentsOf: url) else { continue }
@@ -73,8 +94,10 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
     panel.canChooseFiles = false
     panel.canCreateDirectories = true
     panel.prompt = "Save here"
+    startPanel(panel)
     panel.begin { resp in
       guard resp == .OK, let url = panel.urls.first else { reply(["cancelled": true], nil); return }
+      self.notePlace(url, isDirectory: true)
       self.nextId += 1
       let id = "d\(self.nextId)"
       self.files[id] = url
@@ -89,7 +112,11 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
           let b64 = body["bytes"] as? String, let data = Data(base64Encoded: b64) else {
       reply(nil, "Nothing to write"); return
     }
-    do { try data.write(to: dir.appendingPathComponent(name), options: .atomic); reply(["ok": true], nil) }
+    do {
+      try data.write(to: dir.appendingPathComponent(name), options: .atomic)
+      notePlace(dir, isDirectory: true)
+      reply(["ok": true], nil)
+    }
     catch { reply(nil, error.localizedDescription) }
   }
 
@@ -238,7 +265,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     panel.allowsMultipleSelection = parameters.allowsMultipleSelection
     panel.canChooseDirectories = false
     panel.allowedContentTypes = [.png]
-    panel.begin { resp in completionHandler(resp == .OK ? panel.urls : nil) }
+    if let d = UserDefaults.standard.string(forKey: "myrlingLastDir") { panel.directoryURL = URL(fileURLWithPath: d) }
+    panel.begin { resp in
+      if resp == .OK, let first = panel.urls.first {
+        UserDefaults.standard.set(first.deletingLastPathComponent().path, forKey: "myrlingLastDir")
+      }
+      completionHandler(resp == .OK ? panel.urls : nil)
+    }
   }
 
   // Export frames clicks <a download> links; WebKit hands those over as downloads

@@ -1999,6 +1999,11 @@ function drawPathBar() {
   PB_REAL = here;
   var folder = here ? here.replace(/\/$/, '') + '/' : 'art-live/' + fam + '/';
   $('pbPath').textContent = '\u2192 ' + folder + (names.length ? names.join(', ') : '');
+  $('pbPath').title = here
+    ? 'Saving writes here. Click to pick a different folder.'
+    : (UI.placeLabel
+      ? 'Last time this was ' + UI.placeLabel + ', but a browser cannot hold a folder across visits. Click to open it again.'
+      : 'Where saving will write. Click to pick a folder.');
   var w = '';
   if (s) {
     var typed = String($('key').value || '');
@@ -2681,6 +2686,7 @@ function openFiles(files) {
       var s = makeSprite(cleanName(key) || 'sprite', w, h, same.map(function (e) { return e.d.px; }), cleanName($('family').value));
       s.bytes = same.map(function (e) { return e.d.size || 0; });   // the size of the file as it arrived
       s.handles = same.map(function (e) { return e.d.handle; }).filter(Boolean);  // the files themselves, for Save over
+      if (s.handles.length) rememberPlace(s.handles[0], null, s.handles[0].dir || '');
       S.sprites.push(s); made++;
       other.forEach(function (e) {
         var lone = makeSprite((cleanName(key) || 'sprite') + '-' + e.idx, e.d.w, e.d.h, [e.d.px], cleanName($('family').value));
@@ -3161,10 +3167,36 @@ if (SCALES.indexOf(UI.scale) >= 0) { S.scale = UI.scale; Array.prototype.forEach
 // the picker is what hands back writable handles, which is what makes Save over work.
 // A browser without it, or one that refuses it here, gets the plain input as before.
 var pickerBroken = false;
+// Where the work is. Opening or saving anywhere sets this, and from then on the
+// pickers start there and a brand new sprite saves there instead of downloading.
+// The handles cannot survive a reload, so only the label is kept; after a reload the
+// path bar says the folder has to be opened again rather than pretending it is set.
+var PLACE = { startIn: null, dir: null, label: '' };
+function rememberPlace(startIn, dirHandle, label) {
+  if (startIn) PLACE.startIn = startIn;
+  if (dirHandle) PLACE.dir = dirHandle;
+  if (label) { PLACE.label = label; UI.placeLabel = label; saveUI(); }
+}
+// the picker options: a stable id lets Chrome reopen where it was last time, even in a
+// new session, and startIn puts it in this session's folder
+function pickerOpts(extra) {
+  var o = { id: 'myrling-art' };
+  for (var k in extra) o[k] = extra[k];
+  if (PLACE.startIn) o.startIn = PLACE.startIn;
+  return o;
+}
+function callPicker(fn, extra) {
+  try { return fn(pickerOpts(extra)); }
+  catch (e) { return fn(extra || {}); }   // an engine that dislikes the options
+}
+// a new sprite belongs where the last one came from, if that is still open to us
+function defaultDest(s) {
+  if (s && !s.dest && PLACE.dir) s.dest = { handle: PLACE.dir, label: PLACE.label || PLACE.dir.name };
+}
 $('bOpen').onclick = function () {
   closeAddMenu();
   if (pickerBroken || !window.showOpenFilePicker) { $('file').click(); return; }
-  window.showOpenFilePicker({
+  callPicker(window.showOpenFilePicker, {
     multiple: true,
     types: [{ description: 'PNG images', accept: { 'image/png': ['.png'] } }]
   }).then(function (hs) {
@@ -3207,10 +3239,12 @@ $('bNew').onclick = function () {
   closeAddMenu();
   var n = Math.max(4, Math.min(1024, parseInt($('newSize').value, 10) || 16));
   var name = 'sprite' + (S.sprites.length + 1);
-  S.sprites.push(makeSprite(name, n, n, [blank(n, n)], cleanName($('family').value)));
+  var made = makeSprite(name, n, n, [blank(n, n)], cleanName($('family').value));
+  defaultDest(made);
+  S.sprites.push(made);
   selectSprite(S.sprites.length - 1);
   scheduleSave();
-  say('New blank sprite, ' + n + ' by ' + n);
+  say('New blank sprite, ' + n + ' by ' + n + (made.dest ? '. Save puts it in ' + made.dest.label : ''));
 };
 var closeArmed = false, closeTimer = null;
 $('bClose').onclick = function () {
@@ -3269,12 +3303,13 @@ $('family').onchange = function () {
 $('pbPath').onclick = function () {
   var s = spr(); if (!s) { say('Nothing open', 'bad'); return; }
   if (!window.showDirectoryPicker) { say('This browser cannot pick a folder. Chrome, Edge or the Mac app can.', 'bad'); return; }
-  window.showDirectoryPicker().then(function (dh) {
+  callPicker(window.showDirectoryPicker, {}).then(function (dh) {
     return askWrite(dh).then(function (ok) {
       if (!ok) { say('The browser was not allowed to write in that folder. Nothing changed.', 'bad'); return; }
       s.dest = { handle: dh, label: dh.dir || dh.name };
+      rememberPlace(dh, dh, s.dest.label);
       drawPathBar(); redraw();
-      say('Saving goes to ' + s.dest.label + ' now. Press Save when ready.', 'good');
+      say('Saving goes to ' + s.dest.label + ' now, and new sprites go there too.', 'good');
     });
   }).catch(function (err) {
     if (!err || err.name !== 'AbortError') say('The folder picker did not open. Nothing changed.', 'bad');
@@ -3420,6 +3455,7 @@ function plOpen(rec) {
     var d = toPixels(im);
     var slug = cleanName(rec.prompt.split(/\s+/).slice(0, 2).join('')) || 'generated';
     var sp = makeSprite(slug, d.w, d.h, [d.px], cleanName($('family').value));
+    defaultDest(sp);
     S.sprites.push(sp);
     selectSprite(S.sprites.length - 1);
     closeGen();
@@ -3476,9 +3512,10 @@ function plGenerate() {
 function plSaveAll() {
   if (!plHist.length) { say('Nothing generated yet', 'bad'); return; }
   if (!window.showDirectoryPicker) { say('This browser cannot pick a folder. Chrome, Edge or the Mac app can.', 'bad'); return; }
-  window.showDirectoryPicker().then(function (dh) {
+  callPicker(window.showDirectoryPicker, {}).then(function (dh) {
     return askWrite(dh).then(function (ok) {
       if (!ok) { say('The browser was not allowed to write there. Nothing was saved.', 'bad'); return; }
+      rememberPlace(dh, dh, dh.dir || dh.name);
       var chain = Promise.resolve(), wrote = 0;
       plHist.forEach(function (rec) {
         chain = chain.then(function () {
