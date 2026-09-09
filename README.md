@@ -170,8 +170,10 @@ folder of PNG files, named by date and prompt, if you want it on disk or in a re
 - **New sprite** starts a blank square at the size in the box next to it. 16 is the usual
   size for a creature.
 
-Open sprites are listed down the left. Click one to work on it. A red dot beside one means
-the packer would refuse it as it is.
+Open sprites are listed down the left. Click one to work on it, and drag one up or down to
+reorder the list; a green edge says where it will land, and the sprite you were working on
+stays the one you are working on. A red dot beside one means the packer would refuse it as
+it is.
 
 ## The rules the game holds you to
 
@@ -282,7 +284,9 @@ the Image menu — works on every frame at once, as one undo step:
 
 The frames row is under the canvas. Add, copy and delete are there, and the frames
 rearrange by dragging: pick one up, and the blue edge on its neighbour says which side
-it will land on. The numbers follow the new order. **Onion skin** shows
+it will land on. The numbers follow the new order. Click a frame and the keys are its:
+`Cmd + C` copies it, `Cmd + V` pastes the copy after it, `Cmd + X` cuts it, and Backspace
+or Delete removes it. **Onion skin** shows
 the frame before the current one faintly underneath, so a leg can be moved a known
 distance. **Play** runs the frames in the game size view at the speed on the slider, which
 is the only honest way to tell whether a walk cycle works.

@@ -140,6 +140,8 @@ if (location.hash === '#forget') {
   .item .t span{color:var(--dim); font-size:10px; white-space:nowrap}
   .item.on .t span{color:#b8c6da}
   .item .flag{flex:0 0 6px; width:6px; height:6px; border-radius:2px; background:var(--bad)}
+  .item.markT{box-shadow:0 -3px 0 -1px var(--green)}
+  .item.markB{box-shadow:0 3px 0 -1px var(--green)}
   .item .x{color:var(--dim); font-size:13px; padding:0 3px; display:none; line-height:1}
   .item:hover .x{display:block}
   .item .x:hover{color:var(--hot)}
@@ -1506,6 +1508,22 @@ function scheduleHeavyPanels() {
 }
 
 // ---------- side panels ----------
+var spriteDrag = null;   // the sprite being dragged down the list, by index
+function unmarkItems() {
+  Array.prototype.forEach.call($('stripList').children, function (n) {
+    n.className = String(n.className).replace(/ mark[TB]/g, '');
+  });
+}
+function moveSprite(from, to) {
+  if (from === to || from + 1 === to) { drawStrip(); return; }
+  var s = S.sprites.splice(from, 1)[0];
+  if (to > from) to--;
+  S.sprites.splice(to, 0, s);
+  // the sprite you were working on stays the one you are working on
+  S.si = S.si === from ? to : (S.si > from && S.si <= to ? S.si - 1 : (S.si >= to && S.si < from ? S.si + 1 : S.si));
+  scheduleSave(); redraw();
+  say('Moved ' + s.key + ' to spot ' + (to + 1) + ' in the list', 'good');
+}
 function drawStrip() {
   var list = $('stripList');
   list.innerHTML = '';
@@ -1532,6 +1550,31 @@ function drawStrip() {
     x.onclick = function (e) { e.stopPropagation(); closeSprite(i); };
     d.appendChild(x);
     d.onclick = function () { selectSprite(i); };
+    // sprites rearrange by dragging; the green edge says which side it will land on
+    d.draggable = true;
+    d.title = 'Drag to reorder the sprites';
+    d.ondragstart = function (e) {
+      spriteDrag = i;
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', 'sprite:' + i); } catch (err) { /* some engines refuse */ }
+    };
+    d.ondragend = function () { spriteDrag = null; unmarkItems(); };
+    d.ondragover = function (e) {
+      if (spriteDrag === null) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      unmarkItems();
+      var r = d.getBoundingClientRect();
+      d.className += (e.clientY < r.top + r.height / 2) ? ' markT' : ' markB';
+    };
+    d.ondragleave = function () { if (spriteDrag !== null) unmarkItems(); };
+    d.ondrop = function (e) {
+      if (spriteDrag === null) return;
+      e.preventDefault(); e.stopPropagation();
+      var r = d.getBoundingClientRect();
+      moveSprite(spriteDrag, i + (e.clientY < r.top + r.height / 2 ? 0 : 1));
+      spriteDrag = null;
+    };
     list.appendChild(d);
   });
   // the reference picker offers the open sprites by name
@@ -1633,10 +1676,7 @@ function drawFrames() {
   mk('paste', 'Paste', pasteFrame, 'Put the copied frame after this one. Cmd+V with a frame clicked does this too.');
   var pasteBtn = acts.querySelector('.fbtn.paste');
   if (pasteBtn) pasteBtn.disabled = !FRAME_CLIP;
-  mk('del', 'Delete', function () {
-    if (s.frames.length < 2) { say('A sprite needs at least one frame', 'bad'); return; }
-    dropSelection(); s.frames.splice(s.cur, 1); s.cur = Math.min(s.cur, s.frames.length - 1); commit(); redraw();
-  }, 'Delete this frame');
+  mk('del', 'Delete', deleteFrame, 'Delete this frame. Backspace with a frame clicked does this too.');
   mk('file', 'From file', function () { $('fileFrame').click(); }, 'Load a PNG as another frame of this sprite');
 }
 
@@ -1658,6 +1698,13 @@ function pasteFrame() {
   }
   dropSelection(); s.frames.splice(s.cur + 1, 0, FRAME_CLIP.px.slice()); s.cur++; commit(); checkAlpha(); redraw();
   say('Pasted after frame ' + (s.cur - 1) + (FRAME_CLIP.from !== s.key ? ', from ' + FRAME_CLIP.from : ''), 'good');
+}
+function deleteFrame() {
+  var s = spr(); if (!s) return;
+  if (s.frames.length < 2) { say('A sprite needs at least one frame', 'bad'); return; }
+  var was = s.cur;
+  dropSelection(); s.frames.splice(s.cur, 1); s.cur = Math.min(s.cur, s.frames.length - 1); commit(); checkAlpha(); redraw();
+  say('Deleted frame ' + was + '. Undo brings it back.', 'good');
 }
 function cutFrame() {
   var s = spr(); if (!s) return;
@@ -3502,7 +3549,7 @@ $('frames').addEventListener('wheel', function (e) {
 var dragDepth = 0;
 window.addEventListener('dragenter', function (e) {
   e.preventDefault();
-  if (frameDrag !== null) return;   // a frame on the move is not files arriving
+  if (frameDrag !== null || spriteDrag !== null) return;   // a panel item on the move is not files arriving
   dragDepth++; $('drop').className = 'show';
 });
 window.addEventListener('dragover', function (e) { e.preventDefault(); });
@@ -3510,6 +3557,7 @@ window.addEventListener('dragleave', function () { if (--dragDepth <= 0) { dragD
 window.addEventListener('drop', function (e) {
   e.preventDefault(); dragDepth = 0; $('drop').className = '';
   if (frameDrag !== null) { frameDrag = null; drawFrames(); return; }   // let go outside the row: nothing moves
+  if (spriteDrag !== null) { spriteDrag = null; drawStrip(); return; }
   var dt = e.dataTransfer;
   if (!dt) return;
   // ask for writable handles while the event is still alive; the items are gone after it.
@@ -3582,7 +3630,11 @@ window.addEventListener('keydown', function (e) {
     case '0': $('zoomLabel').click(); break;
     case '-': case '_': $('zOut').click(); break;
     case 'Escape': dropSelection(); redraw(); break;
-    case 'Delete': case 'Backspace': if (S.sel) { e.preventDefault(); clearSelection(); } break;
+    case 'Delete': case 'Backspace':
+      // a clicked frame tile takes the key; otherwise a box clears its pixels
+      if (frameFocus) { e.preventDefault(); deleteFrame(); }
+      else if (S.sel) { e.preventDefault(); clearSelection(); }
+      break;
     case 'ArrowLeft': e.preventDefault(); nudge(-1, 0); break;
     case 'ArrowRight': e.preventDefault(); nudge(1, 0); break;
     case 'ArrowUp': e.preventDefault(); nudge(0, -1); break;
@@ -3618,6 +3670,7 @@ window.EDITOR = {
   saveOver: saveOver, canSaveOver: canSaveOver, handleFor: handleFor,
   copySel: copySel, pasteClip: pasteClip, snapEnd: snapEnd, setTool: setTool,
   showKeys: showKeys, drawPathBar: drawPathBar, moveFrame: moveFrame,
+  moveSprite: moveSprite, deleteFrame: deleteFrame,
   pl: { generate: plGenerate, open: plOpen, hist: function () { return plHist; }, openGen: openGen },
   refs: function () { return REF_LIST; }, addRefSprite: addRefSprite, drawRefs: drawRefs,
   fitView: function () { fitZoom(); redraw(); },
