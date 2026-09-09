@@ -2638,6 +2638,7 @@ function toPixels(img) {
 }
 
 function openFiles(files) {
+  closeAddMenu();
   var list = Array.prototype.slice.call(files).filter(function (f) { return /\.png$/i.test(f.name) || /image/.test(f.type); });
   var skipped = Array.prototype.slice.call(files).length - list.length;
   if (!list.length) { say('No PNG files in that drop', 'bad'); return; }
@@ -3161,6 +3162,7 @@ if (SCALES.indexOf(UI.scale) >= 0) { S.scale = UI.scale; Array.prototype.forEach
 // A browser without it, or one that refuses it here, gets the plain input as before.
 var pickerBroken = false;
 $('bOpen').onclick = function () {
+  closeAddMenu();
   if (pickerBroken || !window.showOpenFilePicker) { $('file').click(); return; }
   window.showOpenFilePicker({
     multiple: true,
@@ -3202,6 +3204,7 @@ $('fileFrame').onchange = function (e) {
   });
 };
 $('bNew').onclick = function () {
+  closeAddMenu();
   var n = Math.max(4, Math.min(1024, parseInt($('newSize').value, 10) || 16));
   var name = 'sprite' + (S.sprites.length + 1);
   S.sprites.push(makeSprite(name, n, n, [blank(n, n)], cleanName($('family').value)));
@@ -3280,6 +3283,7 @@ $('pbPath').onclick = function () {
 // the rest of the redesign's wiring: the add menu, the tabs, references, rules, corners
 $('bAdd').onclick = function (e) { e.stopPropagation(); $('addMenu').className = $('addMenu').className === 'show' ? '' : 'show'; };
 $('addMenu').onclick = function (e) { e.stopPropagation(); };
+function closeAddMenu() { $('addMenu').className = ''; }
 document.addEventListener('click', function () { $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; $('imgMenu').className = ''; });
 $('keptNote').onclick = function (e) { e.stopPropagation(); $('keptPop').className = $('keptPop').className === 'panel show' ? 'panel' : 'panel show'; };
 $('keptPop').onclick = function (e) { e.stopPropagation(); };
