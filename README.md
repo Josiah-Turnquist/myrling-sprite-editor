@@ -261,6 +261,12 @@ very large sprite so the undo stack cannot eat all the memory.
 The palette fills up from the colours already in the open sprite, most used first. The
 colour square and the hex box next to it set what you draw with.
 
+**Canvas**, under the palette, is what sits behind the sprite while you draw: the
+checkerboard out of the box, because it makes a clear pixel unmistakable, or a flat
+colour when you would rather judge a silhouette — black, white, mid grey, the old
+transparency magenta, or any colour you pick. It is only a view. Clear pixels stay clear
+in what you save, export and keep.
+
 **Opacity**, under the colour, sets how hard the paint lands: at 50%, red over white
 leaves pink. With the game's rules on, a painted pixel always comes out fully solid —
 over empty ground the colour lands at full strength, because the game refuses part

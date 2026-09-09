@@ -295,6 +295,8 @@ if (location.hash === '#forget') {
   .bgs{display:flex; gap:5px}
   .bgs b{width:18px; height:18px; border-radius:4px; cursor:pointer; display:block; box-shadow:0 0 0 2px var(--line)}
   .bgs b.on{box-shadow:0 0 0 2px var(--hot)}
+  .bgs b.checker{background:conic-gradient(#171a20 25%,#12141a 0 50%,#171a20 0 75%,#12141a 0) 0 0/10px 10px}
+  #bgCustom{width:22px; height:22px; padding:1px; flex:none}
   #fps{width:56px; flex:none}
   .listbox{display:flex; flex-direction:column; gap:6px; font-size:11.5px}
   .lrow{
@@ -494,6 +496,12 @@ if (location.hash === '#forget') {
       </div>
       <div class="crow"><div id="palette"></div></div>
       <div class="crow hint" id="palHint" style="padding-top:0"></div>
+      <div class="crow" style="padding-top:6px">
+        <span class="hint" style="font-size:11px">Canvas</span>
+        <span class="bgs" id="canvasBgs"></span>
+        <input id="bgCustom" type="color" value="#131519" title="Any colour behind the sprite">
+      </div>
+      <div class="crow hint" id="bgHint" style="padding-top:0"></div>
     </div>
   </div>
 
@@ -1328,6 +1336,44 @@ function thumb(f, w, h, size) {
   cc.drawImage(blit(f, w, h), 0, 0, size, size);
   return c;
 }
+// what sits behind the sprite on the canvas. The checkerboard is the honest default
+// because it makes a clear pixel unmistakable, but a flat colour is easier to judge a
+// silhouette against, so the choice is yours and is kept. It is a view, not the art:
+// clear pixels stay clear in everything that leaves here.
+var BG_CHOICES = [
+  { id: 'checker', tip: 'Checkerboard, so a clear pixel is unmistakable' },
+  { id: '#131519', tip: 'The editor dark' },
+  { id: '#000000', tip: 'Black' },
+  { id: '#ffffff', tip: 'White' },
+  { id: '#7d8794', tip: 'Mid grey, the fairest test of a silhouette' },
+  { id: '#ff00ff', tip: 'Magenta, the old transparency colour' }
+];
+function bgChoice() { return UI.bg || 'checker'; }
+function backdropFill() { return bgChoice() === 'checker' ? checkerPattern() : bgChoice(); }
+function setBg(id) {
+  UI.bg = id; saveUI();
+  drawBgSwatches();
+  if (spr()) paintCanvas();
+}
+function drawBgSwatches() {
+  var box = $('canvasBgs'); if (!box) return;
+  var cur = bgChoice();
+  box.innerHTML = '';
+  BG_CHOICES.forEach(function (c) {
+    var b = document.createElement('b');
+    b.className = (c.id === 'checker' ? 'checker' : '') + (c.id === cur ? ' on' : '');
+    if (c.id !== 'checker') b.style.background = c.id;
+    b.title = c.tip;
+    b.onclick = function () { setBg(c.id); };
+    box.appendChild(b);
+  });
+  var known = BG_CHOICES.some(function (c) { return c.id === cur; });
+  $('bgCustom').value = cur === 'checker' ? '#131519' : cur;
+  $('bgCustom').className = known ? '' : 'on';
+  $('bgHint').textContent = cur === 'checker'
+    ? 'Behind the sprite. Only a view: clear pixels stay clear in the file.'
+    : 'A flat backdrop. Only a view: clear pixels stay clear in the file.';
+}
 function checkerPattern() {
   if (!chkTile) {
     chkTile = document.createElement('canvas');
@@ -1381,7 +1427,7 @@ function paintCanvas() {
   ctx.save();
   ctx.translate(ox, oy);
   ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
-  ctx.fillStyle = checkerPattern();
+  ctx.fillStyle = backdropFill();
   ctx.fillRect(0, 0, W, H);
 
   // onion skin: the frame before this one, faint
@@ -3373,6 +3419,8 @@ $('bRulesReset').onclick = function () {
   say('Back to Eldermyr\u2019s rules, every one of them', 'good');
 };
 if (UI.tab === 'Colour' || UI.tab === 'Checks') showTab(UI.tab);
+$('bgCustom').oninput = function () { setBg(this.value); };
+drawBgSwatches();
 $('bSettings').onclick = openSettings;
 $('bSettingsClose').onclick = closeSettings;
 var IMAGE_ACTS = {
@@ -3726,6 +3774,7 @@ window.EDITOR = {
   pl: { generate: plGenerate, open: plOpen, hist: function () { return plHist; }, openGen: openGen },
   refs: function () { return REF_LIST; }, addRefSprite: addRefSprite, drawRefs: drawRefs,
   fitView: function () { fitZoom(); redraw(); },
+  setBg: setBg, bgChoice: bgChoice,
   image: { size: openSizeModal, resizeCanvas: resizeCanvas, byEdges: resizeByEdges, scale: scaleSprite, scaleImage: scaleImageOnly,
            crop: cropToSelection, trim: trimSprite, flipH: flipFrame, flipV: flipVertical, rotate: rotateSprite },
   showTab: showTab, RULE_DEFS: RULE_DEFS, rulesChanged: rulesChanged, closeSprite: closeSprite
