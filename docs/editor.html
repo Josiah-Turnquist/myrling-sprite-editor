@@ -235,18 +235,18 @@ if (location.hash === '#forget') {
     border:2px solid var(--line); border-radius:6px; background:#131519; overflow:hidden;
     opacity:.7; transition:opacity .1s;
   }
-  .fr:hover{opacity:1; border-color:#4d6386}
+  .fr:hover{opacity:.9; border-color:#39414d}
   .fr canvas{width:36px; height:36px; image-rendering:pixelated; display:block}
   .fr div{position:absolute; right:2px; bottom:0; font:9px var(--mono); color:var(--dim); margin:0; text-shadow:0 0 2px #000}
-  /* the frame being drawn on: full strength, a solid green edge and a ring around it,
-     so it reads at a glance against a row of tiles that all look alike */
+  /* the frame being drawn on. Blue is what selected means everywhere here, so a blue
+     edge and a blue ring; only this tile is at full strength, the rest sit back */
   .fr.on{
-    opacity:1; border-color:var(--green);
-    box-shadow:0 0 0 2px var(--bg), 0 0 0 4px rgba(139,194,80,.55);
+    opacity:1; border-color:#7d9dd0;
+    box-shadow:0 0 0 2px var(--bg), 0 0 0 4px var(--sel);
   }
   .fr.on div{color:var(--hot)}
-  /* clicked, so the copy and delete keys are its: the ring fills in */
-  #frames.kb .fr.on{box-shadow:0 0 0 2px var(--bg), 0 0 0 4px var(--green)}
+  /* clicked, so the copy and delete keys are its: the ring brightens */
+  #frames.kb .fr.on{box-shadow:0 0 0 2px var(--bg), 0 0 0 4px #7d9dd0}
   .fr.markL{box-shadow:-3px 0 0 0 #6b86ad}
   .fr.markR{box-shadow:3px 0 0 0 #6b86ad}
   #frameActs{display:flex; gap:4px; align-items:center; flex:none}
