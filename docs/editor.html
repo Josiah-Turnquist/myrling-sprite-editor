@@ -969,6 +969,24 @@ function line(x0, y0, x1, y1, erase) {
     if (e2 < dx) { e += dx; y0 += sy; }
   }
 }
+// a rectangle from corner to corner: its edges, or filled through. Shift makes it a
+// true square, and holding Alt fills it, both read as the pointer moves.
+function rect(x0, y0, x1, y1, erase, solid) {
+  var xa = Math.min(x0, x1), xb = Math.max(x0, x1);
+  var ya = Math.min(y0, y1), yb = Math.max(y0, y1);
+  if (solid) {
+    for (var y = ya; y <= yb; y++) for (var x = xa; x <= xb; x++) paint(x, y, erase);
+    return;
+  }
+  for (var tx = xa; tx <= xb; tx++) { paint(tx, ya, erase); paint(tx, yb, erase); }
+  for (var ty = ya; ty <= yb; ty++) { paint(xa, ty, erase); paint(xb, ty, erase); }
+}
+// the far corner, squared off against the near one when Shift is held
+function squareEnd(x0, y0, x, y, even) {
+  if (!even) return { x: x, y: y };
+  var n = Math.max(Math.abs(x - x0), Math.abs(y - y0));
+  return { x: x0 + (x < x0 ? -n : n), y: y0 + (y < y0 ? -n : n) };
+}
 function fill(x, y) {
   var s = spr(), f = frm();
   if (!inside(s, x, y)) return;
@@ -2531,7 +2549,7 @@ function forgetAll() {
 // ---------- tools ----------
 var TOOLS = [
   ['pencil', 'Pencil'], ['eraser', 'Eraser'], ['fill', 'Fill'],
-  ['line', 'Line'], ['pick', 'Pick'], ['select', 'Select']
+  ['line', 'Line'], ['square', 'Square'], ['pick', 'Pick'], ['select', 'Select']
 ];
 // the tool icons, drawn inline from Lucide's shapes so nothing is fetched
 var TOOL_GLYPH = {
@@ -2539,6 +2557,7 @@ var TOOL_GLYPH = {
   eraser: '<path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L13 3.2c.8-.8 2-.8 2.8 0l5 5c.8.8.8 2 0 2.8L11 21M22 21H7M5 11l9 9"/>',
   fill: '<path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11zM5 2l5 5M2 13h15M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4z"/>',
   line: '<path d="M4 20L20 4"/>',
+  square: '<rect x="3" y="3" width="18" height="18" rx="1"/>',
   pick: '<path d="m2 22 1-1h3l9-9M3 21v-3l9-9M15 6l3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4z"/>',
   select: '<path d="M5 3a2 2 0 0 0-2 2M19 3a2 2 0 0 1 2 2M21 19a2 2 0 0 1-2 2M5 21a2 2 0 0 1-2-2M9 3h1M9 21h1M14 3h1M14 21h1M3 9v1M21 9v1M3 14v1M21 14v1"/>'
 };
@@ -2566,12 +2585,13 @@ var KEY_ACTIONS = [
   ['eraser', 'Eraser', function () { setTool('eraser'); }],
   ['fill', 'Fill', function () { setTool('fill'); }],
   ['line', 'Line', function () { setTool('line'); }],
+  ['square', 'Square', function () { setTool('square'); }],
   ['pick', 'Pick', function () { setTool('pick'); }],
   ['select', 'Select', function () { setTool('select'); }],
   ['onion', 'Onion skin', function () { $('bOnion').click(); }],
   ['grid', 'Grid', function () { $('bGrid').click(); }]
 ];
-var KEY_DEFAULTS = { pencil: 'd', eraser: 'e', fill: 'f', line: 'l', pick: 's', select: 'v', onion: 'o', grid: 'g' };
+var KEY_DEFAULTS = { pencil: 'd', eraser: 'e', fill: 'f', line: 'l', square: 'r', pick: 's', select: 'v', onion: 'o', grid: 'g' };
 var KEYS_KEY = 'eldermyr-sprite-editor-keys-v1';
 function loadKeys() {
   var out = {}, a;
@@ -2672,6 +2692,16 @@ stage.addEventListener('pointerdown', function (e) {
     redraw();
     return;
   }
+  if (S.tool === 'square') {
+    drag = {
+      mode: 'square', erase: e.button === 2, base: frm().slice(),
+      x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y))
+    };
+    strokeSeen = new Uint8Array(s.w * s.h);
+    paint(drag.x0, drag.y0, drag.erase);
+    requestCanvas();
+    return;
+  }
   if (S.tool === 'line') {
     // anchor the line and keep a clean copy of the frame to redraw it against
     drag = {
@@ -2711,6 +2741,12 @@ stage.addEventListener('pointermove', function (e) {
     s.frames[s.cur].set(drag.base);
     if (strokeSeen) strokeSeen.fill(0); else strokeSeen = new Uint8Array(s.w * s.h);
     line(drag.x0, drag.y0, q.x, q.y, drag.erase);
+  } else if (drag.mode === 'square') {
+    var e1 = squareEnd(drag.x0, drag.y0,
+      Math.max(0, Math.min(s.w - 1, p.x)), Math.max(0, Math.min(s.h - 1, p.y)), e.shiftKey);
+    s.frames[s.cur].set(drag.base);
+    if (strokeSeen) strokeSeen.fill(0); else strokeSeen = new Uint8Array(s.w * s.h);
+    rect(drag.x0, drag.y0, e1.x, e1.y, drag.erase, e.altKey);
   } else if (drag.mode === 'box') {
     var x1 = Math.max(0, Math.min(s.w - 1, p.x)), y1 = Math.max(0, Math.min(s.h - 1, p.y));
     S.sel = {
@@ -2726,7 +2762,7 @@ function endDrag() {
   if (!drag) return;
   strokeSeen = null;
   var was = drag.mode; drag = null;
-  if (was === 'draw' || was === 'move' || was === 'line') commit();
+  if (was === 'draw' || was === 'move' || was === 'line' || was === 'square') commit();
   redraw();
 }
 stage.addEventListener('pointerup', endDrag);

@@ -231,6 +231,7 @@ The blue line down the middle is where the game centres the creature.
 | Eraser | E | Clear back to nothing. Right click does this with any tool. |
 | Fill | F | Flood the touching pixels of the same colour. |
 | Line | L | Drag a straight line. It only makes the lines pixel art wants: flat, upright, or a true one-for-one diagonal, whichever the drag is closest to. |
+| Square | R | Drag a box from corner to corner. Its edges by default, filled while you hold Alt, and a true square while you hold Shift. |
 | Pick | S | Take the colour under the pointer, then go back to the pencil. |
 | Select | V | Drag a box, then drag inside it to move those pixels. |
 
