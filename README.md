@@ -232,6 +232,7 @@ The blue line down the middle is where the game centres the creature.
 | Fill | F | Flood the touching pixels of the same colour. |
 | Line | L | Drag a straight line. It only makes the lines pixel art wants: flat, upright, or a true one-for-one diagonal, whichever the drag is closest to. |
 | Square | R | Drag a box from corner to corner. **Outline** or **Filled** sits under the tools while it is chosen; Alt flips the two for one drag, and Shift makes it a true square. |
+| Spray | A | Throw pixels at random into a disc under the cursor, for stone, dirt, rust and static. Hold it still and the texture keeps building; **Size** and **Flow** sit under the tools. |
 | Pick | S | Take the colour under the pointer, then go back to the pencil. |
 | Select | V | Drag a box, then drag inside it to move those pixels. |
 
