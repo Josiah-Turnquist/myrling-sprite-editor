@@ -25,8 +25,8 @@ allow it. After editing `index.html`, `make site` refreshes the hosted copy.
 
 The canvas is the whole window. Everything else floats over it: the top bar with the
 sprite's folder and name, a Sprites panel and a Tools panel down the left, a frames dock
-along the bottom, and one tabbed inspector on the right — **Game size**, **Colour** and
-**Checks**. The path after the name says where saving will write; click it to pick a
+along the bottom, and one tabbed inspector on the right — **Preview** and **Checks**,
+with the colour and palette in the Tools panel. The path after the name says where saving will write; click it to pick a
 different folder. When a sprite has warning flags, an amber pill in the top bar counts
 them, and turns red when the packer would refuse it; either one jumps to the Checks
 tab. **+** in the Sprites panel opens PNGs or starts a blank sprite, and the small ×
@@ -303,7 +303,7 @@ the frame before the current one faintly underneath, so a leg can be moved a kno
 distance. **Play** runs the frames in the game size view at the speed on the slider, which
 is the only honest way to tell whether a walk cycle works.
 
-## Game size
+## Preview
 
 Top right, and it is the panel that matters. A sprite at 16 pixels tells you nothing on its
 own, so this draws it the size a player actually sees, on the game's own ground, with the
@@ -321,6 +321,26 @@ hero, and a wild ogre.
 
 Drawing on a bigger grid does not make a creature bigger in the game, only finer. A new
 creature is drawn to fill its box, and the box is the same either way.
+
+### As tiles
+
+**Tiles** in the Preview tab repeats the sprite across the panel instead of standing it
+beside creatures, which is what ground art needs. A sprite in the `terrain` folder opens
+that way; the switch is yours after that.
+
+- **Repeat every N px** is the pitch, and it is not always the picture's width. Eldermyr
+  draws ground at 32 px from art that is 33 px, so every tile laps one pixel over the
+  next; the default follows that, and the note under the switch says what the number
+  means. Get this wrong and a tile looks seamless here and shows a seam in the game.
+- **Frames are variants, not animation.** The game picks a tile's frame from its world
+  hash, so grass's four frames are four different grasses scattered about. The preview
+  scatters them the same way rather than blinking them in unison.
+- **Offset** shifts the field half a tile, so the joins land in the middle of the panel
+  where you can actually see them, the way an offset filter does elsewhere.
+- **Tile edges meet where they lap** is a rule in the Checks panel, off until you ask for
+  it. Where the art laps, the covered edge has to match the one covering it, or painted
+  pixels quietly vanish under the neighbour; the check counts the rows and columns that
+  differ.
 
 ## Notes
 

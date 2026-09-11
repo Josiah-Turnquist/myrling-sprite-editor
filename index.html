@@ -521,14 +521,28 @@ if (location.hash === '#forget') {
 
   <div id="side" class="panel">
     <div id="tabs">
-      <button id="tabGame" class="on">Game size</button>
+      <button id="tabGame" class="on">Preview</button>
       <button id="tabChecks">Checks <span id="warnBadge"></span></button>
     </div>
 
     <div id="paneGame" class="pane on">
-      <div class="sec" style="display:flex; align-items:center; justify-content:space-between; padding-top:12px">
-        <span class="hint" style="font-size:11px">Next to your game&#8217;s own creatures &#183; <span id="bEditRefs" class="lnk">Edit references</span></span>
+      <div class="sec" style="display:flex; align-items:center; gap:8px; padding-top:12px">
+        <div class="seg" id="pvModes">
+          <button data-mode="cast">Creatures</button>
+          <button data-mode="tile">Tiles</button>
+        </div>
+        <div style="flex:1"></div>
         <button id="bPlay2" style="padding:3px 10px; font-size:11px">&#9654; Play</button>
+      </div>
+      <div class="sec" id="castRow" style="display:flex; align-items:center">
+        <span class="hint" style="font-size:11px">Next to your game&#8217;s own creatures &#183; <span id="bEditRefs" class="lnk">Edit references</span></span>
+      </div>
+      <div class="sec" id="tileRow" style="display:none; align-items:center; gap:8px; flex-wrap:wrap">
+        <span class="hint" style="font-size:11px">Repeat every</span>
+        <input id="tilePitch" type="number" min="1" max="1024" style="width:54px">
+        <span class="hint" style="font-size:11px">px</span>
+        <button id="bTileOffset" title="Shift the field half a tile, so the joins land in the middle where you can see them">Offset</button>
+        <span class="hint" id="tileNote" style="font-size:10px; flex:1 0 100%"></span>
       </div>
       <div class="sec tight"><canvas id="preview" height="150"></canvas></div>
       <div class="sec winrow">
@@ -1861,7 +1875,8 @@ var RULE_DEFS = [
   { id: 'clear', name: 'Some clear background' },
   { id: 'frames', name: 'At least two frames' },
   { id: 'palette', name: 'Later frames stick to frame 0\u2019s colours' },
-  { id: 'bytes', name: 'Opened files under 64 KB' }
+  { id: 'bytes', name: 'Opened files under 64 KB' },
+  { id: 'tile', name: 'Tile edges meet where they lap', off: true }
 ];
 function ruleOn(id) { return !(UI.ruleOff && UI.ruleOff[id]) && !(UI.ruleGone && UI.ruleGone[id]); }
 function customRules() { return Array.isArray(UI.customRules) ? UI.customRules : []; }
@@ -1918,6 +1933,15 @@ function checkSprite(s) {
     s.frames.forEach(function (f, i) { if (anyInk(f) && !bottomRowPainted(s, f)) hover.push(i); });
     if (hover.length) warn.push('<b>Nothing on the bottom row</b> of frame ' + hover.join(' and ') + '. The game plants that row at the feet, so this creature hovers. Move it down and keep the empty rows at the top.');
     else ok.push('The bottom row is painted, so the feet sit on the ground.');
+  }
+
+  if (ruleOn('tile') && s.w > 1) {
+    var lap = s.w - tilePitch(s);
+    if (lap > 0) {
+      var seam = tileSeam(s, lap);
+      if (seam) warn.push('<b>The tile does not meet itself.</b> With a ' + lap + ' pixel lap, ' + seam + ' differ, so those painted pixels are covered by the next tile. Look at it in Preview with Offset on.');
+      else ok.push('The tile meets itself where it laps.');
+    } else note.push('This tile repeats every ' + tilePitch(s) + ' px, edge to edge, so there is no lap to check.');
   }
 
   if (ruleOn('clear')) {
@@ -2123,6 +2147,88 @@ function paintShadow(cx, base, w) {
   pctx.fillStyle = 'rgba(0,0,0,0.34)';
   pctx.beginPath(); pctx.ellipse(cx, base + u, Math.max(1, w / 2 - 2 * u), 3.4 * u, 0, 0, 6.2832); pctx.fill();
 }
+// ---------- the preview, tiled ----------
+// The game draws ground tiles at a pitch of TILE with art one pixel wider, so each tile
+// laps a pixel over the next. Repeating the art at its own width instead would look
+// seamless here and show a seam in the game, so the pitch is a number you can see.
+function tilePitch(s) {
+  if (!s) return 1;
+  if (s.tilePitch) return Math.max(1, Math.min(s.w, s.tilePitch));
+  return s.family === 'terrain' && s.w > 1 ? s.w - 1 : s.w;
+}
+// the game picks a tile's frame from its world hash, so variants scatter rather than
+// blink together; the same hash here shows how they sit side by side
+function variantAt(tx, ty, n) {
+  if (n < 2) return 0;
+  var h = ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
+  return h % n;
+}
+function drawTiled(s, W, H) {
+  var scale = S.scale, pitch = tilePitch(s);
+  var step = pitch * scale, drawn = s.w * scale;
+  if (step < 1) return;
+  var off = UI.tileOffset ? Math.round(step / 2) : 0;
+  var cols = Math.ceil(W / step) + 2, rows = Math.ceil(H / step) + 2;
+  var img = [];
+  for (var f = 0; f < s.frames.length; f++) img.push(blitCopy(s.frames[f], s.w, s.h));
+  for (var ty = -1; ty < rows; ty++) {
+    for (var tx = -1; tx < cols; tx++) {
+      var v = variantAt(tx, ty, img.length);
+      pctx.drawImage(img[v], Math.round(tx * step - off), Math.round(ty * step - off), drawn, Math.round(s.h * scale));
+    }
+  }
+  // the seam the pitch implies: with a one pixel lap, the last column is drawn over the
+  // next tile's first, so the two have to agree or a painted pixel is quietly lost
+  var lap = s.w - pitch;
+  var note = 'A tile every ' + pitch + ' px' + (lap ? ', lapping ' + lap + ' px over the next' : '') +
+    (img.length > 1 ? '. ' + img.length + ' variants, scattered the way the game scatters them' : '') + '.';
+  if (lap > 0) {
+    var bad = tileSeam(s, lap);
+    note += bad ? ' The edges do not meet: ' + bad + '.' : ' The edges meet.';
+  }
+  $('tileNote').textContent = note;
+}
+// how many pixels differ where the lap puts one edge on top of the other
+function tileSeam(s, lap) {
+  var f = s.frames[s.cur], w = s.w, h = s.h, cols = 0, rows = 0, i, j;
+  for (var y = 0; y < h; y++) for (i = 0; i < lap; i++) {
+    var a = ((y * w) + (w - lap + i)) * 4, b = ((y * w) + i) * 4;
+    if (f[a] !== f[b] || f[a + 1] !== f[b + 1] || f[a + 2] !== f[b + 2] || f[a + 3] !== f[b + 3]) { cols++; break; }
+  }
+  for (var x = 0; x < w; x++) for (j = 0; j < lap; j++) {
+    var c = (((h - lap + j) * w) + x) * 4, d = ((j * w) + x) * 4;
+    if (f[c] !== f[d] || f[c + 1] !== f[d + 1] || f[c + 2] !== f[d + 2] || f[c + 3] !== f[d + 3]) { rows++; break; }
+  }
+  if (!cols && !rows) return '';
+  var parts = [];
+  if (cols) parts.push(cols + (cols === 1 ? ' row' : ' rows') + ' along the left and right');
+  if (rows) parts.push(rows + (rows === 1 ? ' column' : ' columns') + ' along the top and bottom');
+  return parts.join(', ');
+}
+// blit() hands back one shared canvas, so a grid of tiles needs its own copies
+function blitCopy(f, w, h) {
+  var c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(blit(f, w, h), 0, 0);
+  return c;
+}
+function previewMode() { return UI.pvMode === 'tile' ? 'tile' : 'cast'; }
+function setPreviewMode(m) {
+  UI.pvMode = m; saveUI();
+  drawPreviewMode();
+  drawPreview();
+}
+function drawPreviewMode() {
+  var m = previewMode(), s = spr();
+  Array.prototype.forEach.call($('pvModes').children, function (b) {
+    b.className = b.getAttribute('data-mode') === m ? 'on' : '';
+  });
+  $('castRow').style.display = m === 'cast' ? 'flex' : 'none';
+  $('tileRow').style.display = m === 'tile' ? 'flex' : 'none';
+  $('bPlay2').style.display = m === 'cast' ? '' : 'none';
+  $('bTileOffset').className = UI.tileOffset ? 'on' : '';
+  if (s && document.activeElement !== $('tilePitch')) $('tilePitch').value = tilePitch(s);
+}
 function drawPreview() {
   var s = spr();
   var W = pv.clientWidth || 296;
@@ -2138,6 +2244,13 @@ function drawPreview() {
 
   var g = S.ground, tile = TILE_IN_PIXELS * scale;
   paintGround(g, W, H, tile);
+
+  drawPreviewMode();
+  if (previewMode() === 'tile') {
+    if (s) drawTiled(s, W, H);
+    else $('tileNote').textContent = 'Open a sprite to see it tiled.';
+    return;
+  }
 
   var base = H - 20;   // the line every creature's feet stand on
 
@@ -2779,6 +2892,11 @@ function snapAlpha() {
 }
 
 function selectSprite(i) {
+  // terrain opens tiled, a creature opens beside its fellows, unless you have said otherwise
+  if (!UI.pvModeSet) {
+    var next = S.sprites[i];
+    if (next) UI.pvMode = next.family === 'terrain' ? 'tile' : 'cast';
+  }
   dropSelection(true);
   S.si = (i >= 0 && i < S.sprites.length) ? i : (S.sprites.length ? Math.max(0, Math.min(i, S.sprites.length - 1)) : -1);
   var s = spr();
@@ -3375,10 +3493,35 @@ function showTab(which) {
     $('tab' + n).className = n === which ? 'on' : '';
     $('pane' + n).className = 'pane' + (n === which ? ' on' : '');
   });
-  if (which === 'Game') drawPreview();
+  if (which === 'Game') { drawPreviewMode(); drawPreview(); }
   toolsFollow();
 }
 $('tabGame').onclick = function () { showTab('Game'); };
+$('pvModes').onclick = function (e) {
+  var b = e.target.closest('button'); if (!b) return;
+  UI.pvModeSet = true;   // your choice from here on, not the folder's
+  setPreviewMode(b.getAttribute('data-mode'));
+};
+$('tilePitch').oninput = function () {
+  var s = spr(); if (!s) return;
+  var v = parseInt(this.value, 10);
+  if (!(v >= 1)) return;
+  s.tilePitch = Math.min(s.w, v);
+  drawPreview();
+};
+$('bTileOffset').onclick = function () {
+  UI.tileOffset = !UI.tileOffset; saveUI();
+  drawPreviewMode(); drawPreview();
+};
+// a rule marked off is written into the kept choices once, so the box in the editor and
+// the rule that actually runs are the same thing; ticking it on then works as it looks
+if (!UI.ruleSeed) {
+  UI.ruleOff = UI.ruleOff || {};
+  RULE_DEFS.forEach(function (r) { if (r.off && !(r.id in UI.ruleOff)) UI.ruleOff[r.id] = true; });
+  UI.ruleSeed = 1;
+  saveUI();
+}
+drawPreviewMode();
 $('tabChecks').onclick = function () { showTab('Checks'); };
 $('lookPill').onclick = function () {
   showTab('Checks');
@@ -3774,7 +3917,7 @@ window.EDITOR = {
   pl: { generate: plGenerate, open: plOpen, hist: function () { return plHist; }, openGen: openGen },
   refs: function () { return REF_LIST; }, addRefSprite: addRefSprite, drawRefs: drawRefs,
   fitView: function () { fitZoom(); redraw(); },
-  setBg: setBg, bgChoice: bgChoice,
+  setBg: setBg, bgChoice: bgChoice, setPreviewMode: setPreviewMode, tilePitch: tilePitch, tileSeam: tileSeam,
   image: { size: openSizeModal, resizeCanvas: resizeCanvas, byEdges: resizeByEdges, scale: scaleSprite, scaleImage: scaleImageOnly,
            crop: cropToSelection, trim: trimSprite, flipH: flipFrame, flipV: flipVertical, rotate: rotateSprite },
   showTab: showTab, RULE_DEFS: RULE_DEFS, rulesChanged: rulesChanged, closeSprite: closeSprite
