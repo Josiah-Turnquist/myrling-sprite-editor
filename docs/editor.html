@@ -200,6 +200,16 @@ if (location.hash === '#forget') {
   .mac #bImage,.mac #bFlip{display:none}
   .mac #toolsPanel .acts,.mac #toolsPanel .div{display:none}
   .mac #bGrid,.mac #bGuides{display:none}
+  #ctxMenu{
+    position:fixed; z-index:40; display:none; flex-direction:column; gap:1px; padding:4px;
+    min-width:170px;
+  }
+  #ctxMenu.show{display:flex}
+  #ctxMenu button{text-align:left; background:transparent; border-color:transparent; padding:5px 8px; font-size:12px}
+  #ctxMenu button:hover{background:var(--sel); color:var(--selText)}
+  #ctxMenu button:disabled{opacity:.4}
+  #ctxMenu button.danger:hover{background:#2a1c19; color:#eda99c}
+  #ctxMenu .sep{height:1px; background:var(--line); margin:3px 2px}
   #imgMenu{
     display:none; flex-direction:column; gap:2px; padding:6px; margin-top:4px;
     background:var(--panel2); border:1px solid var(--line); border-radius:8px;
@@ -634,6 +644,7 @@ if (location.hash === '#forget') {
     <button id="bExport1"></button><button id="bClose"></button></div>
 </div>
 
+<div id="ctxMenu" class="panel"></div>
 <div id="drop">Drop PNG files to open them</div>
 <div id="settings">
   <div class="box">
@@ -1675,6 +1686,13 @@ function drawStrip() {
     x.onclick = function (e) { e.stopPropagation(); closeSprite(i); };
     d.appendChild(x);
     d.onclick = function () { selectSprite(i); };
+    d.oncontextmenu = function (e) {
+      openCtx(e, [
+        { label: 'Duplicate sprite', act: function () { duplicateSprite(i); } },
+        '-',
+        { label: closeArmedAt === i ? 'Close and lose it' : 'Close sprite\u2026', act: function () { closeSprite(i); }, danger: true }
+      ]);
+    };
     // sprites rearrange by dragging; the green edge says which side it will land on
     d.draggable = true;
     d.title = 'Drag to reorder the sprites';
@@ -1748,6 +1766,18 @@ function drawFrames() {
     lab.textContent = i;
     d.appendChild(c); d.appendChild(lab);
     d.onclick = function () { dropSelection(); s.cur = i; frameFocus = true; redraw(); };
+    d.oncontextmenu = function (e) {
+      if (s.cur !== i) { dropSelection(); s.cur = i; frameFocus = true; redraw(); }
+      openCtx(e, [
+        { label: 'Duplicate frame', act: function () { duplicateFrame(i); } },
+        { label: 'Copy frame', act: copyFrame },
+        { label: 'Paste after this frame', act: pasteFrame, disabled: !FRAME_CLIP },
+        '-',
+        { label: 'Duplicate sprite', act: function () { duplicateSprite(S.si); } },
+        '-',
+        { label: 'Delete frame', act: deleteFrame, danger: true, disabled: s.frames.length < 2 }
+      ]);
+    };
     // frames rearrange by dragging; the blue edge says which side it will land on
     d.draggable = true;
     d.title = 'Drag to another spot to reorder the frames';
@@ -1805,6 +1835,48 @@ function drawFrames() {
   mk('file', 'From file', function () { $('fileFrame').click(); }, 'Load a PNG as another frame of this sprite');
 }
 
+// a right click on a frame or a sprite opens a short menu of what can be done to it
+function openCtx(e, items) {
+  e.preventDefault(); e.stopPropagation();
+  var m = $('ctxMenu');
+  m.innerHTML = '';
+  items.forEach(function (it) {
+    if (it === '-') { var d = document.createElement('div'); d.className = 'sep'; m.appendChild(d); return; }
+    var b = document.createElement('button');
+    b.textContent = it.label;
+    if (it.danger) b.className = 'danger';
+    if (it.disabled) b.disabled = true;
+    b.onclick = function (ev) { ev.stopPropagation(); closeCtx(); it.act(); };
+    m.appendChild(b);
+  });
+  m.className = 'panel show';
+  // keep it on screen
+  var w = m.offsetWidth, h = m.offsetHeight;
+  m.style.left = Math.min(e.clientX, window.innerWidth - w - 6) + 'px';
+  m.style.top = Math.min(e.clientY, window.innerHeight - h - 6) + 'px';
+}
+function closeCtx() { $('ctxMenu').className = 'panel'; }
+function duplicateFrame(i) {
+  var s = spr(); if (!s) return;
+  dropSelection();
+  s.frames.splice(i + 1, 0, s.frames[i].slice());
+  s.cur = i + 1;
+  commit(); redraw();
+  say('Frame ' + i + ' duplicated as frame ' + (i + 1), 'good');
+}
+function duplicateSprite(i) {
+  var src = S.sprites[i]; if (!src) return;
+  var taken = {}; S.sprites.forEach(function (x) { taken[x.key] = 1; });
+  var key = cleanName(src.key + '-copy') || 'sprite-copy', n = 2;
+  while (taken[key]) key = cleanName(src.key + '-copy' + n++);
+  var c = makeSprite(key, src.w, src.h, src.frames.map(function (f) { return f.slice(); }), src.family);
+  c.dest = src.dest || null;   // a copy saves beside its original, under its own name
+  c.tilePitch = src.tilePitch;
+  S.sprites.splice(i + 1, 0, c);
+  selectSprite(i + 1);
+  scheduleSave();
+  say('Duplicated ' + src.key + ' as ' + key + '. Rename it before saving.', 'good');
+}
 var frameDrag = null;   // the frame being dragged along the row, by index
 var FRAME_CLIP = null;  // one copied frame, for pasting here or into another sprite
 var frameFocus = false; // a frame tile was clicked last, so copy and paste keys mean frames
@@ -3593,7 +3665,7 @@ $('pbPath').onclick = function () {
 $('bAdd').onclick = function (e) { e.stopPropagation(); $('addMenu').className = $('addMenu').className === 'show' ? '' : 'show'; };
 $('addMenu').onclick = function (e) { e.stopPropagation(); };
 function closeAddMenu() { $('addMenu').className = ''; }
-document.addEventListener('click', function () { $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; $('imgMenu').className = ''; });
+document.addEventListener('click', function () { closeCtx(); $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; $('imgMenu').className = ''; });
 $('keptNote').onclick = function (e) { e.stopPropagation(); $('keptPop').className = $('keptPop').className === 'panel show' ? 'panel' : 'panel show'; };
 $('keptPop').onclick = function (e) { e.stopPropagation(); };
 function showTab(which) {
@@ -3957,6 +4029,7 @@ window.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { e.preventDefault(); closeSizeModal(); }
     return;
   }
+  if (e.key === 'Escape' && $('ctxMenu').className === 'panel show') { closeCtx(); return; }
   if (e.key === 'Escape' && $('imgMenu').className === 'show') { $('imgMenu').className = ''; return; }
   if (e.key === 'Escape' && ($('addMenu').className === 'show' || $('keptPop').className === 'panel show' || $('speedPop').className === 'panel show')) {
     $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; return;
@@ -4028,7 +4101,7 @@ window.EDITOR = {
   saveOver: saveOver, canSaveOver: canSaveOver, handleFor: handleFor,
   copySel: copySel, pasteClip: pasteClip, snapEnd: snapEnd, setTool: setTool,
   showKeys: showKeys, drawPathBar: drawPathBar, moveFrame: moveFrame,
-  moveSprite: moveSprite, deleteFrame: deleteFrame,
+  moveSprite: moveSprite, deleteFrame: deleteFrame, duplicateFrame: duplicateFrame, duplicateSprite: duplicateSprite,
   pl: { generate: plGenerate, open: plOpen, hist: function () { return plHist; }, openGen: openGen },
   refs: function () { return REF_LIST; }, addRefSprite: addRefSprite, drawRefs: drawRefs,
   fitView: function () { fitZoom(); redraw(); },

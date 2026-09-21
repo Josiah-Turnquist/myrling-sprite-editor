@@ -300,7 +300,11 @@ The frames row is under the canvas. Add, copy and delete are there, and the fram
 rearrange by dragging: pick one up, and the blue edge on its neighbour says which side
 it will land on. The numbers follow the new order. Click a frame and the keys are its:
 `Cmd + C` copies it, `Cmd + V` pastes the copy after it, `Cmd + X` cuts it, and Backspace
-or Delete removes it. **Onion skin** shows
+or Delete removes it.
+
+Right click a frame for **Duplicate frame**, copy, paste after, **Duplicate sprite** and
+delete. Right click a sprite in the list to duplicate it or close it; a duplicate is named
+`<name>-copy`, saves beside its original, and needs a new name before it goes anywhere. **Onion skin** shows
 the frame before the current one faintly underneath, so a leg can be moved a known
 distance. **Play** runs the frames in the game size view at the speed on the slider, which
 is the only honest way to tell whether a walk cycle works.
