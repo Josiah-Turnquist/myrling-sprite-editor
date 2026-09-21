@@ -217,24 +217,36 @@ if (location.hash === '#forget') {
   #imgMenu.show{display:flex}
   #imgMenu button{text-align:left; background:transparent; border-color:transparent}
   #imgMenu button:hover{background:var(--sel); color:var(--selText)}
-  #sizeModal,#sheetModal,#splitModal{
+  #sizeModal,#sheetModal,#splitModal,#newSheetModal,#addSheetModal{
     position:fixed; inset:0; display:none; align-items:center; justify-content:center;
     background:rgba(12,14,18,.72); z-index:30;
   }
-  #sizeModal.show,#sheetModal.show,#splitModal.show{display:flex}
-  #sizeModal .box,#sheetModal .box,#splitModal .box{
+  #sizeModal.show,#sheetModal.show,#splitModal.show,#newSheetModal.show,#addSheetModal.show{display:flex}
+  #sizeModal .box,#sheetModal .box,#splitModal .box,#newSheetModal .box,#addSheetModal .box{
     width:min(440px,92vw); max-height:84vh; overflow:auto;
     background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
   }
-  #sizeModal .mhd,#sheetModal .mhd,#splitModal .mhd{
+  #sizeModal .mhd,#sheetModal .mhd,#splitModal .mhd,#newSheetModal .mhd,#addSheetModal .mhd{
     display:flex; align-items:center; justify-content:space-between;
     padding:8px 10px; border-bottom:1px solid var(--line); color:var(--hot); font-weight:600;
   }
-  #sizeModal .pad,#sheetModal .pad,#splitModal .pad{padding:10px}
+  #sizeModal .pad,#sheetModal .pad,#splitModal .pad,#newSheetModal .pad,#addSheetModal .pad{padding:10px}
   #sizeModal .master,#splitModal .master{padding:6px 0}
   .szgrid{display:grid; grid-template-columns:auto 64px auto 64px; gap:6px 8px; align-items:center; margin:2px 0 8px 22px}
   .shgrid{display:grid; grid-template-columns:auto 70px auto 70px; gap:6px 8px; align-items:center; margin:2px 0 8px}
   #sheetModal .rule{height:1px; background:var(--line); margin:10px 0 2px}
+  /* the sprite checklist in Add to a sheet: the sprite list's own row, with a tick */
+  #asList{max-height:38vh; overflow:auto; border:1px solid var(--line); border-radius:8px; padding:4px; margin:2px 0 8px}
+  .asrow{display:flex; align-items:center; gap:8px; padding:4px 5px; border-radius:6px; cursor:pointer}
+  .asrow:hover{background:#20242c}
+  .asrow.off{opacity:.45; cursor:default}
+  .asrow.off:hover{background:transparent}
+  .asrow input{flex:none; margin:0}
+  .asrow canvas{width:20px; height:20px; flex:0 0 20px; image-rendering:pixelated; background:#131519; border-radius:4px}
+  .asrow .t{min-width:0; flex:1}
+  .asrow .t b{display:block; font-weight:500; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .asrow .t span{color:var(--dim); font-size:10px; white-space:nowrap}
+  #asInto{background:var(--panel2); border:1px solid var(--line); color:inherit; border-radius:6px; padding:3px; flex:1; min-width:0}
   #sizeModal select{background:var(--panel2); border:1px solid var(--line); color:inherit; border-radius:6px; padding:3px}
   #szAnchor{display:grid; grid-template-columns:repeat(3,16px); gap:3px}
   #szAnchor b{width:16px; height:16px; border:1px solid var(--line); border-radius:3px; cursor:pointer; background:#131519; display:block}
@@ -475,6 +487,7 @@ if (location.hash === '#forget') {
           <input id="newSize" type="number" min="4" max="1024" value="16" title="Size in pixels, square">
           <span class="dim" style="font-size:11px">px</span>
         </div>
+        <button id="bNewSheet"><svg viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>Tilesheet&hellip;</button>
         <div class="hint">Or drop PNGs anywhere on the window.</div>
       </div>
       <div id="stripList"></div>
@@ -783,6 +796,42 @@ if (location.hash === '#forget') {
       <div class="hint">Empty cells are skipped, and the sheet itself stays open. Rename what
       comes out before you save it: the game reads the name.</div>
       <div class="row" style="margin-top:10px"><button id="bSplitGo" class="primary" style="width:100%">Split</button></div>
+    </div>
+  </div>
+</div>
+<div id="newSheetModal">
+  <div class="box">
+    <div class="mhd">New tilesheet<button id="bNewSheetClose">Cancel</button></div>
+    <div class="pad">
+      <div class="hint" style="margin:0 0 8px">An empty picture ruled into cells, ready to draw terrain in.</div>
+      <div class="shgrid">
+        <span class="hint">Cell size</span><input id="nsCell" type="number" min="1" max="1024" value="16">
+        <span class="hint">px</span><span></span>
+        <span class="hint">Columns</span><input id="nsCols" type="number" min="1" max="512" value="8">
+        <span class="hint">Rows</span><input id="nsRows" type="number" min="1" max="512" value="8">
+        <span class="hint">Name</span><input id="nsName" type="text" value="sheet" style="grid-column:2/5">
+      </div>
+      <div class="hint" id="nsNote" style="margin:8px 0 4px; color:var(--text)"></div>
+      <div class="hint">Cells are square here; the grid dialog changes them afterwards. The game
+      reads one PNG a tile, so split the sheet back into sprites before you save.</div>
+      <div class="row" style="margin-top:10px"><button id="bNewSheetGo" class="primary" style="width:100%">Make</button></div>
+    </div>
+  </div>
+</div>
+<div id="addSheetModal">
+  <div class="box">
+    <div class="mhd">Add sprites to a sheet<button id="bAddSheetClose">Cancel</button></div>
+    <div class="pad">
+      <div class="hint" style="margin:0 0 4px">Sprites</div>
+      <div id="asList"></div>
+      <div class="row" style="align-items:center; gap:6px; flex-wrap:nowrap">
+        <span class="hint">Into</span>
+        <select id="asInto"></select>
+      </div>
+      <div class="hint" id="asNote" style="margin:8px 0 4px; color:var(--text)"></div>
+      <div class="hint">A row a sprite, a column a frame, so a terrain's variants read across.
+      The sprites themselves stay open and untouched.</div>
+      <div class="row" style="margin-top:10px"><button id="bAddSheetGo" class="primary" style="width:100%">Add</button></div>
     </div>
   </div>
 </div>
@@ -1578,6 +1627,9 @@ function cellSpan(s, x0, y0, x1, y1) {
   return { x: ra.x, y: ra.y, w: rb.x + rb.w - ra.x, h: rb.y + rb.h - ra.y };
 }
 
+// the sheet most recently selected, so Add to a sheet offers it before the others
+var lastSheet = null;
+
 // ---------- staying in the cell ----------
 var clipCell = null;   // the rect a stroke is penned into, set at pointerdown, null when off
 function clipCellOn() { return UI.clipCell !== false; }   // on until you turn it off
@@ -1847,42 +1899,235 @@ function openSplitModal() {
 function closeSplitModal() { $('splitModal').className = ''; }
 function splitModalOpen() { return $('splitModal').className === 'show'; }
 
+// ---------- a sheet from nothing ----------
+// an empty picture already ruled, for when the sheet comes before the tiles. Square
+// cells only: the grid dialog is there for anything odder.
+function newSheet(cw, cols, rows, key) {
+  cw = Math.max(1, Math.round(parseFloat(cw) || 16));
+  cols = Math.max(1, Math.round(parseFloat(cols) || 1));
+  rows = Math.max(1, Math.round(parseFloat(rows) || 1));
+  var w = cw * cols, h = cw * rows;
+  if (w > MAX_SIDE || h > MAX_SIDE) {
+    say('That sheet would be ' + w + ' by ' + h + ', past the ' + MAX_SIDE + ' this editor holds', 'bad');
+    return null;
+  }
+  var s = makeSprite(freeKey(key, 'sheet'), w, h, [blank(w, h)], 'terrain');
+  s.sheet = { cw: cw, ch: cw, gap: 0, ox: 0, oy: 0 };
+  defaultDest(s);
+  S.sprites.push(s);
+  selectSprite(S.sprites.length - 1);
+  scheduleSave();
+  say('New tilesheet ' + s.key + ', ' + cols + ' \u00d7 ' + rows + ' cells of ' + cw + ' px: ' + w + ' by ' + h +
+    (s.dest ? '. Save puts it in ' + s.dest.label : ''), 'good');
+  return s;
+}
+// a key nobody else is using, the way duplicating a sprite finds one
+function freeKey(want, fallback) {
+  var taken = {}; S.sprites.forEach(function (x) { taken[x.key] = 1; });
+  var base = cleanName(want) || fallback, key = base, n = 2;
+  while (taken[key]) key = cleanName(base + '-' + n++);
+  return key;
+}
+function newSheetModalOpen() { return $('newSheetModal').className === 'show'; }
+function openNewSheetModal() {
+  closeAddMenu();
+  $('nsCell').value = 16;
+  $('nsCols').value = 8;
+  $('nsRows').value = 8;
+  $('nsName').value = 'sheet';
+  drawNewSheetNote();
+  $('newSheetModal').className = 'show';
+  $('nsCell').focus(); $('nsCell').select();
+}
+function closeNewSheetModal() { $('newSheetModal').className = ''; }
+function newSheetFields() {
+  var n = function (id, lo, hi) { var v = Math.round(parseFloat($(id).value) || 0); return Math.max(lo, Math.min(hi, v)); };
+  return { cw: n('nsCell', 1, 1024), cols: n('nsCols', 1, 512), rows: n('nsRows', 1, 512) };
+}
+function drawNewSheetNote() {
+  var v = newSheetFields(), w = v.cw * v.cols, h = v.cw * v.rows;
+  $('nsNote').textContent = w > MAX_SIDE || h > MAX_SIDE
+    ? 'That would be ' + w + ' by ' + h + ', past the ' + MAX_SIDE + ' this editor holds.'
+    : w + ' by ' + h + ', ' + (v.cols * v.rows) + (v.cols * v.rows === 1 ? ' cell' : ' cells') + ' of ' + v.cw + ' px.';
+}
+
 // ---------- and the other way ----------
-// a set of tiles already drawn as sprites, gathered into one picture: a row a sprite,
-// a column a frame, so the variants of a terrain read across and the types read down
-function joinSheet() {
-  if (!S.sprites.length) { say('Nothing open to join', 'bad'); return; }
-  var cur = spr() || S.sprites[0];
-  var w = cur.w, h = cur.h;
-  var list = S.sprites.filter(function (x) { return x.w === w && x.h === h; });
-  if (list.length < 2) {
-    say('Only ' + cur.key + ' is ' + w + ' by ' + h + '. Two or more sprites of one size make a sheet.', 'bad');
+// tiles already drawn as sprites, laid into one picture: a row a sprite, a column a
+// frame, so the variants of a terrain read across and the types read down. target is
+// a sheet to add below what is already in it, or null for a sheet of their own.
+function addToSheet(sprites, target) {
+  sprites = (sprites || []).filter(function (x) { return x && x.frames && !sheetOf(x); });
+  if (!sprites.length) { say('Pick at least one sprite to add', 'bad'); return; }
+  var w = sprites[0].w, h = sprites[0].h;
+  var odd = null;
+  sprites.forEach(function (x) { if (!odd && (x.w !== w || x.h !== h)) odd = x; });
+  if (odd) {
+    say('Every tile in a sheet is one size. ' + odd.key + ' is ' + odd.w + ' by ' + odd.h + ', not ' + w + ' by ' + h + '.', 'bad');
     return;
   }
+  var g = target ? sheetOf(target) : null;
+  if (target && (!g || g.cw !== w || g.ch !== h)) {
+    say(target.key + ' is not ruled in ' + w + ' by ' + h + ' cells, so these do not fit it', 'bad');
+    return;
+  }
+  if (!g) g = { cw: w, ch: h, gap: 0, ox: 0, oy: 0 };
   var cols = 0;
-  list.forEach(function (x) { cols = Math.max(cols, x.frames.length); });
-  var nw = cols * w, nh = list.length * h;
+  sprites.forEach(function (x) { cols = Math.max(cols, x.frames.length); });
+  var row0 = target ? sheetNextRow(target) : 0;
+  var wantC = Math.max(cols, target ? sheetCols(target) : 0);
+  var nw = g.ox + wantC * (g.cw + g.gap) - g.gap;
+  var nh = g.oy + (row0 + sprites.length) * (g.ch + g.gap) - g.gap;
+  if (target) { nw = Math.max(nw, target.w); nh = Math.max(nh, target.h); }
   if (nw > MAX_SIDE || nh > MAX_SIDE) {
     say('That sheet would be ' + nw + ' by ' + nh + ', past the ' + MAX_SIDE + ' this editor holds', 'bad');
     return;
   }
-  var taken = {}; S.sprites.forEach(function (x) { taken[x.key] = 1; });
-  var key = 'sheet', n = 2;
-  while (taken[key]) key = cleanName('sheet-' + n++);
-  var buf = blank(nw, nh);
-  list.forEach(function (x, ry) {
+  var t = target;
+  if (!t) {
+    t = makeSprite(freeKey('sheet', 'sheet'), nw, nh, [blank(nw, nh)], 'terrain');
+    t.sheet = { cw: g.cw, ch: g.ch, gap: 0, ox: 0, oy: 0 };
+  } else {
+    var at = S.sprites.indexOf(t);
+    if (at < 0) { say('That sheet is not open any more', 'bad'); return; }
+    if (S.si !== at) selectSprite(at);
+    // the canvas grows down and to the right, so nothing already in it moves cell
+    if (nw !== t.w || nh !== t.h) resizeCanvas(nw, nh, 0, 0);
+  }
+  var f = t.frames[t.cur];
+  sprites.forEach(function (x, k) {
     x.frames.forEach(function (fr, cx) {
-      for (var y = 0; y < h; y++) buf.set(fr.subarray(y * w * 4, (y + 1) * w * 4), ((ry * h + y) * nw + cx * w) * 4);
+      var r = cellRect(t, cx, row0 + k);
+      if (!r || r.w <= 0 || r.h <= 0) return;
+      for (var y = 0; y < r.h; y++) {
+        f.set(fr.subarray(y * x.w * 4, (y * x.w + r.w) * 4), ((r.y + y) * t.w + r.x) * 4);
+      }
     });
   });
-  var c = makeSprite(key, nw, nh, [buf], 'terrain');
-  c.sheet = { cw: w, ch: h, gap: 0, ox: 0, oy: 0 };
-  defaultDest(c);
-  S.sprites.push(c);
-  selectSprite(S.sprites.length - 1);
-  scheduleSave();
-  say('Joined ' + list.length + ' sprites into ' + key + ': ' + list.length + (list.length === 1 ? ' row' : ' rows') +
-    ' of ' + cols + (cols === 1 ? ' column' : ' columns') + ', ' + w + ' by ' + h + ' a cell. Split it again when you are done.', 'good');
+  t.bytes = [];
+  touched(t);
+  if (!target) {
+    t.hist = [snapshot(t)]; t.hi = 0;   // a fresh sheet has nothing behind it to undo to
+    defaultDest(t);
+    S.sprites.push(t);
+    selectSprite(S.sprites.length - 1);
+    scheduleSave();
+  } else {
+    commit();
+  }
+  checkAlpha(); redraw();
+  var rowTxt = sprites.length === 1 ? 'row ' + (row0 + 1)
+    : 'rows ' + (row0 + 1) + '\u2013' + (row0 + sprites.length);
+  say('Added ' + sprites.length + (sprites.length === 1 ? ' sprite' : ' sprites') + ' to ' + t.key +
+    ' as ' + rowTxt + ', ' + w + ' by ' + h + ' a cell' +
+    (target ? '' : '. Split it again when you are done') + '.', 'good');
+}
+// the row the next sprite lands on: below everything already drawn in the sheet
+function sheetNextRow(s) {
+  var rows = sheetRows(s), cols = sheetCols(s), f = s.frames[s.cur], cx, cy;
+  for (cy = rows - 1; cy >= 0; cy--) {
+    for (cx = 0; cx < cols; cx++) if (!cellEmpty(s, f, cx, cy)) return cy + 1;
+  }
+  return 0;
+}
+
+// ---------- the add dialog ----------
+// the sprites to lay in, and the sheet to lay them in. A sheet holds one size of tile,
+// so ticking the first sprite settles the size and the rest of the list follows from it.
+var asCands = [], asPick = {};
+function addSheetModalOpen() { return $('addSheetModal').className === 'show'; }
+function openAddToSheetModal(from) {
+  var list = S.sprites.filter(function (x) { return !sheetOf(x); });
+  if (!list.length) { say('There is no plain sprite open to add to a sheet', 'bad'); return; }
+  var s = (from && from.frames) ? from : spr();
+  if (!s || sheetOf(s)) s = list[0];
+  asCands = list;
+  asPick = {};
+  asPick[list.indexOf(s)] = true;   // only the one you asked from, to start
+  drawAddSheetList();
+  drawAddSheetInto(true);
+  drawAddSheetNote();
+  $('addSheetModal').className = 'show';
+}
+function closeAddToSheetModal() { $('addSheetModal').className = ''; }
+function asChosen() { return asCands.filter(function (x, i) { return !!asPick[i]; }); }
+// the size the sheet is being built at: the first sprite ticked. Nothing ticked, no size,
+// and every sprite in the list is fair game again.
+function asSize() {
+  for (var i = 0; i < asCands.length; i++) if (asPick[i]) return { w: asCands[i].w, h: asCands[i].h };
+  return null;
+}
+function drawAddSheetList() {
+  var box = $('asList'), size = asSize();
+  box.innerHTML = '';
+  asCands.forEach(function (x, i) {
+    var fits = !size || (x.w === size.w && x.h === size.h);
+    var row = document.createElement('label');
+    row.className = 'asrow' + (fits ? '' : ' off');
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!asPick[i];
+    cb.disabled = !fits;
+    cb.onchange = function () {
+      if (this.checked) asPick[i] = true; else delete asPick[i];
+      drawAddSheetList(); drawAddSheetInto(false); drawAddSheetNote();
+    };
+    var t = document.createElement('div');
+    t.className = 't';
+    t.innerHTML = '<b></b><span></span>';
+    t.querySelector('b').textContent = x.key;
+    t.querySelector('span').textContent = x.w + '\u00d7' + x.h + ' \u00b7 ' +
+      x.frames.length + (x.frames.length === 1 ? ' frame' : ' frames') + (fits ? '' : ' \u00b7 different size');
+    row.appendChild(cb);
+    row.appendChild(thumb(x.frames[0], x.w, x.h, 20));
+    row.appendChild(t);
+    box.appendChild(row);
+  });
+}
+// the sheets these tiles would fit: the cell has to be their size exactly
+function drawAddSheetInto(reset) {
+  var sel = $('asInto'), size = asSize(), want = reset ? null : sel.value, keep = null;
+  sel.innerHTML = '';
+  var none = document.createElement('option');
+  none.value = ''; none.textContent = 'New sheet';
+  sel.appendChild(none);
+  S.sprites.forEach(function (x, i) {
+    var g = sheetOf(x);
+    if (!g || (size && (g.cw !== size.w || g.ch !== size.h))) return;
+    var o = document.createElement('option');
+    o.value = String(i);
+    o.textContent = x.key + ' (' + sheetCols(x) + ' \u00d7 ' + sheetRows(x) + ' cells of ' + g.cw + ' px)';
+    sel.appendChild(o);
+    if (want === o.value) keep = o.value;
+    if (want === null && keep === null && x === lastSheet) keep = o.value;
+  });
+  sel.value = keep === null ? '' : keep;
+}
+function asTarget() {
+  var v = $('asInto').value;
+  return v === '' ? null : (S.sprites[parseInt(v, 10)] || null);
+}
+function drawAddSheetNote() {
+  var picked = asChosen(), t = asTarget();
+  if (!picked.length) {
+    $('asNote').textContent = 'Tick the sprites to lay in. The first one ticked settles the cell size.';
+    return;
+  }
+  var w = picked[0].w, h = picked[0].h, cols = 0;
+  picked.forEach(function (x) { cols = Math.max(cols, x.frames.length); });
+  var txt = picked.length + (picked.length === 1 ? ' sprite \u2192 1 row' : ' sprites \u2192 ' + picked.length + ' rows') +
+    ', one column a frame; the widest has ' + cols + (cols === 1 ? ' frame' : ' frames') + '.';
+  if (!t) {
+    txt += ' A new sheet, ' + (cols * w) + ' by ' + (picked.length * h) + ', ' + w + ' by ' + h + ' a cell.';
+  } else {
+    var g = sheetOf(t), row0 = sheetNextRow(t);
+    var wantC = Math.max(cols, sheetCols(t));
+    var nw = Math.max(t.w, g.ox + wantC * (g.cw + g.gap) - g.gap);
+    var nh = Math.max(t.h, g.oy + (row0 + picked.length) * (g.ch + g.gap) - g.gap);
+    txt += ' They go into ' + t.key + ' as ' +
+      (picked.length === 1 ? 'row ' + (row0 + 1) : 'rows ' + (row0 + 1) + '\u2013' + (row0 + picked.length)) +
+      (nw !== t.w || nh !== t.h ? ', growing it to ' + nw + ' by ' + nh + '.' : '.');
+  }
+  $('asNote').textContent = txt;
 }
 
 // where the rules go down one axis: a line at each cell's near edge, and at its far
@@ -2245,10 +2490,10 @@ function drawStrip() {
     d.onclick = function () { selectSprite(i); };
     d.oncontextmenu = function (e) {
       var items = [{ label: 'Duplicate sprite', act: function () { duplicateSprite(i); } }];
-      // splitting only makes sense for the ones that are ruled as sheets; joining is
-      // about the whole list, so it is offered from any row
+      // splitting is for the ones ruled as sheets, adding for the ones that are not:
+      // a sheet does not go into another sheet
       if (sheetOf(s)) items.push({ label: 'Split sheet into sprites\u2026', act: function () { selectSprite(i); openSplitModal(); } });
-      items.push({ label: 'Join sprites into a sheet', act: function () { selectSprite(i); joinSheet(); } });
+      else items.push({ label: 'Add to a sheet\u2026', act: function () { selectSprite(i); openAddToSheetModal(s); } });
       items.push('-');
       items.push({ label: closeArmedAt === i ? 'Close and lose it' : 'Close sprite\u2026', act: function () { closeSprite(i); }, danger: true });
       openCtx(e, items);
@@ -4106,6 +4351,7 @@ function selectSprite(i) {
   S.si = (i >= 0 && i < S.sprites.length) ? i : (S.sprites.length ? Math.max(0, Math.min(i, S.sprites.length - 1)) : -1);
   var s = spr();
   if (s) { $('key').value = s.key; $('key').title = s.key; $('family').value = s.family; s.softDismissed = false; }
+  if (s && sheetOf(s)) lastSheet = s;
   else $('key').value = '';   // no sprite, no name: the path bar should not name a ghost
   setPlaying(false);
   checkAlpha();
@@ -4851,6 +5097,25 @@ $('sheetModal').onclick = function (e) { if (e.target === this) closeSheetModal(
 ['shCW', 'shCH', 'shGap', 'shOX', 'shOY', 'shCols', 'shRows'].forEach(function (id) {
   $(id).oninput = drawSheetReadout;
 });
+$('bNewSheet').onclick = openNewSheetModal;
+$('bNewSheetClose').onclick = closeNewSheetModal;
+$('newSheetModal').onclick = function (e) { if (e.target === this) closeNewSheetModal(); };
+['nsCell', 'nsCols', 'nsRows'].forEach(function (id) { $(id).oninput = drawNewSheetNote; });
+function makeNewSheet() {
+  var v = newSheetFields();
+  closeNewSheetModal();
+  newSheet(v.cw, v.cols, v.rows, $('nsName').value);
+}
+$('bNewSheetGo').onclick = makeNewSheet;
+$('bAddSheetClose').onclick = closeAddToSheetModal;
+$('addSheetModal').onclick = function (e) { if (e.target === this) closeAddToSheetModal(); };
+$('asInto').onchange = drawAddSheetNote;
+$('bAddSheetGo').onclick = function () {
+  var picked = asChosen(), t = asTarget();
+  if (!picked.length) { say('Tick at least one sprite first', 'bad'); return; }
+  closeAddToSheetModal();
+  addToSheet(picked, t);
+};
 $('bSplitClose').onclick = closeSplitModal;
 $('splitModal').onclick = function (e) { if (e.target === this) closeSplitModal(); };
 $('bSplitGo').onclick = function () {
@@ -5128,6 +5393,15 @@ window.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { e.preventDefault(); closeSplitModal(); }
     return;
   }
+  if (newSheetModalOpen()) {
+    if (e.key === 'Escape') { e.preventDefault(); closeNewSheetModal(); }
+    if (e.key === 'Enter') { e.preventDefault(); makeNewSheet(); }
+    return;
+  }
+  if (addSheetModalOpen()) {
+    if (e.key === 'Escape') { e.preventDefault(); closeAddToSheetModal(); }
+    return;
+  }
   // [ and ] walk the sheet a cell at a time; with Shift they select as they go
   if ((e.key === '[' || e.key === ']') && !meta && sheetOf(spr())) {
     e.preventDefault();
@@ -5212,14 +5486,15 @@ window.EDITOR = {
   fitView: function () { fitZoom(); redraw(); },
   setBg: setBg, bgChoice: bgChoice, spray: spray, setPreviewMode: setPreviewMode, tilePitch: tilePitch, tileSeam: tileSeam,
   sheetOf: sheetOf, sheetCols: sheetCols, sheetRows: sheetRows, cellRect: cellRect, cellAt: cellAt, cellPixels: cellPixels, cellEmpty: cellEmpty,
-  sheet: { set: setSheet, clear: clearSheet, split: splitSheet, join: joinSheet, select: selectCell,
+  sheet: { set: setSheet, clear: clearSheet, split: splitSheet, add: addToSheet, addDialog: openAddToSheetModal,
+           newSheet: newSheet, newDialog: openNewSheetModal, select: selectCell,
            copyCell: copyCell, pasteCell: pasteCell, clearCell: clearCell, dialog: openSheetModal,
            guess: guessCell, step: stepCell, cur: curCell, dupRight: dupCellRight },
   sheetPreview: { setCell: setSheetCell, board: function () { return spr().board; }, paintBoard: paintBoard, clearBoard: clearBoard,
                   fillBoard: fillBoard, roughJoin: roughJoin, curCell: curCell, cellPitch: cellPitch, boardIndexAt: boardIndexAt, cycleBoardSize: cycleBoardSize },
   image: { size: openSizeModal, resizeCanvas: resizeCanvas, byEdges: resizeByEdges, scale: scaleSprite, scaleImage: scaleImageOnly,
            crop: cropToSelection, trim: trimSprite, flipH: flipFrame, flipV: flipVertical, rotate: rotateSprite,
-           sheet: openSheetModal, split: function () { openSplitModal(); }, join: joinSheet },
+           sheet: openSheetModal, split: function () { openSplitModal(); }, add: function () { openAddToSheetModal(); } },
   showTab: showTab, RULE_DEFS: RULE_DEFS, rulesChanged: rulesChanged, closeSprite: closeSprite
 };
 </script>
