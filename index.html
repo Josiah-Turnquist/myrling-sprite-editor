@@ -1559,11 +1559,6 @@ function setCur(s, cx, cy) {
   if (!cols || !rows) { s.sheetCur = null; return; }
   s.sheetCur = { cx: Math.max(0, Math.min(cols - 1, cx)), cy: Math.max(0, Math.min(rows - 1, cy)) };
 }
-function curCell(s) {
-  if (!sheetOf(s) || !s.sheetCur) return null;
-  if (s.sheetCur.cx >= sheetCols(s) || s.sheetCur.cy >= sheetRows(s)) return null;
-  return s.sheetCur;
-}
 // the cell a pixel is in, or the nearest one when it lands in a gutter or a margin, so
 // an Alt drag that starts a pixel wide of a tile still means that tile
 function nearCell(s, px, py) {
@@ -2626,7 +2621,12 @@ function checkSprite(s) {
   }
 
   if (rulesOn()) {
-    if (ruleOn('square')) {
+    // a sheet is many sprites in one picture, so it is the cells that have to be square
+    var sq = sheetOf(s);
+    if (ruleOn('square') && sq) {
+      if (sq.cw !== sq.ch) bad.push('<b>Cells are not square</b>, ' + sq.cw + ' by ' + sq.ch + '. Each one becomes a sprite, and a sprite is a square grid.');
+      else ok.push('Square cells, ' + sq.cw + ' by ' + sq.ch + ', ' + sheetCols(s) + ' by ' + sheetRows(s) + ' of them.');
+    } else if (ruleOn('square')) {
       if (s.w !== s.h) bad.push('<b>Not square</b>, ' + s.w + ' by ' + s.h + '. A sprite is a square grid.');
       else ok.push('Square, ' + s.w + ' by ' + s.h + '.');
     }
@@ -2657,7 +2657,7 @@ function checkSprite(s) {
 
   // the packer measures EVERY file, so a hovering frame 1 has to show up while you are
   // looking at frame 0
-  if (ruleOn('feet')) {
+  if (ruleOn('feet') && !sheetOf(s)) {
     var hover = [];
     s.frames.forEach(function (f, i) { if (anyInk(f) && !bottomRowPainted(s, f)) hover.push(i); });
     if (hover.length) warn.push('<b>Nothing on the bottom row</b> of frame ' + hover.join(' and ') + '. The game plants that row at the feet, so this creature hovers. Move it down and keep the empty rows at the top.');
@@ -2726,7 +2726,8 @@ function checkSprite(s) {
     if (baked.length) warn.push('No clear pixels in frame ' + baked.join(' and ') + '. The background looks painted in, and it has to be see-through.');
   }
 
-  if (ruleOn('frames') && s.frames.length < 2) warn.push('Only one frame. The game wants two, a standing one and a stepping one.');
+  // a sheet's variants are its columns, not its frames
+  if (ruleOn('frames') && s.frames.length < 2 && !sheetOf(s)) warn.push('Only one frame. The game wants two, a standing one and a stepping one.');
 
   if (ruleOn('palette') && s.frames.length > 1) {
     var base = {}, extra = 0;
@@ -2932,15 +2933,17 @@ function tilePitch(s) {
   if (s.tilePitch) return Math.max(1, Math.min(s.w, s.tilePitch));
   return s.family === 'terrain' && s.w > 1 ? s.w - 1 : s.w;
 }
-// On a sheet the tile is one cell, not the whole picture, so the pitch is the cell's.
-// 16 px art laid at a 16 px pitch is the ordinary case; the lap convention is the older
-// 33-px-art one, and a sheet is free of it unless you ask for it.
+// the cell being worked: the one last clicked, clamped to the grid, or the first one
+// before anything has been clicked, so a sheet always has a current cell
 function curCell(s) {
   var cols = sheetCols(s), rows = sheetRows(s);
   if (!cols || !rows) return null;
   var c = s.sheetCur, cx = c ? c.cx : 0, cy = c ? c.cy : 0;
   return { cx: Math.max(0, Math.min(cols - 1, cx | 0)), cy: Math.max(0, Math.min(rows - 1, cy | 0)) };
 }
+// On a sheet the tile is one cell, not the whole picture, so the pitch is the cell's.
+// 16 px art laid at a 16 px pitch is the ordinary case; the lap convention is the older
+// 33-px-art one, and a sheet is free of it unless you ask for it.
 function cellPitch(s) {
   var g = sheetOf(s); if (!g) return tilePitch(s);
   return Math.max(1, Math.min(g.cw, s.cellPitch || g.cw));
