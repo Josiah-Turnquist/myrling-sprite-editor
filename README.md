@@ -348,6 +348,43 @@ that way; the switch is yours after that.
   pixels quietly vanish under the neighbour; the check counts the rows and columns that
   differ.
 
+### Checking a tilesheet lines up
+
+When the sprite is ruled as a sheet — one picture holding many tiles in a grid — the
+Preview panel stops thinking about the whole picture and starts thinking about one cell.
+A row of the sheet is one terrain type and its columns are that type's variants, and
+everything below follows from that.
+
+- **The tile is the cell you are on.** A small map of the whole sheet sits under the
+  switches with the current cell ringed; click a cell to work on it, and the canvas
+  follows. **Repeat every N px** is now the cell's pitch, not the picture's, and it
+  defaults to the cell's width — 16 px art at a 16 px pitch, edge to edge. The one pixel
+  lap is the older 33-px convention; a sheet only has one if you ask for it.
+- **Row variants** scatters every painted cell of the current row across the field, using
+  the same world hash the game uses to pick a tile's variant. The note says how many it
+  found and which row they came from. Turn it off to repeat the one cell alone.
+- **Board** is a third preview mode, and it is where tiles that are *supposed* to differ
+  get checked: grass beside a grass-to-sand edge, an inside corner against an outside one.
+  Drag on the little map to lay the current cell down, right-click or hold Alt to lift it,
+  Shift-click to pick up whatever is under the cursor and work on that instead. **Fill
+  from row** scatters the row over the whole board, **Clear** empties it, and the size
+  chip cycles 6 × 4, 10 × 6 and 16 × 9. The board is drawn at the pitch, so laps overlap
+  exactly as they will in play, and it is kept with the sprite.
+- **Seams** marks every join where two tiles do not agree, in both Tiles and Board.
+  **Red** means the two edges do not line up: nothing is overlaid there, so the only
+  question is whether they read as one picture, and more than a third of the pixel pairs
+  jumping a long way in colour says they do not. **Amber** means a lap is covering pixels
+  that differ, which is the exact fault — paint you can see in the editor that the
+  neighbour quietly eats. The note counts them: *3 of 40 joins look rough*, or *All joins
+  line up*.
+- **Sheet edges line up** is a rule in the Checks panel, on by default, and it only speaks
+  for a sprite ruled as a sheet. Every painted cell of the current row has to be able to
+  sit beside something in that row, so it names the ones that cannot — *Cell 2,0's right
+  edge lines up with nothing in its row* — for the right edge and the bottom edge in turn.
+  A tile that meets itself cleanly passes on its own. When the grid has a gutter or a
+  margin, it also looks for ink outside the cells, because splitting the sheet into one
+  file a tile would drop it.
+
 ## Notes
 
 - Tested in Chrome. Any current browser should work.
