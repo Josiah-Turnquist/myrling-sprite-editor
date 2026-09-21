@@ -340,7 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     image.addItem(.separator())
     pageItem(image, "Tilesheet Grid…", "EDITOR.image.sheet()")
     pageItem(image, "Split Sheet into Sprites…", "EDITOR.image.split()")
-    pageItem(image, "Join Sprites into a Sheet", "EDITOR.image.join()")
+    pageItem(image, "Add Sprites to a Sheet…", "EDITOR.image.add()")
     imageItem.submenu = image
     let viewItem = NSMenuItem(); main.addItem(viewItem)
     let view = NSMenu(title: "View")

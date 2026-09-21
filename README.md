@@ -396,6 +396,12 @@ frames of a tile are its *variants* and not its animation. So a sheet is a way o
 not a way of shipping: you rule a grid on it, draw in it, and split it back into sprites
 before you save.
 
+**Tilesheet…** in the **+** menu above the sprite list starts a sheet from nothing: a cell
+size, how many columns and rows, and a name. It makes an empty `terrain` sprite already
+ruled — eight by eight cells of 16 px is a 128 by 128 picture — and the line under the
+fields says what the numbers come to before you press Make. Cells are square here; the
+grid dialog changes them afterwards.
+
 **Tilesheet grid…** in the Tools panel — and, in the Mac app, the Image menu — rules the
 grid. It takes a cell width and height, a margin before the first cell, and a gap between
 cells, and the line under the fields says what those numbers add up to: how many columns
@@ -431,7 +437,7 @@ readout in the corner names the cell as well as the pixel.
   rather than floating in the middle of the picture. On a sheet the right button belongs to
   this menu, so it does not also rub out there.
 
-### Splitting and joining
+### Splitting and adding
 
 **Split sheet into sprites…** — from the cell menu, from a right click on the sprite in the
 list, or from the Image menu — cuts the sheet back into the sprites the game reads. Two
@@ -448,10 +454,20 @@ right after it, in the `terrain` folder and saving where the sheet saves. They a
 `<sheet>-r<row>` or `<sheet>-c<n>` — rename them before you save, because the game reads
 the name.
 
-**Join sprites into a sheet**, from a right click in the sprite list or the Image menu,
-goes the other way: every open sprite the size of the current one is laid into one picture,
-a row each, a column a frame, with the grid ruled to match. It round-trips — split what it
-made and you get your sprites back, pixel for pixel.
+**Add to a sheet…**, from a right click on a sprite in the list or from the Image menu,
+goes the other way: tiles already drawn as sprites are laid into a sheet, a row each and a
+column a frame. The dialog lists the open sprites with a thumbnail apiece, and only the one
+you right-clicked is ticked to begin with — tick as many as you like. The first one ticked
+settles the cell size, and anything of another size greys out, because a sheet holds one
+size of tile. **Into** offers a new sheet, or any open sheet ruled in that size, and the
+line beneath says what you are about to get: how many rows, how many frames the widest
+sprite has, and what the sheet grows to.
+
+Rows land below whatever is already in the sheet, and the canvas grows down and to the
+right with clear pixels, so nothing already drawn moves out from under its cell; the
+columns grow too if a sprite has more frames than the sheet is wide. The sprites themselves
+stay open and untouched. It round-trips — split what it made and you get them back, pixel
+for pixel.
 
 ## Notes
 
