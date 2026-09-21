@@ -899,6 +899,44 @@ function makeSprite(key, w, h, frames, family) {
   s.hist = [snapshot(s)];
   return s;
 }
+// ---------- tilesheets ----------
+// A sheet is one image holding many tiles in a grid: s.sheet says how it is ruled.
+//   cw, ch   a cell's size in pixels (a terrain tile is 33 by 33)
+//   gap      empty pixels between cells, 0 when they touch
+//   ox, oy   the margin before the first cell
+// s.sheetCur is the cell the user last worked in, {cx, cy}, or null. The game never sees
+// a sheet: it reads one file per tile, so a sheet is split into sprites before it ships.
+function sheetOf(s) { return s && s.sheet && s.sheet.cw > 0 && s.sheet.ch > 0 ? s.sheet : null; }
+function sheetCols(s) { var g = sheetOf(s); return g ? Math.max(0, Math.floor((s.w - g.ox + g.gap) / (g.cw + g.gap))) : 0; }
+function sheetRows(s) { var g = sheetOf(s); return g ? Math.max(0, Math.floor((s.h - g.oy + g.gap) / (g.ch + g.gap))) : 0; }
+// where a cell sits on the image, clipped to the image's edge
+function cellRect(s, cx, cy) {
+  var g = sheetOf(s); if (!g) return null;
+  var x = g.ox + cx * (g.cw + g.gap), y = g.oy + cy * (g.ch + g.gap);
+  return { x: x, y: y, w: Math.min(g.cw, s.w - x), h: Math.min(g.ch, s.h - y) };
+}
+// the cell under a pixel, or null in a gutter or margin
+function cellAt(s, px, py) {
+  var g = sheetOf(s); if (!g) return null;
+  var u = px - g.ox, v = py - g.oy;
+  if (u < 0 || v < 0) return null;
+  var cx = Math.floor(u / (g.cw + g.gap)), cy = Math.floor(v / (g.ch + g.gap));
+  if (u - cx * (g.cw + g.gap) >= g.cw || v - cy * (g.ch + g.gap) >= g.ch) return null;
+  if (cx >= sheetCols(s) || cy >= sheetRows(s)) return null;
+  return { cx: cx, cy: cy };
+}
+// one cell's pixels as their own RGBA block, cw by ch
+function cellPixels(s, f, cx, cy) {
+  var r = cellRect(s, cx, cy), g = sheetOf(s);
+  var out = blank(g.cw, g.ch);
+  for (var y = 0; y < r.h; y++) out.set(f.subarray(((r.y + y) * s.w + r.x) * 4, ((r.y + y) * s.w + r.x + r.w) * 4), y * g.cw * 4);
+  return out;
+}
+function cellEmpty(s, f, cx, cy) {
+  var r = cellRect(s, cx, cy); if (!r) return true;
+  for (var y = 0; y < r.h; y++) for (var x = 0; x < r.w; x++) if (f[((r.y + y) * s.w + r.x + x) * 4 + 3]) return false;
+  return true;
+}
 function snapshot(s) {
   return { w: s.w, h: s.h, cur: s.cur, frames: s.frames.map(function (f) { return f.slice(); }) };
 }
@@ -1872,6 +1910,7 @@ function duplicateSprite(i) {
   var c = makeSprite(key, src.w, src.h, src.frames.map(function (f) { return f.slice(); }), src.family);
   c.dest = src.dest || null;   // a copy saves beside its original, under its own name
   c.tilePitch = src.tilePitch;
+  if (sheetOf(src)) c.sheet = { cw: src.sheet.cw, ch: src.sheet.ch, gap: src.sheet.gap, ox: src.sheet.ox, oy: src.sheet.oy };
   S.sprites.splice(i + 1, 0, c);
   selectSprite(i + 1);
   scheduleSave();
@@ -2529,6 +2568,7 @@ function saveStore() {
     sprites: kept.map(function (s) {
       return {
         key: s.key, family: s.family, w: s.w, h: s.h, bytes: s.bytes || [],
+        tilePitch: s.tilePitch || 0, sheet: sheetOf(s) || null,
         frames: s.frames.map(function (_, i) { return frameDataURI(s, i); })
       };
     })
@@ -2594,6 +2634,8 @@ function loadStore() {
       if (frames.length) {
         var s = makeSprite(rec.key || 'sprite', rec.w, rec.h, frames, rec.family);
         s.bytes = Array.isArray(rec.bytes) ? rec.bytes : [];
+        if (rec.tilePitch) s.tilePitch = rec.tilePitch;
+        if (rec.sheet && rec.sheet.cw > 0) s.sheet = { cw: rec.sheet.cw, ch: rec.sheet.ch, gap: rec.sheet.gap || 0, ox: rec.sheet.ox || 0, oy: rec.sheet.oy || 0 };
         made.push(s);
       }
       setTimeout(step, 0);
@@ -4106,6 +4148,7 @@ window.EDITOR = {
   refs: function () { return REF_LIST; }, addRefSprite: addRefSprite, drawRefs: drawRefs,
   fitView: function () { fitZoom(); redraw(); },
   setBg: setBg, bgChoice: bgChoice, spray: spray, setPreviewMode: setPreviewMode, tilePitch: tilePitch, tileSeam: tileSeam,
+  sheetOf: sheetOf, sheetCols: sheetCols, sheetRows: sheetRows, cellRect: cellRect, cellAt: cellAt, cellPixels: cellPixels, cellEmpty: cellEmpty,
   image: { size: openSizeModal, resizeCanvas: resizeCanvas, byEdges: resizeByEdges, scale: scaleSprite, scaleImage: scaleImageOnly,
            crop: cropToSelection, trim: trimSprite, flipH: flipFrame, flipV: flipVertical, rotate: rotateSprite },
   showTab: showTab, RULE_DEFS: RULE_DEFS, rulesChanged: rulesChanged, closeSprite: closeSprite
