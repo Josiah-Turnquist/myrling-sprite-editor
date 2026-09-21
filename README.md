@@ -348,6 +348,74 @@ that way; the switch is yours after that.
   pixels quietly vanish under the neighbour; the check counts the rows and columns that
   differ.
 
+## Tilesheets
+
+Terrain is easier to draw as one picture. A tilesheet is a single PNG holding many tiles
+in a grid, so a whole set of grass can be drawn, compared and adjusted side by side
+instead of a file at a time.
+
+The game never reads a sheet. It reads one PNG a tile, `<key>-<n>.png`, where the numbered
+frames of a tile are its *variants* and not its animation. So a sheet is a way of working,
+not a way of shipping: you rule a grid on it, draw in it, and split it back into sprites
+before you save.
+
+**Tilesheet grid…** in the Tools panel — and, in the Mac app, the Image menu — rules the
+grid. It takes a cell width and height, a margin before the first cell, and a gap between
+cells, and the line under the fields says what those numbers add up to: how many columns
+and rows fit, and how many pixels are left unused at the right and the bottom. **Grow to
+fit** takes a number of columns and rows and resizes the canvas to hold exactly that many,
+adding clear pixels at the right and the bottom so nothing already drawn moves out from
+under its cell. **Clear grid** takes the rule off again and leaves one plain picture.
+
+A PNG opened into the `terrain` folder is ruled on the way in, as is any picture whose
+size reads as a grid of 16s with at least two cells each way. Small pictures are left
+alone unless they are terrain, because a 32 pixel sprite with four frames is not a sheet.
+The status line says what it decided, and the dialog undoes it in one click.
+
+### Working a cell at a time
+
+The cell rule is drawn on the canvas at every zoom, and is not tied to the **Grid** switch:
+on a sheet the cell edges are what you are drawing to. Gutters and margins sit back a
+shade, because they belong to no tile, and the cell you last worked in wears a ring. The
+readout in the corner names the cell as well as the pixel.
+
+- **In cell**, beside the grid button, keeps every stroke inside the cell it starts in,
+  whichever tool is in hand — a pencil that runs into the next tile ruins two tiles at
+  once, and a bucket that escapes ruins the sheet. It is on until you turn it off, and the
+  choice is kept. A stroke begun in a gutter is not penned anywhere.
+- **Double click a cell** with the Select tool and the box is exactly that cell. Holding
+  **Alt** while dragging a box snaps it out to whole cells.
+- `[` and `]` step to the cell before or after, wrapping onto the next row; with **Shift**
+  they select it as they go.
+- **Right click a cell** for select, copy, paste into, clear, and **Duplicate cell to the
+  right**, which is the quickest road to a variant: copy a finished tile into the cell
+  beside it and change a few pixels. Copy uses the same clipboard a dragged box does, so
+  `Cmd + V` knows about it; pasting *into* a cell lands square in it and stops at its edge
+  rather than floating in the middle of the picture. On a sheet the right button belongs to
+  this menu, so it does not also rub out there.
+
+### Splitting and joining
+
+**Split sheet into sprites…** — from the cell menu, from a right click on the sprite in the
+list, or from the Image menu — cuts the sheet back into the sprites the game reads. Two
+ways:
+
+- **A sprite a row.** Each row that has anything in it becomes one sprite, and the cells
+  along the row become its frames, left to right. This is the one you usually want: a row
+  is one terrain type and the variants the game scatters about.
+- **A sprite a cell.** Every cell with anything in it becomes its own one-frame sprite.
+  For a sheet of unrelated tiles.
+
+Empty cells are skipped, the sheet itself stays open, and the new sprites land in the list
+right after it, in the `terrain` folder and saving where the sheet saves. They are named
+`<sheet>-r<row>` or `<sheet>-c<n>` — rename them before you save, because the game reads
+the name.
+
+**Join sprites into a sheet**, from a right click in the sprite list or the Image menu,
+goes the other way: every open sprite the size of the current one is laid into one picture,
+a row each, a column a frame, with the grid ruled to match. It round-trips — split what it
+made and you get your sprites back, pixel for pixel.
+
 ## Notes
 
 - Tested in Chrome. Any current browser should work.

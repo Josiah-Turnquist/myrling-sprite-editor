@@ -197,7 +197,7 @@ if (location.hash === '#forget') {
   #leftcol.solo #spritesPanel{max-height:100%}
   #toolsPanel .acts{display:flex; justify-content:space-around; padding:2px 0}
   #toolsPanel .acts button{font-size:15px; padding:2px 8px}
-  .mac #bImage,.mac #bFlip{display:none}
+  .mac #bImage,.mac #bFlip,.mac #bSheet{display:none}
   .mac #toolsPanel .acts,.mac #toolsPanel .div{display:none}
   .mac #bGrid,.mac #bGuides{display:none}
   #ctxMenu{
@@ -217,22 +217,24 @@ if (location.hash === '#forget') {
   #imgMenu.show{display:flex}
   #imgMenu button{text-align:left; background:transparent; border-color:transparent}
   #imgMenu button:hover{background:var(--sel); color:var(--selText)}
-  #sizeModal{
+  #sizeModal,#sheetModal,#splitModal{
     position:fixed; inset:0; display:none; align-items:center; justify-content:center;
     background:rgba(12,14,18,.72); z-index:30;
   }
-  #sizeModal.show{display:flex}
-  #sizeModal .box{
+  #sizeModal.show,#sheetModal.show,#splitModal.show{display:flex}
+  #sizeModal .box,#sheetModal .box,#splitModal .box{
     width:min(440px,92vw); max-height:84vh; overflow:auto;
     background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow);
   }
-  #sizeModal .mhd{
+  #sizeModal .mhd,#sheetModal .mhd,#splitModal .mhd{
     display:flex; align-items:center; justify-content:space-between;
     padding:8px 10px; border-bottom:1px solid var(--line); color:var(--hot); font-weight:600;
   }
-  #sizeModal .pad{padding:10px}
-  #sizeModal .master{padding:6px 0}
+  #sizeModal .pad,#sheetModal .pad,#splitModal .pad{padding:10px}
+  #sizeModal .master,#splitModal .master{padding:6px 0}
   .szgrid{display:grid; grid-template-columns:auto 64px auto 64px; gap:6px 8px; align-items:center; margin:2px 0 8px 22px}
+  .shgrid{display:grid; grid-template-columns:auto 70px auto 70px; gap:6px 8px; align-items:center; margin:2px 0 8px}
+  #sheetModal .rule{height:1px; background:var(--line); margin:10px 0 2px}
   #sizeModal select{background:var(--panel2); border:1px solid var(--line); color:inherit; border-radius:6px; padding:3px}
   #szAnchor{display:grid; grid-template-columns:repeat(3,16px); gap:3px}
   #szAnchor b{width:16px; height:16px; border:1px solid var(--line); border-radius:3px; cursor:pointer; background:#131519; display:block}
@@ -496,6 +498,10 @@ if (location.hash === '#forget') {
           <input id="sprayD" type="range" min="1" max="30" value="5">
           <span class="mono dim" id="sprayDN">5</span></div>
       </div>
+      <div id="sheetRow" style="display:none; gap:4px; padding:6px 6px 0">
+        <button id="bSheet" title="Rule this image as a grid of tiles, and work one cell at a time">Tilesheet grid&hellip;</button>
+        <button id="bClipCell" style="display:none">In cell</button>
+      </div>
       <div class="div"></div>
       <div class="acts">
         <button id="bUndo" class="quiet" title="Undo, Cmd+Z">&#8630;</button>
@@ -655,7 +661,8 @@ if (location.hash === '#forget') {
       <div class="mono" style="margin-top:8px">
         Cmd or Ctrl + Z undo &nbsp; Shift + Z redo<br>
         Cmd+C copy &nbsp; Cmd+X cut &nbsp; Cmd+V paste &nbsp; Cmd+S save<br>
-        - and + zoom, or the wheel &nbsp; Space play
+        - and + zoom, or the wheel &nbsp; Space play<br>
+        [ and ] step to the cell before or after, on a tilesheet &nbsp; Shift with either selects it
       </div>
       <div style="margin-top:8px">Square: Shift squares the box off, Alt flips outline and filled
       for one drag. Spray keeps puffing while you hold it still, and its Size and Flow sit
@@ -709,6 +716,57 @@ if (location.hash === '#forget') {
       <div class="hint" id="szBecomes" style="margin:8px 0 4px; color:var(--text)"></div>
       <div class="hint">Every frame changes together, and one undo takes it all back.</div>
       <div class="row" style="margin-top:10px"><button id="bSizeGo" class="primary" style="width:100%">Apply</button></div>
+    </div>
+  </div>
+</div>
+<div id="sheetModal">
+  <div class="box">
+    <div class="mhd">Tilesheet grid<button id="bSheetClose">Cancel</button></div>
+    <div class="pad">
+      <div class="hint" id="shNow" style="margin:0 0 8px"></div>
+      <div class="shgrid">
+        <span class="hint">Cell width</span><input id="shCW" type="number" min="1" max="4096" value="16">
+        <span class="hint">Cell height</span><input id="shCH" type="number" min="1" max="4096" value="16">
+        <span class="hint">Margin x</span><input id="shOX" type="number" min="0" max="4096" value="0">
+        <span class="hint">Margin y</span><input id="shOY" type="number" min="0" max="4096" value="0">
+        <span class="hint">Gap</span><input id="shGap" type="number" min="0" max="4096" value="0">
+      </div>
+      <div class="hint" id="shReadout" style="margin:8px 0 4px; color:var(--text)"></div>
+      <div class="hint">A sheet is a way of working, not a way of shipping. The game reads one
+      PNG a tile, so split the sheet back into sprites before you save.</div>
+      <div class="rule"></div>
+      <div class="row" style="margin:8px 0 2px; align-items:center; gap:6px">
+        <span class="hint">Grow to fit</span>
+        <input id="shCols" type="number" min="1" max="512" value="1" style="width:56px">
+        <span class="dim">&times;</span>
+        <input id="shRows" type="number" min="1" max="512" style="width:56px" value="1">
+        <span class="hint">cells</span>
+        <button id="bSheetGrow">Grow</button>
+      </div>
+      <div class="hint" id="shGrowNote"></div>
+      <div class="row" style="margin-top:10px; gap:6px">
+        <button id="bSheetClear" style="flex:1">Clear grid</button>
+        <button id="bSheetGo" class="primary" style="flex:2">Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="splitModal">
+  <div class="box">
+    <div class="mhd">Split sheet into sprites<button id="bSplitClose">Cancel</button></div>
+    <div class="pad">
+      <div class="hint" id="spNow" style="margin:0 0 8px"></div>
+      <label class="master"><input type="radio" name="spHow" value="rows" checked>
+        <span><b>A sprite a row.</b> Each row that has anything in it becomes one sprite, and
+        the cells along the row become its frames. The game picks a tile's frame from the
+        world, so a row is one terrain type and its variants.</span></label>
+      <label class="master"><input type="radio" name="spHow" value="cells">
+        <span><b>A sprite a cell.</b> Every cell that has anything in it becomes its own
+        sprite with one frame. This is for a sheet of unrelated tiles.</span></label>
+      <div class="hint" id="spNote" style="margin:8px 0 4px; color:var(--text)"></div>
+      <div class="hint">Empty cells are skipped, and the sheet itself stays open. Rename what
+      comes out before you save it: the game reads the name.</div>
+      <div class="row" style="margin-top:10px"><button id="bSplitGo" class="primary" style="width:100%">Split</button></div>
     </div>
   </div>
 </div>
@@ -999,6 +1057,9 @@ function paint(x, y, erase) {
   var s = spr(), f = frm();
   if (!inside(s, x, y)) return;
   if (S.sel && !ptInSel(x, y)) return;   // a box in place limits where paint lands
+  // every tool goes through here, so one test keeps them all inside the sheet cell the
+  // stroke started in: a brush that runs into the next tile ruins two tiles at once
+  if (clipCell && (x < clipCell.x || y < clipCell.y || x >= clipCell.x + clipCell.w || y >= clipCell.y + clipCell.h)) return;
   if (erase) { set(f, s.w, x, y, 0, 0, 0, 0); return; }
   if (S.alpha >= 100) { set(f, s.w, x, y, S.color[0], S.color[1], S.color[2], 255); return; }
   // one blend per pixel per stroke, or a slow drag would darken its own line
@@ -1079,6 +1140,10 @@ function fill(x, y) {
   var want = [S.color[0], S.color[1], S.color[2], 255];
   if (S.alpha >= 100 && t[3] === want[3] && t[0] === want[0] && t[1] === want[1] && t[2] === want[2]) return;
   var lo = S.sel ? S.sel : { x: 0, y: 0, w: s.w, h: s.h };
+  // the flood writes its own pixels rather than going through paint, so the cell has to
+  // bound it here as well, or one bucket would run the colour across the whole sheet
+  if (clipCell) lo = boxAnd(lo, clipCell);
+  if (lo.w < 1 || lo.h < 1) return;
   // flat index stack and inline reads: a two-megapixel flood was half a second of
   // little array allocations, and is a blink now. seen marks queued-once, at push,
   // so the stack can never outgrow one slot a pixel.
@@ -1434,6 +1499,401 @@ function pasteClip() {
     '. Drag it into place; Esc sets it down.', 'good');
 }
 
+// ---------- tilesheets: ruling the grid, working a cell, splitting and joining ----------
+// The model and the cell maths sit up beside makeSprite. What follows is the part you
+// touch: the dialog that rules the grid, the cell the pointer is in, and the two doors
+// between a sheet and the sprites the game actually reads.
+
+// a first guess at how an image is ruled. 16 comes first rather than the biggest that
+// fits, because the game's terrain is 16 px and a 128 by 64 sheet is nearly always
+// eight tiles by four, not four by two.
+function guessCell(w, h) {
+  var tries = [16, 32, 33, 24, 48, 64, 8], i, n;
+  for (i = 0; i < tries.length; i++) {
+    n = tries[i];
+    if (w % n === 0 && h % n === 0 && w / n >= 2 && h / n >= 2) return n;
+  }
+  return 16;
+}
+function boxAnd(a, b) {
+  var x = Math.max(a.x, b.x), y = Math.max(a.y, b.y);
+  var r = Math.min(a.x + a.w, b.x + b.w), t = Math.min(a.y + a.h, b.y + b.h);
+  return { x: x, y: y, w: Math.max(0, r - x), h: Math.max(0, t - y) };
+}
+function setSheet(s, cw, ch, gap, ox, oy) {
+  s = s || spr(); if (!s) return;
+  var whole = function (v, lo) { v = Math.round(parseFloat(v) || 0); return v < lo ? lo : v; };
+  s.sheet = { cw: whole(cw, 1), ch: whole(ch, 1), gap: whole(gap, 0), ox: whole(ox, 0), oy: whole(oy, 0) };
+  s.sheetCur = null;   // the old cell means nothing under new rules
+  scheduleSave();
+}
+function clearSheet(s) {
+  s = s || spr(); if (!s) return;
+  if (!sheetOf(s)) { say('There is no grid on this one', 'bad'); return; }
+  s.sheet = null; s.sheetCur = null;
+  clipCell = null;
+  scheduleSave(); redraw();
+  say('Grid cleared. This is one plain picture again.', 'good');
+}
+// the cell last worked in. Kept on the sprite so the other panels can read it, and
+// clamped back into the grid whenever the rules change under it.
+function setCur(s, cx, cy) {
+  if (!s) return;
+  var cols = sheetCols(s), rows = sheetRows(s);
+  if (!cols || !rows) { s.sheetCur = null; return; }
+  s.sheetCur = { cx: Math.max(0, Math.min(cols - 1, cx)), cy: Math.max(0, Math.min(rows - 1, cy)) };
+}
+function curCell(s) {
+  if (!sheetOf(s) || !s.sheetCur) return null;
+  if (s.sheetCur.cx >= sheetCols(s) || s.sheetCur.cy >= sheetRows(s)) return null;
+  return s.sheetCur;
+}
+// the cell a pixel is in, or the nearest one when it lands in a gutter or a margin, so
+// an Alt drag that starts a pixel wide of a tile still means that tile
+function nearCell(s, px, py) {
+  var g = sheetOf(s); if (!g) return null;
+  var cols = sheetCols(s), rows = sheetRows(s);
+  if (!cols || !rows) return null;
+  var cx = Math.floor((px - g.ox) / (g.cw + g.gap)), cy = Math.floor((py - g.oy) / (g.ch + g.gap));
+  return { cx: Math.max(0, Math.min(cols - 1, cx)), cy: Math.max(0, Math.min(rows - 1, cy)) };
+}
+// the box two cells span, corner to corner
+function cellSpan(s, x0, y0, x1, y1) {
+  var a = nearCell(s, x0, y0), b = nearCell(s, x1, y1);
+  if (!a || !b) return null;
+  var ra = cellRect(s, Math.min(a.cx, b.cx), Math.min(a.cy, b.cy));
+  var rb = cellRect(s, Math.max(a.cx, b.cx), Math.max(a.cy, b.cy));
+  if (!ra || !rb) return null;
+  return { x: ra.x, y: ra.y, w: rb.x + rb.w - ra.x, h: rb.y + rb.h - ra.y };
+}
+
+// ---------- staying in the cell ----------
+var clipCell = null;   // the rect a stroke is penned into, set at pointerdown, null when off
+function clipCellOn() { return UI.clipCell !== false; }   // on until you turn it off
+function toggleClipCell() {
+  UI.clipCell = !clipCellOn();
+  saveUI(); drawSheetRow();
+  say(clipCellOn()
+    ? 'Strokes stay in the cell they start in.'
+    : 'Strokes run across the whole sheet again.', 'good');
+}
+// the sheet buttons: the dialog always, the clip toggle only once a grid is ruled
+function drawSheetRow() {
+  var s = spr(), has = !!sheetOf(s);
+  var onMac = /(^| )mac( |$)/.test(document.documentElement.className);   // the Mac app has the dialog in its Image menu
+  $('bClipCell').style.display = has ? '' : 'none';
+  $('bClipCell').className = clipCellOn() ? 'on' : '';
+  $('bClipCell').title = clipCellOn()
+    ? 'Every stroke stays inside the cell it starts in. Click to let it run across the sheet.'
+    : 'Strokes run across the whole sheet. Click to pen them into one cell.';
+  $('sheetRow').style.display = (s && (has || !onMac)) ? 'flex' : 'none';
+}
+
+// ---------- what a cell can be told to do ----------
+function selectCell(cx, cy) {
+  var s = spr(); if (!sheetOf(s)) return;
+  var r = cellRect(s, cx, cy);
+  if (!r || r.w < 1 || r.h < 1) return;
+  dropSelection();
+  setTool('select');
+  S.sel = { x: r.x, y: r.y, w: r.w, h: r.h };
+  setCur(s, cx, cy);
+  $('selHint').style.display = 'flex';
+  redraw();
+}
+// the cell goes into the same clipboard a dragged box does, so Cmd+V knows about it too
+function copyCell(cx, cy) {
+  var s = spr(), f = frm(); if (!sheetOf(s) || !f) return;
+  var r = cellRect(s, cx, cy); if (!r) return;
+  var buf = new Uint8ClampedArray(r.w * r.h * 4);
+  for (var y = 0; y < r.h; y++) {
+    var si = ((r.y + y) * s.w + r.x) * 4;
+    buf.set(f.subarray(si, si + r.w * 4), y * r.w * 4);
+  }
+  CLIP = { w: r.w, h: r.h, buf: buf };
+  setCur(s, cx, cy); redraw();
+  say('Copied cell ' + cx + ',' + cy + '. Cmd+V floats it, or right click a cell and paste into it.', 'good');
+}
+// unlike Cmd+V this one lands square in the cell and stops at its edge, rather than
+// floating in the middle of the picture waiting to be dragged
+function pasteCell(cx, cy) {
+  var s = spr(), f = frm(); if (!sheetOf(s) || !f) return;
+  if (!CLIP) { say('Nothing copied yet', 'bad'); return; }
+  var r = cellRect(s, cx, cy); if (!r) return;
+  dropSelection();
+  f = frm();
+  var w = Math.min(CLIP.w, r.w), h = Math.min(CLIP.h, r.h);
+  for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
+    var si = (y * CLIP.w + x) * 4, di = ((r.y + y) * s.w + r.x + x) * 4;
+    f[di] = CLIP.buf[si]; f[di + 1] = CLIP.buf[si + 1]; f[di + 2] = CLIP.buf[si + 2]; f[di + 3] = CLIP.buf[si + 3];
+  }
+  setCur(s, cx, cy);
+  commit(); checkAlpha(); redraw();
+  say('Pasted into cell ' + cx + ',' + cy + (w !== CLIP.w || h !== CLIP.h ? ', trimmed to the cell' : ''), 'good');
+}
+function clearCell(cx, cy) {
+  var s = spr(), f = frm(); if (!sheetOf(s) || !f) return;
+  var r = cellRect(s, cx, cy); if (!r) return;
+  dropSelection();
+  f = frm();
+  for (var y = 0; y < r.h; y++) {
+    var si = ((r.y + y) * s.w + r.x) * 4;
+    f.fill(0, si, si + r.w * 4);
+  }
+  setCur(s, cx, cy);
+  commit(); checkAlpha(); redraw();
+  say('Cell ' + cx + ',' + cy + ' cleared. Undo brings it back.', 'good');
+}
+// the quickest road to a variant: copy a finished tile into the cell beside it, then
+// change a few pixels rather than drawing the whole thing again
+function dupCellRight(cx, cy) {
+  var s = spr(), f = frm(); if (!sheetOf(s) || !f) return;
+  if (cx + 1 >= sheetCols(s)) { say('That is the last column', 'bad'); return; }
+  var a = cellRect(s, cx, cy), b = cellRect(s, cx + 1, cy);
+  var w = Math.min(a.w, b.w), h = Math.min(a.h, b.h);
+  dropSelection();
+  f = frm();
+  for (var y = 0; y < h; y++) {
+    var si = ((a.y + y) * s.w + a.x) * 4;
+    f.set(f.subarray(si, si + w * 4), ((b.y + y) * s.w + b.x) * 4);
+  }
+  setCur(s, cx + 1, cy);
+  commit(); checkAlpha(); redraw();
+  say('Cell ' + cx + ',' + cy + ' copied into ' + (cx + 1) + ',' + cy, 'good');
+}
+// [ and ] walk the sheet a cell at a time, wrapping onto the next row at the end
+function stepCell(d, andSelect) {
+  var s = spr(); if (!sheetOf(s)) return;
+  var cols = sheetCols(s), rows = sheetRows(s);
+  if (!cols || !rows) return;
+  var c = curCell(s);
+  var n = c ? c.cy * cols + c.cx + d : (d > 0 ? 0 : cols * rows - 1);
+  n = (n % (cols * rows) + cols * rows) % (cols * rows);
+  var cx = n % cols, cy = (n - cx) / cols;
+  if (andSelect) { selectCell(cx, cy); }
+  else { setCur(s, cx, cy); redraw(); }
+  say('Cell ' + cx + ',' + cy);
+}
+
+// ---------- the grid dialog ----------
+function sheetModalOpen() { return $('sheetModal').className === 'show'; }
+function openSheetModal() {
+  var s = spr(); if (!s) { say('Nothing open', 'bad'); return; }
+  var g = sheetOf(s), n = guessCell(s.w, s.h);
+  $('shCW').value = g ? g.cw : n;
+  $('shCH').value = g ? g.ch : n;
+  $('shGap').value = g ? g.gap : 0;
+  $('shOX').value = g ? g.ox : 0;
+  $('shOY').value = g ? g.oy : 0;
+  $('shNow').textContent = 'This picture is ' + s.w + ' by ' + s.h + '.' +
+    (g ? '' : ' Nothing is ruled on it yet; ' + n + ' px is the likely cell.');
+  $('shCols').value = Math.max(1, sheetCols(s) || Math.floor(s.w / n) || 1);
+  $('shRows').value = Math.max(1, sheetRows(s) || Math.floor(s.h / n) || 1);
+  drawSheetReadout();
+  $('sheetModal').className = 'show';
+  $('shCW').focus(); $('shCW').select();
+}
+function closeSheetModal() { $('sheetModal').className = ''; }
+function sheetFields() {
+  var n = function (id, lo) { var v = Math.round(parseFloat($(id).value) || 0); return v < lo ? lo : v; };
+  return { cw: n('shCW', 1), ch: n('shCH', 1), gap: n('shGap', 0), ox: n('shOX', 0), oy: n('shOY', 0) };
+}
+// the live line under the fields: what those numbers rule the picture into, and what
+// is left over at the far edges, which is the number people get wrong
+function drawSheetReadout() {
+  var s = spr(); if (!s) return;
+  var v = sheetFields(), probe = { w: s.w, h: s.h, sheet: v };
+  var cols = sheetCols(probe), rows = sheetRows(probe);
+  if (!cols || !rows) {
+    $('shReadout').textContent = 'No whole cell fits in ' + s.w + ' by ' + s.h + ' at those numbers.';
+  } else {
+    var overW = s.w - (v.ox + cols * (v.cw + v.gap) - v.gap);
+    var overH = s.h - (v.oy + rows * (v.ch + v.gap) - v.gap);
+    $('shReadout').textContent = cols + (cols === 1 ? ' column' : ' columns') + ' × ' +
+      rows + (rows === 1 ? ' row' : ' rows') + ', ' +
+      (overW || overH ? overW + ' px unused at the right, ' + overH + ' px at the bottom' : 'nothing left over');
+  }
+  var wantC = Math.max(1, Math.round(parseFloat($('shCols').value) || 1));
+  var wantR = Math.max(1, Math.round(parseFloat($('shRows').value) || 1));
+  var nw = v.ox + wantC * (v.cw + v.gap) - v.gap, nh = v.oy + wantR * (v.ch + v.gap) - v.gap;
+  $('shGrowNote').textContent = nw === s.w && nh === s.h
+    ? 'That is the size it already is.'
+    : 'Grow makes the canvas ' + nw + ' by ' + nh +
+      (nw >= s.w && nh >= s.h ? ', clear pixels added at the right and the bottom.' : ', and cuts away what falls outside. One undo takes it back.');
+}
+function applySheet() {
+  var s = spr(); if (!s) return;
+  var v = sheetFields(), probe = { w: s.w, h: s.h, sheet: v };
+  var cols = sheetCols(probe), rows = sheetRows(probe);
+  if (!cols || !rows) { say('No whole cell fits at those numbers', 'bad'); return; }
+  closeSheetModal();
+  setSheet(s, v.cw, v.ch, v.gap, v.ox, v.oy);
+  redraw();
+  say('Ruled as ' + cols + ' × ' + rows + ' cells of ' + v.cw + ' by ' + v.ch + ' px', 'good');
+}
+// grow to fit: the canvas becomes exactly as big as the asked-for grid, padded at the
+// right and the bottom so nothing already drawn moves out from under its cell
+function growSheet() {
+  var s = spr(); if (!s) return;
+  var v = sheetFields();
+  var cols = Math.max(1, Math.round(parseFloat($('shCols').value) || 1));
+  var rows = Math.max(1, Math.round(parseFloat($('shRows').value) || 1));
+  var nw = v.ox + cols * (v.cw + v.gap) - v.gap, nh = v.oy + rows * (v.ch + v.gap) - v.gap;
+  if (nw > MAX_SIDE || nh > MAX_SIDE) { say('That would pass ' + MAX_SIDE + ' a side', 'bad'); return; }
+  var ow = s.w, oh = s.h;
+  closeSheetModal();
+  setSheet(s, v.cw, v.ch, v.gap, v.ox, v.oy);
+  if (nw === ow && nh === oh) { redraw(); say('Already ' + cols + ' × ' + rows + ' cells', 'good'); return; }
+  resizeCanvas(nw, nh, 0, 0);
+  say('Ruled ' + cols + ' × ' + rows + ' cells of ' + v.cw + ' by ' + v.ch + ' on a ' + nw + ' by ' + nh + ' canvas' +
+    (nw < ow || nh < oh ? '. Some of the picture was cut away; undo takes it back.' : ''), 'good');
+}
+
+// ---------- a sheet on the way in ----------
+// a terrain PNG, or one whose size reads as a grid of 16s, is ruled on open. It is only
+// a reading of the file, not a change to it, and the dialog undoes it in one click.
+function autoRule(s) {
+  if (!s || sheetOf(s)) return null;
+  var terrain = s.family === 'terrain';
+  if (!terrain && (s.w <= 64 || s.h <= 64)) return null;   // a small PNG is one sprite, not a sheet
+  var n = guessCell(s.w, s.h);
+  if (s.w % n || s.h % n) return null;
+  var cols = s.w / n, rows = s.h / n;
+  if (cols * rows < 2) return null;                        // one cell is not a sheet
+  // off terrain the bar is higher: a clean multiple of 16, at least two cells each way,
+  // which is the same as saying no cell is bigger than half the picture
+  if (!terrain && (n % 16 || cols < 2 || rows < 2)) return null;
+  s.sheet = { cw: n, ch: n, gap: 0, ox: 0, oy: 0 };
+  s.sheetCur = null;
+  return { cols: cols, rows: rows, n: n };
+}
+
+// ---------- splitting a sheet back into sprites ----------
+// the game never sees a sheet: it reads `<key>-<n>.png`, one file a tile, where the
+// frames of a tile are its variants. So a sheet is cut up before it ships.
+function splitSheet(s, how) {
+  s = (s && s.frames) ? s : spr();
+  if (!s) { say('Nothing open', 'bad'); return; }
+  var g = sheetOf(s);
+  if (!g) { say('There is no grid on this one. Rule one under Tilesheet grid first.', 'bad'); return; }
+  var cols = sheetCols(s), rows = sheetRows(s);
+  if (!cols || !rows) { say('The grid holds no whole cells', 'bad'); return; }
+  var f = s.frames[s.cur];
+  var taken = {}; S.sprites.forEach(function (x) { taken[x.key] = 1; });
+  var base = cleanName(s.key) || 'sheet';
+  var uniq = function (want) {
+    var k = cleanName(want) || 'tile', out = k, n = 2;
+    while (taken[out]) out = cleanName(k + '-' + n++);
+    taken[out] = 1;
+    return out;
+  };
+  var made = [], cx, cy;
+  if (how === 'cells') {
+    var seq = 0;
+    for (cy = 0; cy < rows; cy++) for (cx = 0; cx < cols; cx++) {
+      if (cellEmpty(s, f, cx, cy)) continue;
+      made.push(makeSprite(uniq(base + '-c' + seq++), g.cw, g.ch, [cellPixels(s, f, cx, cy)], 'terrain'));
+    }
+  } else {
+    for (cy = 0; cy < rows; cy++) {
+      var fr = [];
+      for (cx = 0; cx < cols; cx++) if (!cellEmpty(s, f, cx, cy)) fr.push(cellPixels(s, f, cx, cy));
+      if (!fr.length) continue;
+      made.push(makeSprite(uniq(base + '-r' + cy), g.cw, g.ch, fr, 'terrain'));
+    }
+  }
+  if (!made.length) { say('Every cell is empty, so there was nothing to cut out', 'bad'); return; }
+  var frames = 0;
+  made.forEach(function (c) {
+    frames += c.frames.length;
+    c.dest = s.dest || null;   // the tiles belong where the sheet belongs
+    if (!c.dest) defaultDest(c);
+  });
+  var at = S.sprites.indexOf(s);
+  var where = at < 0 ? S.sprites.length : at + 1;
+  Array.prototype.splice.apply(S.sprites, [where, 0].concat(made));
+  selectSprite(where);
+  scheduleSave();
+  say('Split ' + s.key + ' into ' + made.length + (made.length === 1 ? ' sprite' : ' sprites') +
+    ', ' + frames + (frames === 1 ? ' frame' : ' frames') + ' in all. Rename them before you save; the game reads the name.', 'good');
+}
+function openSplitModal() {
+  var s = spr();
+  if (!sheetOf(s)) { say('There is no grid on this one. Rule one under Tilesheet grid first.', 'bad'); return; }
+  var cols = sheetCols(s), rows = sheetRows(s), f = s.frames[s.cur];
+  var full = 0, fullRows = 0, cx, cy;
+  for (cy = 0; cy < rows; cy++) {
+    var any = false;
+    for (cx = 0; cx < cols; cx++) if (!cellEmpty(s, f, cx, cy)) { full++; any = true; }
+    if (any) fullRows++;
+  }
+  $('spNow').textContent = s.key + ' is ruled ' + cols + ' × ' + rows + ', and ' + full +
+    (full === 1 ? ' cell has' : ' cells have') + ' something in ' + (full === 1 ? 'it' : 'them') + '.';
+  $('spNote').textContent = 'A sprite a row makes ' + fullRows + (fullRows === 1 ? ' sprite' : ' sprites') +
+    '; a sprite a cell makes ' + full + '.';
+  $('splitModal').className = 'show';
+}
+function closeSplitModal() { $('splitModal').className = ''; }
+function splitModalOpen() { return $('splitModal').className === 'show'; }
+
+// ---------- and the other way ----------
+// a set of tiles already drawn as sprites, gathered into one picture: a row a sprite,
+// a column a frame, so the variants of a terrain read across and the types read down
+function joinSheet() {
+  if (!S.sprites.length) { say('Nothing open to join', 'bad'); return; }
+  var cur = spr() || S.sprites[0];
+  var w = cur.w, h = cur.h;
+  var list = S.sprites.filter(function (x) { return x.w === w && x.h === h; });
+  if (list.length < 2) {
+    say('Only ' + cur.key + ' is ' + w + ' by ' + h + '. Two or more sprites of one size make a sheet.', 'bad');
+    return;
+  }
+  var cols = 0;
+  list.forEach(function (x) { cols = Math.max(cols, x.frames.length); });
+  var nw = cols * w, nh = list.length * h;
+  if (nw > MAX_SIDE || nh > MAX_SIDE) {
+    say('That sheet would be ' + nw + ' by ' + nh + ', past the ' + MAX_SIDE + ' this editor holds', 'bad');
+    return;
+  }
+  var taken = {}; S.sprites.forEach(function (x) { taken[x.key] = 1; });
+  var key = 'sheet', n = 2;
+  while (taken[key]) key = cleanName('sheet-' + n++);
+  var buf = blank(nw, nh);
+  list.forEach(function (x, ry) {
+    x.frames.forEach(function (fr, cx) {
+      for (var y = 0; y < h; y++) buf.set(fr.subarray(y * w * 4, (y + 1) * w * 4), ((ry * h + y) * nw + cx * w) * 4);
+    });
+  });
+  var c = makeSprite(key, nw, nh, [buf], 'terrain');
+  c.sheet = { cw: w, ch: h, gap: 0, ox: 0, oy: 0 };
+  defaultDest(c);
+  S.sprites.push(c);
+  selectSprite(S.sprites.length - 1);
+  scheduleSave();
+  say('Joined ' + list.length + ' sprites into ' + key + ': ' + list.length + (list.length === 1 ? ' row' : ' rows') +
+    ' of ' + cols + (cols === 1 ? ' column' : ' columns') + ', ' + w + ' by ' + h + ' a cell. Split it again when you are done.', 'good');
+}
+
+// where the rules go down one axis: a line at each cell's near edge, and at its far
+// edge too. With no gutter the far edge of one cell is the near edge of the next, so
+// each boundary is listed once; with a gutter the pair brackets it.
+function sheetLines(start, cell, gap, n) {
+  var out = [], i;
+  for (i = 0; i < n; i++) {
+    out.push(start + i * (cell + gap));
+    if (gap || i === n - 1) out.push(start + i * (cell + gap) + cell);
+  }
+  return out;
+}
+// the theme's selection colour, read once: the canvas cannot take a CSS variable
+var selRGB = null;
+function selColour() {
+  if (selRGB === null) {
+    selRGB = String(getComputedStyle(document.documentElement).getPropertyValue('--sel') || '').trim() || '#3c4d68';
+  }
+  return selRGB;
+}
+
 // ---------- drawing the big canvas ----------
 function blit(f, w, h) {
   if (blitF === f && off.width === w && off.height === h) return off;
@@ -1586,6 +2046,53 @@ function paintCanvas() {
     ctx.stroke();
   }
 
+  // the sheet's own rule. Not tied to the Grid switch and not tied to a zoom: on a
+  // sheet the cell edges are the thing you are working to, so they are always drawn,
+  // and a little stronger than the pixel grid. Same +.5 the grid uses, so that turning
+  // the grid on and off never shifts one against the other.
+  var sg = sheetOf(s);
+  if (sg) {
+    var scols = sheetCols(s), srows = sheetRows(s), gx, gy, gr;
+    if (scols && srows) {
+      // the gutters, the margins and whatever is left over at the far edges belong to
+      // no tile, so they sit back. One even-odd fill: the whole picture with the cells
+      // punched out of it, which never double-darkens where two strips cross.
+      var lastX = sg.ox + (scols - 1) * (sg.cw + sg.gap) + sg.cw;
+      var lastY = sg.oy + (srows - 1) * (sg.ch + sg.gap) + sg.ch;
+      if (sg.gap || sg.ox || sg.oy || lastX < s.w || lastY < s.h) {
+        ctx.fillStyle = 'rgba(10,12,16,.38)';
+        ctx.beginPath();
+        ctx.rect(0, 0, W, H);
+        for (gy = 0; gy < srows; gy++) for (gx = 0; gx < scols; gx++) {
+          gr = cellRect(s, gx, gy);
+          ctx.rect(gr.x * z, gr.y * z, gr.w * z, gr.h * z);
+        }
+        ctx.fill('evenodd');
+      }
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(125,157,208,.55)';
+      ctx.beginPath();
+      sheetLines(sg.ox, sg.cw, sg.gap, scols).forEach(function (p) {
+        if (p > s.w) return;
+        ctx.moveTo(p * z + .5, 0); ctx.lineTo(p * z + .5, Math.min(lastY, s.h) * z);
+      });
+      sheetLines(sg.oy, sg.ch, sg.gap, srows).forEach(function (p) {
+        if (p > s.h) return;
+        ctx.moveTo(0, p * z + .5); ctx.lineTo(Math.min(lastX, s.w) * z, p * z + .5);
+      });
+      ctx.stroke();
+      // the cell last worked in wears a ring, so the hotkeys and the menus have
+      // somewhere visible to point at
+      var ring = curCell(s);
+      if (ring) {
+        gr = cellRect(s, ring.cx, ring.cy);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = selColour();
+        ctx.strokeRect(gr.x * z + 1, gr.y * z + 1, gr.w * z - 2, gr.h * z - 2);
+      }
+    }
+  }
+
   // guides: the feet line and the centre line
   if (S.guides) {
     var footOk = bottomRowPainted(s, s.frames[s.cur]);
@@ -1654,6 +2161,7 @@ function redraw() {
   $('stagebar').style.display = s ? 'flex' : 'none';
   $('frames').style.display = s ? 'flex' : 'none';
   $('framesHd').style.display = s ? 'block' : 'none';
+  drawSheetRow();
   if (!s) { drawStrip(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept(); return; }
 
   paintCanvas();
@@ -1725,11 +2233,14 @@ function drawStrip() {
     d.appendChild(x);
     d.onclick = function () { selectSprite(i); };
     d.oncontextmenu = function (e) {
-      openCtx(e, [
-        { label: 'Duplicate sprite', act: function () { duplicateSprite(i); } },
-        '-',
-        { label: closeArmedAt === i ? 'Close and lose it' : 'Close sprite\u2026', act: function () { closeSprite(i); }, danger: true }
-      ]);
+      var items = [{ label: 'Duplicate sprite', act: function () { duplicateSprite(i); } }];
+      // splitting only makes sense for the ones that are ruled as sheets; joining is
+      // about the whole list, so it is offered from any row
+      if (sheetOf(s)) items.push({ label: 'Split sheet into sprites\u2026', act: function () { selectSprite(i); openSplitModal(); } });
+      items.push({ label: 'Join sprites into a sheet', act: function () { selectSprite(i); joinSheet(); } });
+      items.push('-');
+      items.push({ label: closeArmedAt === i ? 'Close and lose it' : 'Close sprite\u2026', act: function () { closeSprite(i); }, danger: true });
+      openCtx(e, items);
     };
     // sprites rearrange by dragging; the green edge says which side it will land on
     d.draggable = true;
@@ -2846,10 +3357,20 @@ var stage = $('canvasWrap');
 stage.addEventListener('pointerdown', function (e) {
   var s = spr(); if (!s) return;
   if (frameFocus) { frameFocus = false; $('frames').className = ''; }
-  stage.setPointerCapture(e.pointerId);
   var p = pxAt(e);
-  if (S.tool === 'pick') { eyedrop(p.x, p.y); return; }
-  if (S.tool === 'fill') { fill(p.x, p.y); commit(); redraw(); return; }
+  // the press marks the cell it lands in, whatever the tool, and with In cell on it
+  // pens the whole stroke there. A press in a gutter pens nothing.
+  clipCell = null;
+  var pc = sheetOf(s) ? cellAt(s, p.x, p.y) : null;
+  if (pc) {
+    if (!s.sheetCur || s.sheetCur.cx !== pc.cx || s.sheetCur.cy !== pc.cy) { setCur(s, pc.cx, pc.cy); redraw(); }
+    if (clipCellOn()) clipCell = cellRect(s, pc.cx, pc.cy);
+  }
+  // on a sheet the right button belongs to the cell menu, so it must not also rub out
+  if (e.button === 2 && sheetOf(s)) return;
+  stage.setPointerCapture(e.pointerId);
+  if (S.tool === 'pick') { clipCell = null; eyedrop(p.x, p.y); return; }
+  if (S.tool === 'fill') { fill(p.x, p.y); clipCell = null; commit(); redraw(); return; }
   if (S.tool === 'select') {
     if (S.sel && ptInSel(p.x, p.y)) {
       if (!lift) beginLift();
@@ -2858,6 +3379,10 @@ stage.addEventListener('pointerdown', function (e) {
       dropSelection();
       drag = { mode: 'box', x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y)) };
       S.sel = { x: drag.x0, y: drag.y0, w: 1, h: 1 };
+      if (e.altKey && sheetOf(s)) {   // Alt from the first pixel: whole cells at once
+        var g0 = cellSpan(s, drag.x0, drag.y0, drag.x0, drag.y0);
+        if (g0) S.sel = g0;
+      }
       $('selHint').style.display = 'flex';
     }
     redraw();
@@ -2914,7 +3439,11 @@ function snapEnd(x0, y0, x, y) {
 stage.addEventListener('pointermove', function (e) {
   var s = spr(); if (!s) return;
   var p = pxAt(e);
-  $('posLabel').textContent = (p.x >= 0 && p.y >= 0 && p.x < s.w && p.y < s.h) ? (p.x + ', ' + p.y) : '\u2014';
+  // the readout names the cell as well as the pixel, because on a sheet the cell is
+  // what you are thinking in
+  var onIt = p.x >= 0 && p.y >= 0 && p.x < s.w && p.y < s.h;
+  var hc = onIt && sheetOf(s) ? cellAt(s, p.x, p.y) : null;
+  $('posLabel').textContent = onIt ? (p.x + ', ' + p.y + (hc ? '  cell ' + hc.cx + ',' + hc.cy : '')) : '\u2014';
   if (!drag) return;
   if (drag.mode === 'draw') {
     line(drag.lx, drag.ly, p.x, p.y, drag.erase);
@@ -2940,22 +3469,58 @@ stage.addEventListener('pointermove', function (e) {
       x: Math.min(drag.x0, x1), y: Math.min(drag.y0, y1),
       w: Math.abs(x1 - drag.x0) + 1, h: Math.abs(y1 - drag.y0) + 1
     };
+    // Alt, read as you drag the way the square tool reads it, snaps the box out to
+    // whole cells, so a marquee on a sheet never takes half a tile
+    if (e.altKey && sheetOf(s)) {
+      var gs = cellSpan(s, drag.x0, drag.y0, x1, y1);
+      if (gs) { S.sel = gs; setCur(s, nearCell(s, x1, y1).cx, nearCell(s, x1, y1).cy); }
+    }
   } else if (drag.mode === 'move') {
     stampLift(p.x - drag.gx, p.y - drag.gy);
   }
   requestCanvas();
 });
 function endDrag() {
-  if (!drag) return;
+  if (!drag) { clipCell = null; return; }
   if (sprayTimer) { clearInterval(sprayTimer); sprayTimer = null; }
   strokeSeen = null;
+  clipCell = null;
   var was = drag.mode; drag = null;
   if (was === 'draw' || was === 'move' || was === 'line' || was === 'square' || was === 'spray') commit();
   redraw();
 }
 stage.addEventListener('pointerup', endDrag);
 stage.addEventListener('pointercancel', endDrag);
-stage.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+// a double click with the Select tool takes exactly the cell under it, which is the
+// move you want a hundred times a sheet
+stage.addEventListener('dblclick', function (e) {
+  var s = spr(); if (!s || S.tool !== 'select' || !sheetOf(s)) return;
+  var p = pxAt(e), c = cellAt(s, p.x, p.y);
+  if (!c) return;
+  e.preventDefault();
+  selectCell(c.cx, c.cy);
+  say('Cell ' + c.cx + ',' + c.cy + ' selected. Cmd+C copies it.');
+});
+// a right click on a sheet works on the cell under it. Off a sheet, the browser's own
+// menu stays off the canvas exactly as it always has.
+stage.addEventListener('contextmenu', function (e) {
+  var s = spr();
+  if (!s || !sheetOf(s)) { e.preventDefault(); return; }
+  var p = pxAt(e), c = cellAt(s, p.x, p.y);
+  if (!c) { e.preventDefault(); return; }
+  var cx = c.cx, cy = c.cy;
+  setCur(s, cx, cy); redraw();
+  openCtx(e, [
+    { label: 'Select cell', act: function () { selectCell(cx, cy); } },
+    { label: 'Copy cell', act: function () { copyCell(cx, cy); } },
+    { label: 'Paste into cell', act: function () { pasteCell(cx, cy); }, disabled: !CLIP },
+    { label: 'Clear cell', act: function () { clearCell(cx, cy); } },
+    '-',
+    { label: 'Duplicate cell to the right', act: function () { dupCellRight(cx, cy); }, disabled: cx + 1 >= sheetCols(s) },
+    '-',
+    { label: 'Split sheet into sprites\u2026', act: openSplitModal }
+  ]);
+});
 stage.addEventListener('pointerleave', function () { $('posLabel').textContent = '\u2014'; });
 // zoom around a point: whatever sprite pixel sits under the anchor stays under it.
 // No anchor given means the middle of the view, for the buttons and the keys.
@@ -3058,7 +3623,7 @@ function openFiles(files) {
       if (!g) { g = []; groups.set(key, g); }
       g.push({ idx: idx, d: d });
     });
-    var made = 0, split = 0, renumbered = [];
+    var made = 0, split = 0, renumbered = [], ruled = [];
     groups.forEach(function (g, key) {
       g.sort(function (a, b) { return a.idx - b.idx; });
       var w = g[0].d.w, h = g[0].d.h;
@@ -3070,6 +3635,8 @@ function openFiles(files) {
       s.bytes = same.map(function (e) { return e.d.size || 0; });   // the size of the file as it arrived
       s.handles = same.map(function (e) { return e.d.handle; }).filter(Boolean);  // the files themselves, for Save over
       if (s.handles.length) rememberPlace(s.handles[0], null, s.handles[0].dir || '');
+      var rd = autoRule(s);   // a terrain PNG, or one that reads as a grid, arrives ruled
+      if (rd) ruled.push(rd);
       S.sprites.push(s); made++;
       other.forEach(function (e) {
         var lone = makeSprite((cleanName(key) || 'sprite') + '-' + e.idx, e.d.w, e.d.h, [e.d.px], cleanName($('family').value));
@@ -3082,6 +3649,12 @@ function openFiles(files) {
     var msg = 'Opened ' + made + (made === 1 ? ' sprite' : ' sprites');
     if (split) msg += ', ' + split + ' put aside because the sizes did not match';
     if (renumbered.length) msg += '. Frames of ' + renumbered.join(', ') + ' were renumbered from 0, which is what the packer needs';
+    if (ruled.length === 1) {
+      msg += '. Ruled as a sheet of ' + ruled[0].cols + ' × ' + ruled[0].rows + ' cells of ' + ruled[0].n +
+        ' px. Change it under Tilesheet grid.';
+    } else if (ruled.length) {
+      msg += '. ' + ruled.length + ' of them were ruled as sheets; change that under Tilesheet grid.';
+    }
     if (bad.length) msg += '. Could not read ' + bad.join(', ');
     if (skipped) msg += '. ' + skipped + ' file(s) were not PNGs';
     say(msg, bad.length ? 'bad' : 'good');
@@ -3810,6 +4383,25 @@ $('imgMenu').onclick = function (e) {
 $('bSizeClose').onclick = closeSizeModal;
 $('bSizeGo').onclick = applySize;
 $('sizeModal').onclick = function (e) { if (e.target === this) closeSizeModal(); };
+// the tilesheet dialog: every field redraws the line that says what it adds up to
+$('bSheet').onclick = openSheetModal;
+$('bClipCell').onclick = toggleClipCell;
+$('bSheetClose').onclick = closeSheetModal;
+$('bSheetGo').onclick = applySheet;
+$('bSheetGrow').onclick = growSheet;
+$('bSheetClear').onclick = function () { closeSheetModal(); clearSheet(spr()); };
+$('sheetModal').onclick = function (e) { if (e.target === this) closeSheetModal(); };
+['shCW', 'shCH', 'shGap', 'shOX', 'shOY', 'shCols', 'shRows'].forEach(function (id) {
+  $(id).oninput = drawSheetReadout;
+});
+$('bSplitClose').onclick = closeSplitModal;
+$('splitModal').onclick = function (e) { if (e.target === this) closeSplitModal(); };
+$('bSplitGo').onclick = function () {
+  var how = 'rows';
+  Array.prototype.forEach.call(document.getElementsByName('spHow'), function (r) { if (r.checked) how = r.value; });
+  closeSplitModal();
+  splitSheet(spr(), how);
+};
 $('szW').oninput = function () { if ($('szSquare').checked) $('szH').value = this.value; };
 $('szH').oninput = function () { if ($('szSquare').checked) $('szW').value = this.value; };
 $('szSquare').onchange = function () { if (this.checked) $('szH').value = $('szW').value; };
@@ -4071,6 +4663,20 @@ window.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { e.preventDefault(); closeSizeModal(); }
     return;
   }
+  if (sheetModalOpen()) {
+    if (e.key === 'Escape') { e.preventDefault(); closeSheetModal(); }
+    return;
+  }
+  if (splitModalOpen()) {
+    if (e.key === 'Escape') { e.preventDefault(); closeSplitModal(); }
+    return;
+  }
+  // [ and ] walk the sheet a cell at a time; with Shift they select as they go
+  if ((e.key === '[' || e.key === ']') && !meta && sheetOf(spr())) {
+    e.preventDefault();
+    stepCell(e.key === ']' ? 1 : -1, e.shiftKey);
+    return;
+  }
   if (e.key === 'Escape' && $('ctxMenu').className === 'panel show') { closeCtx(); return; }
   if (e.key === 'Escape' && $('imgMenu').className === 'show') { $('imgMenu').className = ''; return; }
   if (e.key === 'Escape' && ($('addMenu').className === 'show' || $('keptPop').className === 'panel show' || $('speedPop').className === 'panel show')) {
@@ -4149,8 +4755,12 @@ window.EDITOR = {
   fitView: function () { fitZoom(); redraw(); },
   setBg: setBg, bgChoice: bgChoice, spray: spray, setPreviewMode: setPreviewMode, tilePitch: tilePitch, tileSeam: tileSeam,
   sheetOf: sheetOf, sheetCols: sheetCols, sheetRows: sheetRows, cellRect: cellRect, cellAt: cellAt, cellPixels: cellPixels, cellEmpty: cellEmpty,
+  sheet: { set: setSheet, clear: clearSheet, split: splitSheet, join: joinSheet, select: selectCell,
+           copyCell: copyCell, pasteCell: pasteCell, clearCell: clearCell, dialog: openSheetModal,
+           guess: guessCell, step: stepCell, cur: curCell, dupRight: dupCellRight },
   image: { size: openSizeModal, resizeCanvas: resizeCanvas, byEdges: resizeByEdges, scale: scaleSprite, scaleImage: scaleImageOnly,
-           crop: cropToSelection, trim: trimSprite, flipH: flipFrame, flipV: flipVertical, rotate: rotateSprite },
+           crop: cropToSelection, trim: trimSprite, flipH: flipFrame, flipV: flipVertical, rotate: rotateSprite,
+           sheet: openSheetModal, split: function () { openSplitModal(); }, join: joinSheet },
   showTab: showTab, RULE_DEFS: RULE_DEFS, rulesChanged: rulesChanged, closeSprite: closeSprite
 };
 </script>

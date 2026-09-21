@@ -337,6 +337,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     pageItem(image, "Flip Left–Right", "EDITOR.image.flipH()")
     pageItem(image, "Flip Top–Bottom", "EDITOR.image.flipV()")
     pageItem(image, "Rotate 90° Clockwise", "EDITOR.image.rotate()")
+    image.addItem(.separator())
+    pageItem(image, "Tilesheet Grid…", "EDITOR.image.sheet()")
+    pageItem(image, "Split Sheet into Sprites…", "EDITOR.image.split()")
+    pageItem(image, "Join Sprites into a Sheet", "EDITOR.image.join()")
     imageItem.submenu = image
     let viewItem = NSMenuItem(); main.addItem(viewItem)
     let view = NSMenu(title: "View")
