@@ -17,3 +17,9 @@ dist/
 
 # rebuilt from mac/make-icon.py; only the .icns is kept
 mac/AppIcon.iconset/
+
+# secrets, in case one is ever set down in here by accident. The update signing
+# key belongs at ~/.myrling/update-key.b64 and the Developer ID certificate
+# belongs in GitHub's repository secrets — neither ever goes in the repo.
+*update-key*.b64
+*.p12
