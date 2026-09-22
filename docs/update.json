@@ -1,9 +1,9 @@
 {
   "page": {
-    "version": "2026.09.22.6",
+    "version": "2026.09.22.7",
     "url": "https://josiah-turnquist.github.io/myrling-sprite-editor/editor.html",
-    "sha256": "e52fd3827a030e9d4aa4487d984d0a020394606df630060a3eba2d386d506b17",
-    "signature": "+K2V3QBGQkxM1jtVTTZyoMqKmZtuNf3sfeMUHpkVC3pDHhEAotq0lfvcu2fxZUDK/DuNorZY+wli+Ntff/SUAA=="
+    "sha256": "5f2ed58bbd47146157f885d522b099ac7941c35f7239762fc2bc0cd5cb5590a0",
+    "signature": "TxXMOQbtoZaIsXHVskCU8zrkCFxuqdsz40+sJlJi0clcSDrvfWHK2Adbua+HgzTHDCsIaPJOGf+FI0CTBGofBg=="
   },
   "app": {
     "version": "1.0",
