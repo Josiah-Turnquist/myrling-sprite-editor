@@ -29,17 +29,21 @@
 #   MACOS_CERT_PASSWORD
 #     The password you typed when exporting that .p12.
 #
-#   APPLE_ID
-#     The Apple ID email of the Developer Program account.
+#   APPLE_API_KEY
+#     An App Store Connect API key (.p8), base64 encoded:
+#         base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy
+#     Make one at appstoreconnect.apple.com -> Users and Access ->
+#     Integrations -> Keys, with the Developer role. It downloads once.
+#     An API key is used here rather than an Apple ID and app-specific
+#     password on purpose: there is no account to lock out and no two-factor
+#     prompt, which is what an unattended build needs.
 #
-#   APPLE_TEAM_ID
-#     The ten-character Team ID, shown at developer.apple.com/account under
-#     Membership details, and in the certificate name in parentheses.
+#   APPLE_API_KEY_ID
+#     The Key ID beside the key on that page; also the XXXXXXXXXX in the
+#     downloaded file's name.
 #
-#   APPLE_APP_PASSWORD
-#     An app-specific password, NOT the account password. Make one at
-#     account.apple.com -> Sign-In and Security -> App-Specific Passwords.
-#     Looks like abcd-efgh-ijkl-mnop.
+#   APPLE_API_ISSUER
+#     The Issuer ID shown above the key table on the same page. A UUID.
 #
 # All five have to be present for the signed path to run; if any is missing the
 # workflow falls back to ad-hoc and still publishes a release.
@@ -79,12 +83,12 @@ jobs:
         env:
           MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
           if [ -n "$MACOS_CERT_P12" ] && [ -n "$MACOS_CERT_PASSWORD" ] \
-             && [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_PASSWORD" ]; then
+             && [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; then
             echo 'available=true' >> "$GITHUB_OUTPUT"
             echo 'Developer ID secrets are present: signing and notarising.'
           else
@@ -149,16 +153,23 @@ jobs:
       - name: Notarise and staple
         if: steps.signing.outputs.available == 'true'
         env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           ZIP: dist/Myrling-${{ steps.version.outputs.number }}.zip
         run: |
           set -euo pipefail
+          # An App Store Connect API key, not an Apple ID and app-specific password:
+          # it carries no account to lock out and no two-factor prompt to trip over,
+          # which is what CI wants. The key arrives base64 so it survives a secret.
+          KEYFILE="$RUNNER_TEMP/asc-key.p8"
+          printf '%s' "$APPLE_API_KEY" | base64 --decode > "$KEYFILE"
+          trap 'rm -f "$KEYFILE"' EXIT
+
           xcrun notarytool submit "$ZIP" \
-            --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_PASSWORD" \
+            --key "$KEYFILE" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER" \
             --wait
 
           # The ticket is stapled to the app, so the zip has to be made again
