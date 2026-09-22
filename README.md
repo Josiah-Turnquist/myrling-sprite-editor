@@ -52,14 +52,10 @@ There is a built copy on the
 [releases page](https://github.com/Josiah-Turnquist/myrling-sprite-editor/releases/latest):
 download the zip, unzip it, drag Myrling into Applications.
 
-**The first launch needs a right-click.** The app is not signed with an Apple Developer
-ID yet, so macOS opens with "cannot be opened because Apple cannot check it for
-malicious software". Right-click (or control-click) the app, choose **Open**, then Open
-again in the box that appears. That is the whole of it — macOS remembers the app from
-then on and every launch after is a normal double-click. Once the Developer Program
-membership is in place the download will be signed and notarised and this step goes away;
-the release workflow is already written for it and turns it on the moment the certificate
-secrets exist.
+The download is signed with an Apple Developer ID and notarised by Apple, so it opens
+with an ordinary double-click — no right-click, no warning box. Every release is built,
+signed and notarised on a clean machine by the workflow in `.github/workflows`, never
+from someone's laptop.
 
 Or build it yourself. It needs the Xcode command line tools once
 (`xcode-select --install`), then:
