@@ -1,0 +1,228 @@
+# Builds Myrling.app on a Mac runner and attaches it to a GitHub Release.
+#
+# Triggered by pushing a tag like v1.1, which `make release VERSION=1.1` makes
+# for you. Nothing here needs the update signing key: that key signs the editor
+# page, which is published from the maintainer's machine by `make site`, and it
+# must never be copied into CI.
+#
+# ---------------------------------------------------------------------------
+# Signing and notarisation (optional — the build works without any of it)
+# ---------------------------------------------------------------------------
+# Without the secrets below the app is ad-hoc signed, exactly as a local `make
+# app` builds it. It runs fine, but macOS has no way to tell who made it, so the
+# first launch needs right-click -> Open. The release notes say so.
+#
+# With an Apple Developer Program membership ($99/year), add these five
+# repository secrets (Settings -> Secrets and variables -> Actions -> New
+# repository secret) and every release after that is signed, notarised and
+# stapled, and opens with a double-click like any other app:
+#
+#   MACOS_CERT_P12
+#     Base64 of a "Developer ID Application" certificate exported as .p12.
+#     In Xcode: Settings -> Accounts -> your Apple ID -> Manage Certificates ->
+#     + -> Developer ID Application. Then in Keychain Access, find it under
+#     "My Certificates", right-click -> Export, save as certificate.p12 with a
+#     password. Turn it into one line with:
+#         base64 -i certificate.p12 | pbcopy
+#     and paste that as the secret's value.
+#
+#   MACOS_CERT_PASSWORD
+#     The password you typed when exporting that .p12.
+#
+#   APPLE_ID
+#     The Apple ID email of the Developer Program account.
+#
+#   APPLE_TEAM_ID
+#     The ten-character Team ID, shown at developer.apple.com/account under
+#     Membership details, and in the certificate name in parentheses.
+#
+#   APPLE_APP_PASSWORD
+#     An app-specific password, NOT the account password. Make one at
+#     account.apple.com -> Sign-In and Security -> App-Specific Passwords.
+#     Looks like abcd-efgh-ijkl-mnop.
+#
+# All five have to be present for the signed path to run; if any is missing the
+# workflow falls back to ad-hoc and still publishes a release.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@v4
+        with:
+          # the whole history, so we can list the commits since the last tag
+          fetch-depth: 0
+
+      - name: Work out the version
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "number=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      # The secrets context cannot be used in an `if:`, so the later steps test
+      # this step's output instead.
+      - name: Is this a signed build?
+        id: signing
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [ -n "$MACOS_CERT_P12" ] && [ -n "$MACOS_CERT_PASSWORD" ] \
+             && [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_PASSWORD" ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+            echo 'Developer ID secrets are present: signing and notarising.'
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'No Developer ID secrets: ad-hoc signing. See the comments in this file.'
+          fi
+
+      - name: Import the Developer ID certificate
+        if: steps.signing.outputs.available == 'true'
+        id: keychain
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/myrling-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          CERT="$RUNNER_TEMP/certificate.p12"
+
+          echo "$MACOS_CERT_P12" | base64 --decode > "$CERT"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT" -P "$MACOS_CERT_PASSWORD" -k "$KEYCHAIN" \
+            -T /usr/bin/codesign -T /usr/bin/security -f pkcs12
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$CERT"
+
+          # `|| true` so an empty result falls through to the message below
+          # rather than to pipefail's bare exit code
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | grep 'Developer ID Application' | head -1 | awk -F'"' '{print $2}' || true)"
+          if [ -z "$IDENTITY" ]; then
+            echo 'No "Developer ID Application" identity in that .p12.' >&2
+            echo 'Export the Developer ID Application certificate, not a Development one.' >&2
+            exit 1
+          fi
+          echo "Signing as: $IDENTITY"
+          echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
+
+      - name: Build Myrling.app
+        run: make app
+
+      - name: Sign with Developer ID
+        if: steps.signing.outputs.available == 'true'
+        run: |
+          set -euo pipefail
+          codesign --force --options runtime --timestamp \
+            --sign "${{ steps.keychain.outputs.identity }}" dist/Myrling.app
+          codesign --verify --strict --verbose=2 dist/Myrling.app
+
+      - name: Zip the app
+        run: |
+          set -euo pipefail
+          # ditto, not zip: it keeps the bundle's symlinks, permissions and
+          # extended attributes, which a plain zip quietly drops.
+          ditto -c -k --keepParent dist/Myrling.app "dist/Myrling-${{ steps.version.outputs.number }}.zip"
+
+      - name: Notarise and staple
+        if: steps.signing.outputs.available == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          ZIP: dist/Myrling-${{ steps.version.outputs.number }}.zip
+        run: |
+          set -euo pipefail
+          xcrun notarytool submit "$ZIP" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --wait
+
+          # The ticket is stapled to the app, so the zip has to be made again
+          # from the stapled bundle — that is what people download.
+          xcrun stapler staple dist/Myrling.app
+          xcrun stapler validate dist/Myrling.app
+          rm -f "$ZIP"
+          ditto -c -k --keepParent dist/Myrling.app "$ZIP"
+
+      - name: Write the release notes
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          SIGNED: ${{ steps.signing.outputs.available }}
+        run: |
+          set -euo pipefail
+          PREVIOUS="$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)"
+          if [ -n "$PREVIOUS" ]; then
+            RANGE="$PREVIOUS..$TAG"
+            LIMIT=200
+            echo "## What changed since $PREVIOUS" > notes.md
+          else
+            # the first release: the whole history would be a wall, so take the
+            # most recent stretch of it
+            RANGE="$TAG"
+            LIMIT=30
+            echo '## What is in this one' > notes.md
+          fi
+          echo '' >> notes.md
+          git log --no-merges -n "$LIMIT" --pretty=format:'- %s' "$RANGE" >> notes.md || true
+          echo '' >> notes.md
+          echo '' >> notes.md
+
+          echo '## Getting it' >> notes.md
+          echo '' >> notes.md
+          echo 'Download the zip below, unzip it, and drag Myrling into Applications.' >> notes.md
+          if [ "$SIGNED" != 'true' ]; then
+            echo '' >> notes.md
+            echo 'This build is not signed with an Apple Developer ID yet, so the first' >> notes.md
+            echo 'time you open it macOS will say it cannot check it for malicious' >> notes.md
+            echo 'software. **Right-click the app and choose Open**, then Open again in' >> notes.md
+            echo 'the box that appears. macOS remembers, and every launch after that is' >> notes.md
+            echo 'an ordinary double-click.' >> notes.md
+          fi
+          echo '' >> notes.md
+          echo 'The editor page inside the app updates itself: it checks GitHub on' >> notes.md
+          echo 'launch and takes any newer page whose signature checks out. This' >> notes.md
+          echo 'download only needs replacing when the app itself changes.' >> notes.md
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          NUMBER: ${{ steps.version.outputs.number }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" "dist/Myrling-$NUMBER.zip" \
+            --title "Myrling $NUMBER" \
+            --notes-file notes.md
+
+      - name: Put the keychain back
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          if [ -f "$RUNNER_TEMP/myrling-signing.keychain-db" ]; then
+            security list-keychains -d user -s login.keychain-db || true
+            security delete-keychain "$RUNNER_TEMP/myrling-signing.keychain-db" || true
+          fi

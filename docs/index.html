@@ -123,6 +123,7 @@
   Free and MIT, with a native Mac app around the same file.</p>
   <div class="ctas">
     <a class="btn solid" href="editor.html">Open the editor</a>
+    <a class="btn ghost" href="https://github.com/Josiah-Turnquist/myrling-sprite-editor/releases/latest">Download for Mac</a>
     <a class="btn ghost" href="https://github.com/Josiah-Turnquist/myrling-sprite-editor">Get it on GitHub</a>
   </div>
   <p class="dim" style="margin-top:12px; font-size:13px">Runs entirely in your browser. Nothing installs, nothing uploads.</p>
@@ -228,8 +229,21 @@
     <p>Not a port — the Mac app is <code>index.html</code>, unchanged, behind a single
     Swift file. WebKit has no File System Access API, so a 100-line bridge fills in the
     corner Myrling uses: real open panels, real folder pickers, Save over writing real
-    files, exports landing in Downloads. Build it with the Xcode command line tools and
-    nothing else:</p>
+    files, exports landing in Downloads.</p>
+    <div class="ctas" style="justify-content:flex-start; margin:22px 0">
+      <a class="btn solid" href="https://github.com/Josiah-Turnquist/myrling-sprite-editor/releases/latest">Download for Mac</a>
+    </div>
+    <p class="dim">Unzip it and drag Myrling into Applications. It is not signed with an
+    Apple Developer ID yet, so the <em>first</em> time, right-click the app and choose
+    Open rather than double-clicking — macOS remembers, and every launch after that is
+    ordinary.</p>
+    <p>It keeps itself current. On launch it asks GitHub whether the editor page has
+    moved on, and takes the new one if it has — so a fix lands in your copy without you
+    downloading anything. Every page is signed with an Ed25519 key, checked before it is
+    kept, and refused outright if the signature does not match; <b>Check for
+    Updates…</b> in the Myrling menu asks now, and the toggle beside it turns the
+    automatic check off.</p>
+    <p>Or build it yourself, with the Xcode command line tools and nothing else:</p>
     <pre><code>git clone https://github.com/Josiah-Turnquist/myrling-sprite-editor
 cd myrling-sprite-editor
 make run    <span class="c"># builds dist/Myrling.app and opens it</span></code></pre>

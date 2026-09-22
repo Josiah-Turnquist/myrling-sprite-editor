@@ -19,7 +19,8 @@ MIT licensed. Take it, fork it, ship your own creatures with it.
 and the landing page lives at
 [josiah-turnquist.github.io/myrling-sprite-editor](https://josiah-turnquist.github.io/myrling-sprite-editor/).
 Saving in place works there too — the page is served over HTTPS, so Chrome and Edge
-allow it. After editing `index.html`, `make site` refreshes the hosted copy.
+allow it. After editing `index.html`, `make site` refreshes the hosted copy — and gives
+it a new version number, which is how installed Mac apps find out there is one.
 
 ## The window
 
@@ -46,8 +47,22 @@ for your own.
 
 ## The Mac app
 
-The same editor in its own window and Dock icon, with in-place saving done natively. It
-needs the Xcode command line tools once (`xcode-select --install`), then:
+The same editor in its own window and Dock icon, with in-place saving done natively.
+There is a built copy on the
+[releases page](https://github.com/Josiah-Turnquist/myrling-sprite-editor/releases/latest):
+download the zip, unzip it, drag Myrling into Applications.
+
+**The first launch needs a right-click.** The app is not signed with an Apple Developer
+ID yet, so macOS opens with "cannot be opened because Apple cannot check it for
+malicious software". Right-click (or control-click) the app, choose **Open**, then Open
+again in the box that appears. That is the whole of it — macOS remembers the app from
+then on and every launch after is a normal double-click. Once the Developer Program
+membership is in place the download will be signed and notarised and this step goes away;
+the release workflow is already written for it and turns it on the moment the certificate
+secrets exist.
+
+Or build it yourself. It needs the Xcode command line tools once
+(`xcode-select --install`), then:
 
     make app     # builds dist/Myrling.app
     make run     # builds and opens it
@@ -56,12 +71,63 @@ The wrapper is one Swift file, `mac/main.swift`, around the very same `index.htm
 web page is not changed at all. WebKit has no File System Access API, so `mac/bridge.js`
 fills in the little of it the editor uses and hands the work to the Swift side: Open PNGs
 shows the real open panel, Save over writes the real files, Export lands in your
-Downloads folder. The app is built for your machine and ad-hoc signed, which is all a
-local tool needs; distributing a signed, notarised download is an Apple Developer
-account matter and out of scope here.
+Downloads folder. A build you make yourself is built for your machine and ad-hoc signed,
+which is all a local tool needs.
 
 The icon is itself a 16 pixel sprite, drawn by `mac/make-icon.py` (`make icon` redraws
 it, plus `docs/logo.png` and the page's favicon).
+
+### It keeps its editor current
+
+The app is a window around a web page, so the page is the part that changes most and the
+part worth updating quietly. On launch Myrling asks GitHub Pages whether the hosted
+editor has moved on, and if it has, takes the new page and uses it from the next launch.
+Fixes reach your copy without you downloading anything.
+
+In the **Myrling** menu: **Check for Updates…** asks right now and tells you either way,
+and the toggle beside it turns the launch check off if you would rather it did not.
+Turning it off leaves the app on whatever page it already has, which keeps working.
+
+Nothing is taken on trust. Every published page is signed with an Ed25519 key, over the
+page's version and the SHA-256 of its exact bytes. The app carries the public half, and
+before it keeps a downloaded page it hashes what it actually received and checks the
+signature against it. **If that does not verify, the update is refused** and the app
+stays on the page it has — a page that was tampered with in transit, or served by
+something that is not us, cannot get in that way.
+
+### Cutting a release
+
+`make site` is the publish step for the editor page, and should be run before committing
+any change to `index.html`. It gives the page today's version (`2026.09.22.1`, counting
+up if you ship more than once in a day), copies it to `docs/editor.html`, and writes
+`docs/update.json` — the little manifest the app reads, carrying the version, the hash
+and the signature. Commit and push, and GitHub Pages serves it.
+
+Releasing the app itself, when `mac/` has changed:
+
+    make release VERSION=1.1       # stamps the version, republishes, commits, tags v1.1
+    git push && git push origin v1.1
+
+It refuses if the working tree is dirty — a release tag has to point at a finished
+commit — and stops before touching anything if the signing key is missing. Pushing the
+tag is what actually builds: `.github/workflows/release.yml` builds `Myrling.app` on a
+Mac runner, zips it with `ditto`, and attaches it to a GitHub Release with notes made
+from the commits since the previous tag. Nothing happens until the tag is pushed.
+
+### The signing key
+
+The private key lives at **`~/.myrling/update-key.b64`** — base64 of 32 raw bytes,
+outside the repository on purpose. It is never committed and never copied into CI; the
+release workflow does not need it, because the page is published from the maintainer's
+own machine, not from a runner. `tools/sign.swift` does the signing with CryptoKit
+(macOS ships LibreSSL, which cannot do Ed25519 at all).
+
+**Back it up somewhere safe.** The public half is baked into every copy of the app
+already in people's hands, so if the private key is lost, no page can ever be signed for
+those copies again and their updates stop for good — there is no way to re-key them
+short of everyone downloading the app again. For the same reason `make site` refuses to
+run without it rather than writing an unsigned or stale manifest, which would look fine
+and silently break every installed copy.
 
 ## Why this exists
 
