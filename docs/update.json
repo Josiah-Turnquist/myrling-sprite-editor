@@ -1,13 +1,13 @@
 {
   "page": {
-    "version": "2026.09.22.7",
+    "version": "2026.09.22.8",
     "url": "https://josiah-turnquist.github.io/myrling-sprite-editor/editor.html",
-    "sha256": "5f2ed58bbd47146157f885d522b099ac7941c35f7239762fc2bc0cd5cb5590a0",
-    "signature": "TxXMOQbtoZaIsXHVskCU8zrkCFxuqdsz40+sJlJi0clcSDrvfWHK2Adbua+HgzTHDCsIaPJOGf+FI0CTBGofBg=="
+    "sha256": "a90ccec4196bb49b79c41971c46c41430b074b12b6b2220f61ec1e1d554e89ac",
+    "signature": "iS95PjqLgh/yWJZ0eJew0BNGXHAm1e7bkdzU9L32JxK4S/6qKz0LVM3hu9Vifcwrb72tGsCY+E5rAu4+AugFCQ=="
   },
   "app": {
-    "version": "1.0",
+    "version": "1.0.1",
     "url": "https://github.com/Josiah-Turnquist/myrling-sprite-editor/releases/latest",
-    "notes": "Myrling 1.0 for macOS, from GitHub Releases."
+    "notes": "Myrling 1.0.1 for macOS, from GitHub Releases."
   }
 }
