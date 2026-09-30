@@ -2168,7 +2168,9 @@ function thumb(f, w, h, size) {
   c.width = size; c.height = size;
   var cc = c.getContext('2d');
   cc.imageSmoothingEnabled = false;
-  cc.drawImage(blit(f, w, h), 0, 0, size, size);
+  // fitted, not stretched: a tall sprite should look tall in the list
+  var k = size / Math.max(w, h), tw = Math.max(1, Math.round(w * k)), th = Math.max(1, Math.round(h * k));
+  cc.drawImage(blit(f, w, h), Math.floor((size - tw) / 2), Math.floor((size - th) / 2), tw, th);
   return c;
 }
 // what sits behind the sprite on the canvas. The checkerboard is the honest default
@@ -2491,13 +2493,16 @@ function drawStrip() {
     d.appendChild(x);
     d.onclick = function () { selectSprite(i); };
     d.oncontextmenu = function (e) {
-      var items = [{ label: 'Duplicate sprite', act: function () { duplicateSprite(i); } }];
+      // the list can change under an open menu (kept work arriving, a close), so each
+      // item finds its sprite when it is chosen rather than trusting the row number
+      var on = function (fn) { return function () { var at = S.sprites.indexOf(s); if (at >= 0) fn(at); }; };
+      var items = [{ label: 'Duplicate sprite', act: on(duplicateSprite) }];
       // splitting is for the ones ruled as sheets, adding for the ones that are not:
       // a sheet does not go into another sheet
-      if (sheetOf(s)) items.push({ label: 'Split sheet into sprites\u2026', act: function () { selectSprite(i); openSplitModal(); } });
-      else items.push({ label: 'Add to a sheet\u2026', act: function () { selectSprite(i); openAddToSheetModal(s); } });
+      if (sheetOf(s)) items.push({ label: 'Split sheet into sprites\u2026', act: on(function (at) { selectSprite(at); openSplitModal(); }) });
+      else items.push({ label: 'Add to a sheet\u2026', act: on(function (at) { selectSprite(at); openAddToSheetModal(s); }) });
       items.push('-');
-      items.push({ label: closeArmed === s ? 'Close and lose it' : 'Close sprite\u2026', act: function () { closeSprite(i); }, danger: true });
+      items.push({ label: closeArmed === s ? 'Close and lose it' : 'Close sprite\u2026', act: on(closeSprite), danger: true });
       openCtx(e, items);
     };
     // sprites rearrange by dragging; the green edge says which side it will land on
@@ -2683,6 +2688,9 @@ function duplicateSprite(i) {
   c.dest = src.dest || null;   // a copy saves beside its original, under its own name
   c.tilePitch = src.tilePitch;
   if (sheetOf(src)) c.sheet = { cw: src.sheet.cw, ch: src.sheet.ch, gap: src.sheet.gap, ox: src.sheet.ox, oy: src.sheet.oy };
+  // the rest of what is kept with a sprite comes along too, so the copy is the same thing
+  if (src.cellPitch) c.cellPitch = src.cellPitch;
+  if (src.board && src.board.cols) c.board = { cols: src.board.cols, rows: src.board.rows, cells: (src.board.cells || []).map(function (x) { return x ? { cx: x.cx, cy: x.cy } : null; }) };
   S.sprites.splice(i + 1, 0, c);
   selectSprite(i + 1);
   scheduleSave();
@@ -3753,7 +3761,8 @@ function saveStore() {
       return {
         key: s.key, family: s.family, w: s.w, h: s.h, bytes: s.bytes || [],
         tilePitch: s.tilePitch || 0, sheet: sheetOf(s) || null,
-        cellPitch: s.cellPitch || 0,
+        cellPitch: s.cellPitch || 0, cur: s.cur || 0,
+        sheetCur: s.sheetCur ? { cx: s.sheetCur.cx, cy: s.sheetCur.cy } : null,
         board: s.board && s.board.cols ? { cols: s.board.cols, rows: s.board.rows, cells: (s.board.cells || []).map(function (c) { return c ? { cx: c.cx, cy: c.cy } : null; }) } : null,
         frames: frames
       };
@@ -3802,8 +3811,10 @@ function loadStore() {
     if (idx >= data.sprites.length) {
       restoring = false;
       if (!made.length) { drawKept(); return; }
+      // anything opened while this came back stays the one you are on
+      var was = spr();
       S.sprites = made.concat(S.sprites);
-      selectSprite(Math.min(madeSi, made.length - 1));
+      selectSprite(was ? S.sprites.indexOf(was) : Math.min(madeSi, made.length - 1));
       var lost = data.sprites.length - made.length;
       say('Brought back ' + made.length + (made.length === 1 ? ' sprite' : ' sprites') + ' saved ' + when(S.store.at) + '.' +
         (lost ? ' ' + lost + ' more could not be read back and ' + (lost > 1 ? 'are' : 'is') + ' gone.' : ''), lost ? 'bad' : 'good');
@@ -3829,6 +3840,9 @@ function loadStore() {
         if (rec.tilePitch) s.tilePitch = rec.tilePitch;
         if (rec.sheet && rec.sheet.cw > 0) s.sheet = { cw: rec.sheet.cw, ch: rec.sheet.ch, gap: rec.sheet.gap || 0, ox: rec.sheet.ox || 0, oy: rec.sheet.oy || 0 };
         if (rec.cellPitch) s.cellPitch = rec.cellPitch;
+        // the frame and the cell you were on come back too, clamped in case they no longer fit
+        if (rec.cur > 0) s.cur = Math.min(frames.length - 1, Math.floor(rec.cur));
+        if (sheetOf(s) && rec.sheetCur && rec.sheetCur.cx >= 0 && rec.sheetCur.cy >= 0) setCur(s, rec.sheetCur.cx, rec.sheetCur.cy);
         if (rec.board && rec.board.cols > 0 && rec.board.rows > 0) {
           s.board = { cols: rec.board.cols, rows: rec.board.rows, cells: (Array.isArray(rec.board.cells) ? rec.board.cells : []).map(function (c) { return c && c.cx >= 0 ? { cx: c.cx, cy: c.cy } : null; }) };
         }
@@ -4749,12 +4763,14 @@ function toolsFollow() {
   // under a tall inspector the panel scrolls rather than running off the window
   p.style.maxHeight = Math.max(80, $('app').clientHeight - slot.y - 14) + 'px';
 }
-function toolsPlace(x, y) {
+// only a drag moves the kept spot; a smaller window squeezes the panel on screen for
+// now, and a bigger one later puts it back where you left it
+function toolsPlace(x, y, dragged) {
   var p = $('toolsPanel'), app = $('app');
   var maxX = app.clientWidth - p.offsetWidth - 6, maxY = app.clientHeight - 30;
   x = Math.max(6, Math.min(maxX, x)); y = Math.max(6, Math.min(maxY, y));
   p.style.left = x + 'px'; p.style.top = y + 'px';
-  UI.toolsPos = { x: x, y: y };
+  if (dragged) UI.toolsPos = { x: x, y: y };
 }
 function toolsSetDock(dock) {
   UI.toolsDock = dock;
@@ -4784,7 +4800,7 @@ $('toolsHead').addEventListener('pointerdown', function (e) {
       toolsApply();
     }
     var x = ev.clientX - ar.left - offX, y = ev.clientY - ar.top - offY;
-    toolsPlace(x, y);
+    toolsPlace(x, y, true);
     // near a slot, show the ghost of where it will land
     snap = null;
     toolsSlots().forEach(function (sl) {
@@ -4934,7 +4950,11 @@ $('fileFrame').onchange = function (e) {
 $('bNew').onclick = function () {
   closeAddMenu();
   var n = Math.max(4, Math.min(1024, parseInt($('newSize').value, 10) || 16));
-  var name = 'sprite' + (S.sprites.length + 1);
+  // the next free spriteN: after a close, the count alone can land on a name in use
+  var taken = {}; S.sprites.forEach(function (x) { taken[x.key] = 1; });
+  var nn = S.sprites.length + 1;
+  while (taken['sprite' + nn]) nn++;
+  var name = 'sprite' + nn;
   var made = makeSprite(name, n, n, [blank(n, n)], cleanName($('family').value));
   defaultDest(made);
   S.sprites.push(made);
@@ -5257,7 +5277,7 @@ function plOpen(rec) {
   var im = new Image();
   im.onload = function () {
     var d = toPixels(im);
-    var slug = cleanName(rec.prompt.split(/\s+/).slice(0, 2).join('')) || 'generated';
+    var slug = freeKey(rec.prompt.split(/\s+/).slice(0, 2).join(''), 'generated');
     var sp = makeSprite(slug, d.w, d.h, [d.px], cleanName($('family').value));
     defaultDest(sp);
     S.sprites.push(sp);
