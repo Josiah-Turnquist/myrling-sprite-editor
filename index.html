@@ -3241,9 +3241,10 @@ function frameStats(s, i) {
 // the ones that change how paint lands and what leaves in a file.
 var RULE_DEFS = [
   { id: 'name', name: 'A name and folder that can be filenames' },
-  { id: 'square', name: 'Square frames', gated: true },
+  { id: 'square', name: 'Square frames, or a building’s own footprint', gated: true },
   { id: 'hard', name: 'Every pixel solid or clear', gated: true },
-  { id: 'colours', name: 'At most 32 colours, one palette', gated: true },
+  { id: 'colours', name: 'At most 32 colours a frame, more in some families', gated: true },
+  { id: 'outline', name: 'No drawn black outline where the game draws one' },
   { id: 'empty', name: 'No empty frames' },
   { id: 'same', name: 'All frames the same size' },
   { id: 'feet', name: 'Something on the bottom row (feet)' },
@@ -3251,6 +3252,8 @@ var RULE_DEFS = [
   { id: 'frames', name: 'At least two frames' },
   { id: 'palette', name: 'Later frames stick to frame 0\u2019s colours' },
   { id: 'bytes', name: 'Opened files under 64 KB' },
+  { id: 'panes', name: 'A town building has a window pane to light' },
+  { id: 'rim', name: 'A clipped piece keeps off its own edge' },
   { id: 'tile', name: 'Tile edges meet where they lap', off: true },
   { id: 'edges', name: 'Sheet edges line up' }
 ];
@@ -3259,6 +3262,50 @@ var RULE_DEFS = [
 // frame 0's colours; where the art sits in its tile's square it does not warn of hovering.
 var VARIANT_FAMILIES = { terrain: 1, flora: 1, npcs: 1, town: 1, decor: 1, home: 1 };
 var TILE_ANCHORED = { flora: 1, town: 1, decor: 1, home: 1 };
+// and the rest of its per-family tables: FAMILY_MAX_COLORS, the ceiling a family may raise
+// (every file is counted on its own); FAMILY_FOOTPRINT, the town's buildings and the
+// furniture, each key pinned to its size at 16 px a tile and no other key taken;
+// FAMILY_NO_BAKED_OUTLINE, whose rim the game grows itself; TOWN_UNLIT_KEYS, the ruins
+// that never light a window; and the one pane colour a lit window is drawn in.
+var FAMILY_MAX_COLORS = { npcs: 48, town: 64, ingredients: 48, goods: 48, home: 48, flora: 56 };
+var FAMILY_FOOTPRINT = {
+  town: { cottage: [2, 1], shop: [2, 2], smithy: [2, 2], lodge: [2, 2], hall: [3, 2], inn: [3, 2], guard: [1, 2],
+          home: [1, 1], ruinsmithy: [2, 2], ruininn: [3, 2], ruinhall: [3, 2] },
+  decor: { bed: [1, 1], well: [1, 1], lamp: [1, 1], bench: [1, 1], stall: [1, 1], anvil: [1, 1], dummy: [1, 1],
+           cart: [1, 1], crates: [1, 1], barrel: [1, 1], garden: [2, 1], haypen: [2, 2], rubble: [1, 1] },
+  home: { pillar: [1, 1], chest: [1, 1], rack: [1, 1], bunk: [1, 1], hearth: [1, 1], table: [1, 1], anvil: [1, 1],
+          forge: [1, 1], rug: [1, 1], shelf: [1, 1], bookshelf: [1, 1], armour: [1, 1], crate: [1, 1], plant: [1, 1],
+          barrel: [1, 1], bench: [1, 1], mat: [1, 1] }
+};
+var NO_OUTLINE = { ingredients: 1, goods: 1, flora: 1, npcs: 1, town: 1, decor: 1, home: 1 };
+var TOWN_UNLIT_KEYS = { ruinsmithy: 1, ruininn: 1, ruinhall: 1 };
+var PANE_INK = [0x2d, 0x0d, 0x32];
+function footprintOf(s) {
+  var t = FAMILY_FOOTPRINT[s.family], f = t && t.hasOwnProperty(cleanName(s.key)) ? t[cleanName(s.key)] : null;
+  return f ? { tw: f[0], th: f[1], w: f[0] * 16, h: f[1] * 16 } : null;
+}
+// the town is blitted under a clip the size of its picture, and on decor only the pieces
+// wider than one tile are; ink on the picture's edge loses its grown rim there
+function clippedRim(s) {
+  if (s.family === 'town') return true;
+  var f = footprintOf(s);
+  return s.family === 'decor' && !!f && f.tw * f.th > 1;
+}
+// the silhouette's edge and how much of it is near-black, the packer's boundaryInk: an
+// opaque pixel with a clear or off-picture neighbour is on the edge, and it is ink when no
+// channel is above 40. More than a quarter ink is an outline drawn in.
+function boundaryInk(s, f) {
+  var w = s.w, h = s.h, edge = 0, ink = 0, first = null, x, y;
+  var solid = function (px, py) { return px >= 0 && py >= 0 && px < w && py < h && f[(py * w + px) * 4 + 3] >= 128; };
+  for (y = 0; y < h; y++) for (x = 0; x < w; x++) {
+    var i = (y * w + x) * 4;
+    if (f[i + 3] < 128) continue;
+    if (solid(x - 1, y) && solid(x + 1, y) && solid(x, y - 1) && solid(x, y + 1)) continue;
+    edge++;
+    if (f[i] <= 40 && f[i + 1] <= 40 && f[i + 2] <= 40) { ink++; if (!first) first = { x: x, y: y }; }
+  }
+  return { edge: edge, ink: ink, first: first };
+}
 function ruleOn(id) { return !(UI.ruleOff && UI.ruleOff[id]) && !(UI.ruleGone && UI.ruleGone[id]); }
 function customRules() { return Array.isArray(UI.customRules) ? UI.customRules : []; }
 function rulesChanged() {
@@ -3327,10 +3374,15 @@ function checkSprite(s) {
 
   if (rulesOn()) {
     // a sheet is many sprites in one picture, so it is the cells that have to be square
-    var sq = sheetOf(s);
+    var sq = sheetOf(s), fp = FAMILY_FOOTPRINT[s.family] ? footprintOf(s) : null;
     if (ruleOn('square') && sq) {
       if (sq.cw !== sq.ch) bad.push('<b>Cells are not square</b>, ' + sq.cw + ' by ' + sq.ch + '. Each one becomes a sprite, and a sprite is a square grid.');
       else ok.push('Square cells, ' + sq.cw + ' by ' + sq.ch + ', ' + sheetCols(s) + ' by ' + sheetRows(s) + ' of them.');
+    } else if (ruleOn('square') && FAMILY_FOOTPRINT[s.family]) {
+      // the buildings and the furniture: a closed list, each exactly its footprint
+      if (!fp) bad.push('<b>' + cleanName(s.key) + ' is not a ' + s.family + ' piece the game can draw.</b> The packer only takes ' + Object.keys(FAMILY_FOOTPRINT[s.family]).join(', ') + '.');
+      else if (s.w !== fp.w || s.h !== fp.h) bad.push('<b>' + s.w + ' by ' + s.h + '</b>, but a ' + cleanName(s.key) + ' stands on ' + fp.tw + ' by ' + fp.th + (fp.tw * fp.th === 1 ? ' tile' : ' tiles') + ', so it is exactly ' + fp.w + ' by ' + fp.h + '.');
+      else ok.push(s.w + ' by ' + s.h + ', the size of its ' + fp.tw + ' by ' + fp.th + ' footprint.');
     } else if (ruleOn('square')) {
       if (s.w !== s.h) bad.push('<b>Not square</b>, ' + s.w + ' by ' + s.h + '. A sprite is a square grid.');
       else ok.push('Square, ' + s.w + ' by ' + s.h + '.');
@@ -3341,8 +3393,16 @@ function checkSprite(s) {
       else ok.push('Every pixel is fully solid or fully clear.');
     }
     if (ruleOn('colours')) {
-      if (all > 32) bad.push('<b>' + all + ' colours</b> across the frames, and the packer stops at 32. That many means the picture was resized or blurred rather than drawn.');
-      else ok.push(here + ' colours in this frame, ' + all + ' across all frames.');
+      // the packer counts each file on its own, against its family's ceiling
+      var ceil = Math.max(32, FAMILY_MAX_COLORS[s.family] || 0), most = all, mostAt = 0;
+      if (s.frames.length > 1 && all) {
+        most = 0;
+        // each frame's own colours are already counted in fst; counting them again here on
+        // throwaway sprites was the double pass the kept counts exist to save
+        fst.forEach(function (st, i) { var n = st.keys.length; if (n > most) { most = n; mostAt = i; } });
+      }
+      if (most > ceil) bad.push('<b>' + most + ' colours</b>' + (s.frames.length > 1 ? ' in frame ' + mostAt : '') + ', and the packer stops at ' + ceil + (ceil > 32 ? ' for ' + s.family : '') + '. That many means the picture was resized or blurred rather than drawn.');
+      else ok.push(here + ' colours in this frame, ' + all + ' across all frames' + (ceil > 32 ? ', and ' + s.family + ' may use up to ' + ceil + ' a frame.' : '.'));
     }
   } else {
     ok.push('The game rules are off. ' + here + ' colours in this frame, and soft pixels are kept as painted.');
@@ -3352,6 +3412,18 @@ function checkSprite(s) {
     var empties = [];
     fst.forEach(function (st, i) { if (!st.ink) empties.push(i); });
     if (empties.length) bad.push('Frame ' + empties.join(' and ') + ' ' + (empties.length > 1 ? 'are' : 'is') + ' <b>empty</b>. There is no sprite in that file.');
+  }
+
+  // these families have their 1 px black edge grown by the game, so one drawn in as well
+  // is drawn twice and thickens with the zoom
+  if (ruleOn('outline') && NO_OUTLINE[s.family] && !sheetOf(s)) {
+    var inked = [];
+    s.frames.forEach(function (f, i) {
+      var b = boundaryInk(s, f);
+      if (b.edge && b.ink / b.edge > 0.25) inked.push({ i: i, pc: Math.round(b.ink / b.edge * 100), at: b.first });
+    });
+    if (inked.length) bad.push('<b>A black outline is drawn in</b>: ' + inked[0].pc + '% of the edge of frame ' + inked[0].i + ' is near-black, first at ' + inked[0].at.x + ', ' + inked[0].at.y + '. The game draws the ' + s.family + ' outline itself, so delete the drawn one.');
+    else ok.push('No outline drawn in; the game draws its own.');
   }
 
   if (ruleOn('same')) {
@@ -3452,6 +3524,27 @@ function checkSprite(s) {
   if (ruleOn('bytes')) {
     var big = (s.bytes || []).filter(function (b) { return b > 64 * 1024; });
     if (big.length) warn.push(big.length + ' of the files you opened ' + (big.length > 1 ? 'are' : 'is') + ' over 64 KB, which at this size means an embedded colour profile or editor notes rather than art. Exporting from here strips that.');
+  }
+
+  // the town lights its windows at night by swapping one colour for gold
+  if (ruleOn('panes') && s.family === 'town' && !TOWN_UNLIT_KEYS[cleanName(s.key)] && !sheetOf(s)) {
+    var dark = [];
+    s.frames.forEach(function (f, i) {
+      if (!fst[i].ink) return;   // an empty frame is the empty rule's to report
+      for (var j = 0; j < f.length; j += 4) if (f[j + 3] >= 128 && f[j] === PANE_INK[0] && f[j + 1] === PANE_INK[1] && f[j + 2] === PANE_INK[2]) return;
+      dark.push(i);
+    });
+    if (dark.length) warn.push('Not one pixel of <b>#2d0d32</b> in frame ' + dark.join(' and ') + ', so this building never lights up at night. The game lights windows drawn in exactly that colour.');
+  }
+  // drawn under a clip the size of the picture, so ink on its edge loses the grown rim
+  if (ruleOn('rim') && clippedRim(s) && !sheetOf(s)) {
+    var sides = [];
+    s.frames.forEach(function (f) {
+      var on = function (x, y) { return f[(y * s.w + x) * 4 + 3] >= 128; }, x, y;
+      for (x = 0; x < s.w; x++) { if (on(x, 0) && sides.indexOf('top') < 0) sides.push('top'); if (on(x, s.h - 1) && sides.indexOf('bottom') < 0) sides.push('bottom'); }
+      for (y = 0; y < s.h; y++) { if (on(0, y) && sides.indexOf('left') < 0) sides.push('left'); if (on(s.w - 1, y) && sides.indexOf('right') < 0) sides.push('right'); }
+    });
+    if (sides.length) warn.push('The drawing touches its own <b>' + sides.join(', ') + '</b> edge. It is drawn under a clip the size of the picture, so the outline the game grows there is cut off. Leave a pixel of margin.');
   }
 
   // the panel reads these lines as markup for their <b>, and a rule's name is whatever was
@@ -4827,6 +4920,13 @@ stage.addEventListener('wheel', function (e) {
     return;
   }
   var d = e.deltaY * unit;
+  // On a Mac a wheel notch comes as exactly 40 px with a wheelDeltaY of 120, in the Mac
+  // app and in Chrome alike, so it took three notches to make a step, and notches turned
+  // slowly, each one a new gesture, made none at all. Each one is a whole step. A
+  // trackpad's stream of fractions never looks like that.
+  var clicks = e.wheelDeltaY / 120;
+  if (!e.ctrlKey && e.deltaMode === 0 && clicks && clicks === Math.round(clicks) &&
+      Math.abs(e.deltaY) === Math.abs(clicks) * 40) d = -clicks * 90;
   if (e.timeStamp - wheelAt > 250 || d * wheelAcc < 0) wheelAcc = 0;      // new gesture or turned around
   wheelAt = e.timeStamp;
   wheelAcc += d;
@@ -4901,6 +5001,14 @@ function toPixels(img) {
   }
 }
 
+// The packer reads the family off the folder a file sits in, art-live/<family>/. The Mac
+// app says which folder that is, so there the folder decides, and a terrain sheet opened
+// while a creature was on screen is not checked as a creature. A browser hands out no
+// folder, and the box in the top bar stays the guess.
+function familyOf(h) {
+  var m = h && typeof h.dir === 'string' ? /(?:^|\/)art(?:-live)?\/([^\/]+)\/?$/.exec(h.dir) : null;
+  return m && cleanName(m[1]) === m[1] ? m[1] : '';
+}
 function openFiles(files) {
   closeAddMenu();
   var list = Array.prototype.slice.call(files).filter(function (f) { return /\.png$/i.test(f.name) || /image/.test(f.type); });
@@ -4941,7 +5049,8 @@ function openFiles(files) {
       var other = g.filter(function (e) { return e.d.w !== w || e.d.h !== h; });
       // frames must start at 0 with no gaps, so say when the numbering had to change
       if (same.some(function (e, i) { return e.idx !== i; })) renumbered.push(key);
-      var s = makeSprite(cleanName(key) || 'sprite', w, h, same.map(function (e) { return e.d.px; }), cleanName($('family').value));
+      var fam = familyOf(g[0].d.handle) || cleanName($('family').value);
+      var s = makeSprite(cleanName(key) || 'sprite', w, h, same.map(function (e) { return e.d.px; }), fam);
       s.bytes = same.map(function (e) { return e.d.size || 0; });   // the size of the file as it arrived
       s.handles = same.map(function (e) { return e.d.handle; }).filter(Boolean);  // the files themselves, for Save over
       if (s.handles.length) rememberPlace(s.handles[0], null, s.handles[0].dir || '');
@@ -4949,7 +5058,7 @@ function openFiles(files) {
       if (rd) ruled.push(rd);
       S.sprites.push(s); made++;
       other.forEach(function (e) {
-        var lone = makeSprite((cleanName(key) || 'sprite') + '-' + e.idx, e.d.w, e.d.h, [e.d.px], cleanName($('family').value));
+        var lone = makeSprite((cleanName(key) || 'sprite') + '-' + e.idx, e.d.w, e.d.h, [e.d.px], familyOf(e.d.handle) || fam);
         lone.handles = e.d.handle ? [e.d.handle] : [];
         S.sprites.push(lone);
         split++;
@@ -6342,8 +6451,12 @@ window.addEventListener('keyup', function (e) {
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') commit();
 });
 window.addEventListener('resize', function () { if (spr()) { paintCanvas(); fitStagebar(); } drawPreview(); });
-// last chance to write, for the tab that gets closed mid-stroke
-window.addEventListener('beforeunload', function () { if (saveTimer) { clearTimeout(saveTimer); saveStore(); } });
+// last chance to write, for the tab that gets closed mid-stroke. WebKit sends no
+// beforeunload when the Mac app loads the page again itself (Reload Now after an update),
+// only pagehide, so both are heard; the second finds nothing waiting
+function lastWrite() { if (saveTimer) { clearTimeout(saveTimer); saveStore(); } }
+window.addEventListener('beforeunload', lastWrite);
+window.addEventListener('pagehide', lastWrite);
 
 S.store.on = storageOK();
 redraw();
