@@ -1101,6 +1101,7 @@ function restore(snap) {
   touched(s);
 }
 function undo() {
+  if (drag) endDrag();   // the toolbar and the Mac menu call in here without a key
   var s = spr(); if (!s || !s.hist[s.hi]) return;
   // a change not in the history yet (a paste still floating, pixels nudged before the
   // key came up) is the step to take back; stepping past it lost two steps at once
@@ -1111,6 +1112,7 @@ function undo() {
   restore(s.hist[s.hi]); scheduleSave(); redraw(); say('Undone');
 }
 function redo() {
+  if (drag) endDrag();
   var s = spr(); if (!s || s.hi >= s.hist.length - 1) return;
   dropSelection(true);
   s.hi++; restore(s.hist[s.hi]); scheduleSave(); redraw(); say('Redone');
