@@ -1237,8 +1237,9 @@ function line(x0, y0, x1, y1, erase) {
 // a handful of pixels thrown into a disc under the cursor, like a spray can. Held
 // still it keeps building, so texture grows where you dwell, which is the whole point
 // of it for stone, dirt and rust. Size is the disc, Flow is how many pixels a puff.
-function sprayRadius() { return Math.max(1, Math.min(16, UI.sprayR || 3)); }
-function sprayFlow() { return Math.max(1, Math.min(30, UI.sprayD || 5)); }
+// + and round: a kept "5" or a kept word must read as a number or as unset, never NaN
+function sprayRadius() { return Math.max(1, Math.min(16, Math.round(+UI.sprayR) || 3)); }
+function sprayFlow() { return Math.max(1, Math.min(30, Math.round(+UI.sprayD) || 5)); }
 function spray(cx, cy, erase) {
   var r = sprayRadius(), n = sprayFlow();
   for (var i = 0; i < n; i++) {
@@ -3763,7 +3764,7 @@ function drawPreview() {
   var W = pv.clientWidth || 296;
   var scale = S.scale;
   var mine = 16 * scale;                    // a creature is this big whatever grid it uses
-  var tallest = REF_LIST.reduce(function (a, r) { return Math.max(a, r.upp || HERO_UPP); }, HERO_UPP);
+  var tallest = REF_LIST.reduce(function (a, r) { return Math.max(a, +r.upp || HERO_UPP); }, HERO_UPP);
   var mode = previewMode();
   // the board sets its own height, so a whole little map fits rather than being cropped
   var H = mode === 'board' && s ? Math.round(boardHeight(s)) : Math.round(Math.max(120, Math.min(320, 16 * scale * tallest + 40)));
@@ -3792,7 +3793,7 @@ function drawPreview() {
   var base = H - 20;   // the line every creature's feet stand on
 
   // who is on the strip: your references, with yours in the middle
-  var cast = REF_LIST.map(function (r) { return { ref: r, w: Math.round(mine * (r.upp || HERO_UPP) / HERO_UPP) }; });
+  var cast = REF_LIST.map(function (r) { return { ref: r, w: Math.round(mine * (+r.upp || HERO_UPP) / HERO_UPP) }; });
   cast.splice(Math.floor(cast.length / 2), 0, { ref: null, w: mine, label: 'yours' });
   var gap = 8;
   var width = function (list) { return list.reduce(function (a, c) { return a + c.w; }, 0) + gap * (list.length - 1); };
@@ -5012,7 +5013,7 @@ applyPanels();
 // Where it sits and whether it is folded are kept with the other UI choices.
 function toolsDock() {
   // floating needs a place to float at; a kept choice without one goes back in the column
-  var pos = UI.toolsPos && isFinite(UI.toolsPos.x) && isFinite(UI.toolsPos.y);
+  var pos = UI.toolsPos && typeof UI.toolsPos === 'object' && isFinite(parseFloat(UI.toolsPos.x)) && isFinite(parseFloat(UI.toolsPos.y));
   var d = UI.toolsDock || (pos ? 'free' : 'left');
   return d === 'right' || (d === 'free' && pos) ? d : 'left';
 }
@@ -5054,7 +5055,7 @@ function toolsFollow() {
 function toolsPlace(x, y, dragged) {
   var p = $('toolsPanel'), app = $('app');
   var maxX = app.clientWidth - p.offsetWidth - 6, maxY = app.clientHeight - 30;
-  x = Math.max(6, Math.min(maxX, x)); y = Math.max(6, Math.min(maxY, y));
+  x = Math.max(6, Math.min(maxX, +x || 0)); y = Math.max(6, Math.min(maxY, +y || 0));
   p.style.left = x + 'px'; p.style.top = y + 'px';
   if (dragged) UI.toolsPos = { x: x, y: y };
 }
@@ -5164,7 +5165,7 @@ SCALES.forEach(function (n) {
   };
   $('scales').appendChild(b);
 });
-if (SCALES.indexOf(UI.scale) >= 0) { S.scale = UI.scale; Array.prototype.forEach.call($('scales').children, function (c, i) { c.className = SCALES[i] === S.scale ? 'on' : ''; }); }
+if (SCALES.indexOf(+UI.scale) >= 0) { S.scale = +UI.scale; Array.prototype.forEach.call($('scales').children, function (c, i) { c.className = SCALES[i] === S.scale ? 'on' : ''; }); }
 
 // the picker is what hands back writable handles, which is what makes Save over work.
 // A browser without it, or one that refuses it here, gets the plain input as before.
@@ -5772,7 +5773,7 @@ $('fps').oninput = function () {
   UI.fps = S.fps; saveUI();
   if (S.playing) setPlaying(true);
 };
-if (UI.fps >= 1 && UI.fps <= 20) { $('fps').value = UI.fps; $('fps').oninput.call($('fps')); }
+if (+UI.fps >= 1 && +UI.fps <= 20) { $('fps').value = Math.round(+UI.fps); $('fps').oninput.call($('fps')); }
 $('fpsChip').onclick = function (e) { e.stopPropagation(); $('speedPop').className = $('speedPop').className === 'panel show' ? 'panel' : 'panel show'; };
 $('speedPop').onclick = function (e) { e.stopPropagation(); };
 $('pick').oninput = function () { setColor(hex2rgb(this.value)); };
@@ -5829,8 +5830,27 @@ window.addEventListener('drop', function (e) {
 });
 
 // keys
+// Cmd+S saves from anywhere, a text box included. With the name box focused it used to
+// fall through to the browser's own Save Page. The box is let go of first, so a name
+// typed and not yet entered is the name the files are written under.
+function saveKey() {
+  if ($('bSave').style.display !== 'none' && !$('bSave').disabled) $('bSave').click(); else exportAll(false, false);
+}
 window.addEventListener('keydown', function (e) {
   var el = e.target, t = el.tagName;
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && String(e.key).toLowerCase() === 's') {
+    e.preventDefault();
+    if (keyWait) { keyWait = null; drawKeys(); }
+    if (drag) endDrag();
+    if ((t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') && el.blur) el.blur();   // fires its change first
+    // and should the change not have fired (a value put in by autofill or a script), the
+    // name and the folder are taken from their boxes all the same
+    var s = spr();
+    if (s && $('key').value !== s.key) $('key').onchange();
+    if (s && $('family').value !== s.family) $('family').onchange();
+    saveKey();
+    return;
+  }
   if (t === 'TEXTAREA' || t === 'SELECT' || el.isContentEditable) return;
   // a text box keeps every key. A slider, a tick box or a colour well only wants its
   // own arrows, space and Enter: blocking everything there left Cmd+Z and the tool keys
@@ -5905,11 +5925,6 @@ window.addEventListener('keydown', function (e) {
     return;
   }
   if (meta && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
-  if (meta && e.key.toLowerCase() === 's') {
-    e.preventDefault();
-    if ($('bSave').style.display !== 'none' && !$('bSave').disabled) $('bSave').click(); else exportAll(false, false);
-    return;
-  }
   if (!meta && !e.altKey && !e.shiftKey) {
     var k = e.key.toLowerCase();
     for (var i = 0; i < KEY_ACTIONS.length; i++) {
