@@ -20,7 +20,8 @@ and the landing page lives at
 [josiah-turnquist.github.io/myrling-sprite-editor](https://josiah-turnquist.github.io/myrling-sprite-editor/).
 Saving in place works there too — the page is served over HTTPS, so Chrome and Edge
 allow it. After editing `index.html`, `make site` refreshes the hosted copy — and gives
-it a new version number, which is how installed Mac apps find out there is one.
+it a new version number, which is how installed Mac apps find out there is one. A run
+that finds the page unchanged leaves the published version alone.
 
 ## The window
 
@@ -50,7 +51,8 @@ for your own.
 The same editor in its own window and Dock icon, with in-place saving done natively.
 There is a built copy on the
 [releases page](https://github.com/Josiah-Turnquist/myrling-sprite-editor/releases/latest):
-download the zip, unzip it, drag Myrling into Applications.
+download the zip, unzip it, drag Myrling into Applications. It runs on macOS 11.3 or
+later, on Apple silicon and Intel alike.
 
 The download is signed with an Apple Developer ID and notarised by Apple, so it opens
 with an ordinary double-click — no right-click, no warning box. Every release is built,
@@ -67,8 +69,9 @@ The wrapper is one Swift file, `mac/main.swift`, around the very same `index.htm
 web page is not changed at all. WebKit has no File System Access API, so `mac/bridge.js`
 fills in the little of it the editor uses and hands the work to the Swift side: Open PNGs
 shows the real open panel, Save over writes the real files, Export lands in your
-Downloads folder. A build you make yourself is built for your machine and ad-hoc signed,
-which is all a local tool needs.
+Downloads folder. A build you make yourself is ad-hoc signed, which is all a local tool
+needs, and is built the same way as the download: for both kinds of Mac, and for the
+oldest macOS that `mac/Info.plist` names rather than the one you happen to run.
 
 The icon is itself a 16 pixel sprite, drawn by `mac/make-icon.py` (`make icon` redraws
 it, plus `docs/logo.png` and the page's favicon).
@@ -97,7 +100,10 @@ something that is not us, cannot get in that way.
 any change to `index.html`. It gives the page today's version (`2026.09.22.1`, counting
 up if you ship more than once in a day), copies it to `docs/editor.html`, and writes
 `docs/update.json` — the little manifest the app reads, carrying the version, the hash
-and the signature. Commit and push, and GitHub Pages serves it.
+and the signature. Commit and push, and GitHub Pages serves it. If nothing in the page
+changed since it was last published, it keeps the published version and signature as
+they are, so installed copies are not sent the same editor again under a new number;
+`python3 tools/publish.py --force` publishes a new version anyway.
 
 Releasing the app itself, when `mac/` has changed:
 
@@ -105,10 +111,14 @@ Releasing the app itself, when `mac/` has changed:
     git push && git push origin v1.1
 
 It refuses if the working tree is dirty — a release tag has to point at a finished
-commit — and stops before touching anything if the signing key is missing. Pushing the
-tag is what actually builds: `.github/workflows/release.yml` builds `Myrling.app` on a
-Mac runner, zips it with `ditto`, and attaches it to a GitHub Release with notes made
-from the commits since the previous tag. Nothing happens until the tag is pushed.
+commit — or if the version is not newer than the current one, and stops before touching
+anything if the page needs signing and the signing key is missing; if publishing fails
+partway, the version stamp is put back. Pushing the tag is what actually builds:
+`.github/workflows/release.yml` checks the tag matches `mac/Info.plist`, builds
+`Myrling.app` on a Mac runner, signs it with the Developer ID, notarises it with an App
+Store Connect API key, staples it, zips it with `ditto`, and attaches it to a GitHub
+Release with notes made from the commits since the previous tag. Nothing happens until
+the tag is pushed.
 
 ### The signing key
 
@@ -122,8 +132,8 @@ own machine, not from a runner. `tools/sign.swift` does the signing with CryptoK
 already in people's hands, so if the private key is lost, no page can ever be signed for
 those copies again and their updates stop for good — there is no way to re-key them
 short of everyone downloading the app again. For the same reason `make site` refuses to
-run without it rather than writing an unsigned or stale manifest, which would look fine
-and silently break every installed copy.
+publish a changed page without it rather than writing an unsigned or stale manifest,
+which would look fine and silently break every installed copy.
 
 ## Why this exists
 
