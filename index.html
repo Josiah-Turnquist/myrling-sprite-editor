@@ -1378,6 +1378,12 @@ function clearSelection() {
     // and keeping the lift brought them back on the next nudge.
     f.set(lift.base);
     lift = null;
+    // the box stays where the pixels were, but only the part of it still on the picture:
+    // one carried off the edge would otherwise be left at rest out of sight, where it
+    // holds nothing and a crop to it makes a blank picture
+    var on = boxAnd(b, { x: 0, y: 0, w: s.w, h: s.h });
+    S.sel = on.w > 0 && on.h > 0 ? on : null;
+    if (!S.sel) $('selHint').style.display = 'none';
   } else {
     for (var y = Math.max(0, b.y); y < Math.min(s.h, b.y + b.h); y++) {
       for (var x = Math.max(0, b.x); x < Math.min(s.w, b.x + b.w); x++) {
@@ -1390,6 +1396,10 @@ function clearSelection() {
 }
 // Arrows move the pixels inside the box, or the whole picture when there is no box.
 // Moving the whole picture must NOT leave a box behind: a box changes where paint lands.
+// The move is a step when the key comes up, and it is a step of the sprite that moved:
+// with the key still held another sprite can be opened, duplicated or chosen, and the
+// commit landed on that one, leaving the move out of the history.
+var nudged = null;
 function nudge(dx, dy) {
   var s = spr(); if (!s) return;
   if (S.sel) {
@@ -1406,7 +1416,13 @@ function nudge(dx, dy) {
     out[di] = f[si]; out[di + 1] = f[si + 1]; out[di + 2] = f[si + 2]; out[di + 3] = f[si + 3];
   }
   s.frames[s.cur] = out;
+  if (nudged && nudged !== s) settleNudge();   // a second arrow held over another sprite
+  nudged = s;
   redraw();
+}
+function settleNudge() {
+  var s = nudged; nudged = null;
+  if (s && S.sprites.indexOf(s) >= 0) commit(s);
 }
 
 // ---------- the whole picture: canvas size, scale, crop, trim, flip, rotate ----------
@@ -1825,7 +1841,8 @@ function selectCell(cx, cy) {
 // the cell goes into the same clipboard a dragged box does, so Cmd+V knows about it too
 function copyCell(cx, cy) {
   var s = spr(), f = frm(); if (!sheetOf(s) || !f) return;
-  var r = cellRect(s, cx, cy); if (!r) return;
+  // a cell the grid no longer has (the menu outlived a re-rule) has no pixels to copy
+  var r = cellRect(s, cx, cy); if (!r || r.w < 1 || r.h < 1) return;
   var buf = new Uint8ClampedArray(r.w * r.h * 4);
   for (var y = 0; y < r.h; y++) {
     var si = ((r.y + y) * s.w + r.x) * 4;
@@ -2880,7 +2897,7 @@ function openCtx(e, items) {
 }
 function closeCtx() { $('ctxMenu').className = 'panel'; }
 function duplicateFrame(i) {
-  var s = spr(); if (!s) return;
+  var s = spr(); if (!s || !s.frames[i]) return;   // a menu can outlive the frame it was opened on
   dropSelection();
   s.frames.splice(i + 1, 0, s.frames[i].slice());
   s.cur = i + 1;
@@ -5954,6 +5971,11 @@ window.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { e.preventDefault(); closeAddToSheetModal(); }
     return;
   }
+  // a right-click menu is about the frame, the cell or the sprite it was opened on, and
+  // a key can take that away under it (Backspace a frame, undo a ruling): its Duplicate
+  // frame then threw on a frame that was gone. A key that acts shuts it first, as a
+  // menu does, and Esc only shuts it
+  if (!bare && $('ctxMenu').className === 'panel show') { closeCtx(); if (e.key === 'Escape') return; }
   // [ and ] walk the sheet a cell at a time; with Shift they select as they go
   // with Shift held most layouts send { and } rather than [ and ]
   var cellStep = e.key === '[' || e.key === '{' ? -1 : e.key === ']' || e.key === '}' ? 1 : 0;
@@ -5962,7 +5984,6 @@ window.addEventListener('keydown', function (e) {
     stepCell(cellStep, e.shiftKey);
     return;
   }
-  if (e.key === 'Escape' && $('ctxMenu').className === 'panel show') { closeCtx(); return; }
   if (e.key === 'Escape' && $('imgMenu').className === 'show') { $('imgMenu').className = ''; return; }
   if (e.key === 'Escape' && ($('addMenu').className === 'show' || $('keptPop').className === 'panel show' || $('speedPop').className === 'panel show')) {
     $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; return;
@@ -6020,7 +6041,10 @@ window.addEventListener('keydown', function (e) {
   if ($('addMenu').className === 'show' && $('addMenu').contains(e.target)) { e.target.blur(); closeAddMenu(); }
 });
 window.addEventListener('keyup', function (e) {
-  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') commit();
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    settleNudge();
+    commit();
+  }
 });
 window.addEventListener('resize', function () { if (spr()) paintCanvas(); drawPreview(); });
 // last chance to write, for the tab that gets closed mid-stroke
