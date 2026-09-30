@@ -7,8 +7,10 @@ Open it and draw.
 
     open index.html
 
-No build, no server, no install, no internet. Double click the file, or drag it onto a
-browser window. Everything runs locally and nothing is uploaded anywhere. Use Chrome or
+No build, no server, no install. Double click the file, or drag it onto a browser
+window. Everything runs locally and your drawings never leave your machine: the only
+thing that ever goes out is a text prompt, and only if you use the optional PixelLab
+generator. (The Mac app also asks GitHub whether a newer editor exists.) Use Chrome or
 Edge if you can: they are the browsers that can save your edits straight back into the
 files you opened. There is also a small Mac app, below.
 
