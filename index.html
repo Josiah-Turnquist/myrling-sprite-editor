@@ -1411,15 +1411,22 @@ function beginLift() {
 }
 function stampLift(nx, ny) {
   var s = spr();
-  var f = s.frames[s.cur];
+  var f = s.frames[s.cur], b = lift.buf;
   f.set(lift.base);
-  for (var y = 0; y < lift.h; y++) for (var x = 0; x < lift.w; x++) {
-    var tx = nx + x, ty = ny + y;
-    if (!inside(s, tx, ty)) continue;
-    var si = (y * lift.w + x) * 4;
-    if (lift.buf[si + 3] === 0) continue;
-    var di = (ty * s.w + tx) * 4;
-    f[di] = lift.buf[si]; f[di + 1] = lift.buf[si + 1]; f[di + 2] = lift.buf[si + 2]; f[di + 3] = lift.buf[si + 3];
+  // the box clipped to the picture once rather than tested a pixel at a time, and a pixel
+  // moved as one four-byte word: dragging a 700 by 1400 box was 7 ms a pointer move
+  var x0 = Math.max(0, -nx), x1 = Math.min(lift.w, s.w - nx), y0 = Math.max(0, -ny), y1 = Math.min(lift.h, s.h - ny);
+  var word = !(f.byteOffset & 3) && !(b.byteOffset & 3);
+  var f32 = word ? new Uint32Array(f.buffer, f.byteOffset, f.length >> 2) : null;
+  var b32 = word ? new Uint32Array(b.buffer, b.byteOffset, b.length >> 2) : null;
+  for (var y = y0; y < y1; y++) {
+    var srow = y * lift.w, drow = (ny + y) * s.w + nx;
+    for (var x = x0; x < x1; x++) {
+      var si = srow + x, di = drow + x;
+      if (b[si * 4 + 3] === 0) continue;
+      if (word) { f32[di] = b32[si]; continue; }
+      f[di * 4] = b[si * 4]; f[di * 4 + 1] = b[si * 4 + 1]; f[di * 4 + 2] = b[si * 4 + 2]; f[di * 4 + 3] = b[si * 4 + 3];
+    }
   }
   S.sel.x = nx; S.sel.y = ny;
 }
