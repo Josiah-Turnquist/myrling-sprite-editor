@@ -4665,6 +4665,13 @@ stage.addEventListener('wheel', function (e) {
     return;
   }
   var d = e.deltaY * unit;
+  // On a Mac a wheel notch comes as exactly 40 px with a wheelDeltaY of 120, in the Mac
+  // app and in Chrome alike, so it took three notches to make a step, and notches turned
+  // slowly, each one a new gesture, made none at all. Each one is a whole step. A
+  // trackpad's stream of fractions never looks like that.
+  var clicks = e.wheelDeltaY / 120;
+  if (!e.ctrlKey && e.deltaMode === 0 && clicks && clicks === Math.round(clicks) &&
+      Math.abs(e.deltaY) === Math.abs(clicks) * 40) d = -clicks * 90;
   if (e.timeStamp - wheelAt > 250 || d * wheelAcc < 0) wheelAcc = 0;      // new gesture or turned around
   wheelAt = e.timeStamp;
   wheelAcc += d;
