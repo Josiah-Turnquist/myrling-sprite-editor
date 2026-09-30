@@ -1120,7 +1120,14 @@ var HIST_STEPS = 200, HIST_BYTES = 40 * 1024 * 1024;
 // the sprite can be named, for a stroke that has to land on the sprite it began on
 function commit(s) {
   s = s || spr(); if (!s) return;
-  if (sameAsHead(s)) return;
+  if (sameAsHead(s)) {
+    // nothing to keep, but a scale by 1 or a flip that gives the same picture back has
+    // still moved the cell numbers on (carryGrid). The step on screen takes the new
+    // numbering, or noteWhere, which only writes into a step of the same numbering,
+    // forgot every cell and board square chosen from here to the next change
+    if (s.hist[s.hi]) s.hist[s.hi].gen = s.gridGen || 0;
+    return;
+  }
   s.hist.length = s.hi + 1;
   s.hist.push(snapshot(s));
   var each = s.w * s.h * 4 * s.frames.length;
