@@ -1128,6 +1128,9 @@ function commit(s) {
     if (s.hist[s.hi]) s.hist[s.hi].gen = s.gridGen || 0;
     return;
   }
+  // the step being left keeps the cell you were on, as an undo or a turn leaves it: an
+  // undo back into it from another numbering brings that cell back, not the one it began with
+  noteWhere(s);
   s.hist.length = s.hi + 1;
   s.hist.push(snapshot(s));
   var each = s.w * s.h * 4 * s.frames.length;
