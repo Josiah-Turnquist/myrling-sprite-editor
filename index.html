@@ -593,7 +593,7 @@ if (location.hash === '#forget') {
     <button id="zoomLabel" title="Fit (0)">16x</button>
     <button id="zIn" class="z" title="Zoom in">+</button>
     <button id="bGrid" class="on">Grid</button>
-    <button id="bGuides" class="on" title="The feet line and the centre line">Guides</button>
+    <button id="bGuides" class="on" title="Centre lines across and down the middle">Guides</button>
   </div>
 
   <div id="side" class="panel">
@@ -2737,16 +2737,16 @@ function paintCanvas() {
     }
   }
 
-  // guides: the feet line and the centre line
+  // guides: a centre line each way, so a sprite can be balanced about its middle. They
+  // fall on the pixel edge nearest the middle, never through a pixel
   if (S.guides) {
-    var footOk = bottomRowPainted(s, s.frames[s.cur]);
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = footOk ? 'rgba(210,170,70,.85)' : 'rgba(209,104,90,.95)';
-    ctx.beginPath(); ctx.moveTo(0, H - z); ctx.lineTo(W, H - z); ctx.stroke();
     ctx.strokeStyle = 'rgba(120,160,220,.6)';
     ctx.lineWidth = 1;
-    var cxp = Math.round(s.w / 2) * z;
-    ctx.beginPath(); ctx.moveTo(cxp + .5, 0); ctx.lineTo(cxp + .5, H); ctx.stroke();
+    var cxp = Math.round(s.w / 2) * z, cyp = Math.round(s.h / 2) * z;
+    ctx.beginPath();
+    ctx.moveTo(cxp + .5, 0); ctx.lineTo(cxp + .5, H);
+    ctx.moveTo(0, cyp + .5); ctx.lineTo(W, cyp + .5);
+    ctx.stroke();
   }
 
   // selection box

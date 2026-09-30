@@ -476,7 +476,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     Tool(id: "flipV", label: "Flip vertical", symbol: "arrow.up.and.down", tip: "Flip top to bottom", js: "EDITOR.image.flipV()"),
     Tool(id: "rotate", label: "Rotate", symbol: "rotate.right", tip: "Rotate a quarter turn clockwise", js: "EDITOR.image.rotate()"),
     Tool(id: "grid", label: "Grid", symbol: "grid", tip: "Show or hide the pixel grid (G)", js: "document.getElementById('bGrid').click()"),
-    Tool(id: "guides", label: "Guides", symbol: "ruler", tip: "Show or hide the feet line and the centre line", js: "document.getElementById('bGuides').click()")
+    Tool(id: "guides", label: "Guides", symbol: "ruler", tip: "Show or hide the centre lines", js: "document.getElementById('bGuides').click()")
   ]
   func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
     var ids: [NSToolbarItem.Identifier] = []

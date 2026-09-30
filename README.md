@@ -302,7 +302,7 @@ anyway** button appears next to it.
 
 - **Nothing on the bottom row.** The game plants the bottom row of the picture at the
   creature's feet. If nothing is painted there the creature hovers on every screen in the
-  game. Empty rows belong at the top. The guide line at the bottom of the canvas turns red.
+  game. Empty rows belong at the top.
 - **One frame only.** The game wants two, a standing one and a stepping one.
 - **No clear pixels at all**, which means the background got painted in.
 - **A later frame using colours frame 0 does not have.** All the frames of one creature
