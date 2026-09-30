@@ -179,7 +179,8 @@ name as you type it:
 Hover it for the command to run after: `npm run pack-art`.
 
 **Folder** is the folder under `art-live`. `creatures` for an enemy. The others the game
-uses are `bosses`, `items`, `hero`, `steeds`, `gates` and `stairs`.
+uses are `bosses`, `items`, `hero`, `steeds`, `gates`, `stairs`, `terrain` and
+`projectiles`; the box offers them as you type.
 
 **Name** is the creature's key. Lowercase letters, digits, `-` and `_`, starting with a
 letter or a digit. Anything else is dropped, and the bar says what the name will actually
@@ -208,18 +209,18 @@ game's art folder once and a brand new creature saves straight into it.
 **The editor remembers where the work is.** Open files or pick a folder, and from then on
 every picker starts there and a brand new sprite saves there too, so you set the folder
 once rather than every time. The Mac app keeps that place between launches. A browser
-cannot hold onto a folder across visits, so after a reload the path bar says which folder
-it was and asks you to open it again rather than pretending it is still set.
+cannot hold onto a folder across visits, so after a reload the path bar's tooltip says which
+folder it was and asks you to open it again rather than pretending it is still set.
 
 Plain words about how it behaves:
 
 - The browser asks **once per file** the first time, with its own "save changes" prompt.
-  If it only lets some through on the first press, the top bar says so: press Save over
-  again for the rest.
+  If it only lets some through on the first press, the status line says so: press Save
+  over again for the rest.
 - It obeys the same checks as Export. A sprite the packer would refuse arms the button to
   **Save anyway?** for a second press, the same way Close asks twice.
-- A frame added since opening has no file yet, so that one goes to downloads and the top
-  bar tells you to put it next to the others.
+- A frame added since opening has no file yet, so that one goes to downloads, and the
+  status line says so: put it next to the others.
 - Renaming the sprite makes the names stop matching the files, so the button greys out
   and Export takes over. Same if the sprite was only brought back from browser storage:
   the browser cannot keep file permissions across visits, so open the files again to get
@@ -238,9 +239,12 @@ and sent only to api.pixellab.ai, when you press Generate; each image spends Pix
 status bar says roughly what a batch cost. In the Mac app the call travels natively.
 
 **Every generation is kept.** The history at the bottom of the dialog holds every image
-that ever came back, newest first, each one a click away from becoming a sprite again —
-a prompt you liked last week is still there. One button writes the whole history into a
-folder of PNG files, named by date and prompt, if you want it on disk or in a repo.
+that came back, newest first, each one a click away from becoming a sprite again. The
+newest sixty or so stay in the browser for next time — a prompt you liked last week is
+still there — and fewer when the open sprites need the room; the older ones last until
+the tab closes, and the dialog says when that is happening. One button writes the whole
+history into a folder of PNG files, named by date and prompt, if you want it on disk or
+in a repo.
 
 ## Opening art
 
@@ -248,12 +252,12 @@ folder of PNG files, named by date and prompt, if you want it on disk or in a re
 - Files named `bat-0.png` and `bat-1.png` open as **one sprite with two frames**. That is
   the same naming the game's packer reads.
 - A file that will not open no longer loses the rest of the drop. The ones that worked open
-  and the top bar names the ones that did not.
+  and the status line names the ones that did not.
 - Frames have to start at 0 with no gaps, so a set numbered 2 and 4 opens renumbered to 0
-  and 1, and the top bar says so.
+  and 1, and the status line says so.
 - Anything else opens as its own sprite. To pull a loose file in as another frame of the
-  sprite you are working on, use **Add from file** in the frames row.
-- **New sprite** starts a blank square at the size in the box next to it. 16 is the usual
+  sprite you are working on, use **From file** in the frames row.
+- **Empty sprite** starts a blank square at the size in the box next to it. 16 is the usual
   size for a creature.
 
 Open sprites are listed down the left. Click one to work on it, and drag one up or down to
@@ -357,7 +361,7 @@ kept. Either way a stroke blends each pixel once, so a slow drag does not darken
 own line.
 
 Zoom with the wheel over the canvas (a pinch on a trackpad does the same), with `-` and
-`+`, or with Fit. The zoom holds on the pixel under the pointer. To move about a picture
+`+`, or fit the picture to the window with `0` or a click on the zoom number. The zoom holds on the pixel under the pointer. To move about a picture
 bigger than the window, scroll with Shift held (a trackpad goes both ways at once), or
 drag with the middle mouse button.
 
