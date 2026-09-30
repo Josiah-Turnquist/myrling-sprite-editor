@@ -342,6 +342,9 @@ final class Updater: NSObject, URLSessionTaskDelegate {
   let source: UpdateSource
   let store: PageStore
   private var busy = false
+  // a second ask while a check is out (Check for Updates… just as the quiet launch
+  // check runs) waits for that check's answer rather than being told it failed
+  private var waiting: [(PageNews, AppNews?) -> Void] = []
   // ephemeral: a check keeps no cache and no cookies of its own between runs
   private lazy var session = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: nil)
 
@@ -361,10 +364,16 @@ final class Updater: NSObject, URLSessionTaskDelegate {
   // The whole check, from the manifest to a page sitting in the cache. It answers on the
   // main thread and never blocks the caller; every way it can go wrong ends in .failed.
   func check(done: @escaping (PageNews, AppNews?) -> Void) {
-    if busy { done(.failed("a check was already running"), nil); return }
+    if busy { waiting.append(done); return }
     busy = true
     let finish: (PageNews, AppNews?) -> Void = { news, app in
-      DispatchQueue.main.async { self.busy = false; done(news, app) }
+      DispatchQueue.main.async {
+        self.busy = false
+        let others = self.waiting
+        self.waiting = []
+        done(news, app)
+        others.forEach { $0(news, app) }
+      }
     }
     fetch(source.manifest) { data, why in
       guard let data = data else { finish(.failed(why ?? "no answer"), nil); return }
@@ -535,6 +544,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     // the update can wait: the window is up and drawable first, and nothing about
     // launching depends on the network being there at all
     DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+      guard let self = self, UserDefaults.standard.bool(forKey: self.autoKey) else { return }
+      self.runCheck(quiet: true)
+    }
+    // and again every few hours, so an app left open for days still hears about fixes.
+    // The check is quiet and cheap: it downloads the page only when there is a new one.
+    Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { [weak self] _ in
       guard let self = self, UserDefaults.standard.bool(forKey: self.autoKey) else { return }
       self.runCheck(quiet: true)
     }
@@ -745,7 +760,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     appMenu.addItem(.separator())
     pageItem(appMenu, "Settings…", "EDITOR.showKeys()", ",")
     appMenu.addItem(.separator())
-    appMenu.addItem(withTitle: "Hide", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+    appMenu.addItem(withTitle: "Hide Myrling", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+    let others = appMenu.addItem(withTitle: "Hide Others",
+                                 action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+    others.keyEquivalentModifierMask = [.command, .option]
+    appMenu.addItem(withTitle: "Show All",
+                    action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+    appMenu.addItem(.separator())
     appMenu.addItem(withTitle: "Quit Myrling",
                     action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     appItem.submenu = appMenu
@@ -781,6 +802,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     pageItem(view, "Zoom Out", "document.getElementById('zOut').click()", "-", pageHasKey: true)
     pageItem(view, "Fit", "EDITOR.fitView()", "0", pageHasKey: true)
     viewItem.submenu = view
+    // Close is Cmd+W as everywhere else; with one window it quits, which saves first
+    let windowItem = NSMenuItem(); main.addItem(windowItem)
+    let window = NSMenu(title: "Window")
+    window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+    window.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+    window.addItem(.separator())
+    window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+    windowItem.submenu = window
+    NSApp.windowsMenu = window
     return main
   }
 }
