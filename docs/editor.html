@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="myrling-version" content="2026.09.30.1">
+<meta name="myrling-version" content="2026.09.30.2">
 <title>Myrling</title>
 <script>
 // If the page froze last time, open with #forget on the URL (or add it now) and
@@ -21,6 +21,9 @@ if (location.hash === '#forget') {
     --bad:#d1685a; --warn:#c9a24a; --good:#71a35c;
     --shadow:0 6px 24px rgba(0,0,0,.4);
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    /* the page is dark whatever the system says, so the browser's own scrollbars, menus
+       and pickers are drawn dark too rather than as white slabs on a light system */
+    color-scheme:dark;
   }
   *{box-sizing:border-box; margin:0; padding:0}
   html,body{height:100%}
@@ -67,6 +70,10 @@ if (location.hash === '#forget') {
     border:1px solid var(--line); border-radius:3px; padding:0 4px; line-height:14px;
   }
   .lab{font-size:10px; letter-spacing:.08em; color:var(--dim); font-weight:600; text-transform:uppercase}
+  /* a ring for whatever the keyboard lands on, buttons and the rows and swatches that act
+     like them; the browser's own ring is lost against these dark panels */
+  button:focus-visible,[role=button]:focus-visible,input[type=checkbox]:focus-visible,input[type=radio]:focus-visible,
+  input[type=range]:focus-visible,input[type=color]:focus-visible,select:focus-visible{outline:2px solid #7d9dd0; outline-offset:1px}
 
   /* ---------- the stage: the canvas is the whole window, the panels float over it ---------- */
   #app{position:relative; width:100%; height:100%; overflow:hidden; --leftW:172px; --sideW:320px}
@@ -146,7 +153,7 @@ if (location.hash === '#forget') {
   .item.markT{box-shadow:0 -3px 0 -1px var(--green)}
   .item.markB{box-shadow:0 3px 0 -1px var(--green)}
   .item .x{color:var(--dim); font-size:13px; padding:0 3px; display:none; line-height:1}
-  .item:hover .x{display:block}
+  .item:hover .x,.item:focus-within .x{display:block}
   .item .x:hover{color:var(--hot)}
   .item .x.armed{display:block; color:#eda99c}
   #addMenu{
@@ -162,6 +169,10 @@ if (location.hash === '#forget') {
   #newSize{width:54px}
 
   #toolsPanel{display:flex; flex-direction:column; padding:6px; flex:none}
+  /* in the column it shares the height with the sprites, so on a short window it scrolls
+     rather than running off the bottom with the colour and the palette out of reach */
+  #leftcol > #toolsPanel{flex:0 1 auto; min-height:0; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent}
+  #toolsPanel > *{flex-shrink:0}
   .tool{
     display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:7px; cursor:pointer;
     background:transparent; border:0; color:var(--text); width:100%; text-align:left;
@@ -178,11 +189,14 @@ if (location.hash === '#forget') {
   #toolsHead .icon{padding:2px; width:24px; height:22px; display:inline-flex; align-items:center; justify-content:center; color:var(--dim)}
   #toolsHead .icon svg{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round}
   #toolsHead .icon:hover{color:var(--hot); background:var(--sel)}
-  #toolsPanel.floating{position:absolute; z-index:6; width:var(--leftW); margin:0}
+  #toolsPanel.floating{position:absolute; z-index:6; width:var(--leftW); margin:0; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent}
   #toolsPanel.dockedRight{width:var(--sideW); overflow:auto}
-  #toolsPanel:not(.dockedRight){max-height:none !important}
+  #toolsPanel:not(.floating){max-height:none !important}
   #toolsPanel .crow{display:flex; align-items:center; gap:8px; padding:4px 6px}
   #toolsPanel .crow #hex{width:82px}
+  /* the backdrop swatches wrap inside the panel, the picker staying at the end, rather
+     than pushing it out past the panel's edge at the column's usual width */
+  #canvasBgs{flex:1 1 auto; min-width:0; flex-wrap:wrap}
   #shapeRow{display:flex}
   #shapeRow button{flex:1; font-size:11px; padding:4px 0}
   #sprayRow{display:flex; flex-direction:column; gap:2px; padding:4px 6px 0}
@@ -292,7 +306,14 @@ if (location.hash === '#forget') {
   #frameActs .fbtn.del:hover{color:#eda99c; border-color:#6b3a33; background:#2a1c19}
   #frameActs .fgap{width:1px; height:32px; background:var(--line); flex:none; margin:0 4px}
   #zoomLabel{font:12px var(--mono); width:44px; height:24px; padding:0; text-align:center; flex:none}
-  #stagebar button.z{width:24px; height:24px; padding:0}
+  #stagebar button.z{width:24px; height:24px; padding:0; flex:none}
+  #stagebar > button{flex:none}
+  /* a window too narrow for the whole row: the frame buttons drop their words (the
+     tooltip still names each), and whatever is left scrolls rather than hiding under
+     the inspector and off the edge */
+  #stagebar.tight #frameActs .fbtn{padding:0 7px}
+  #stagebar.tight #frameActs .fbtn span{display:none}
+  #stagebar.tight{overflow-x:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent}
 
   /* right inspector */
   #side{
@@ -381,7 +402,10 @@ if (location.hash === '#forget') {
     position:absolute; left:50%; bottom:84px; transform:translateX(-50%); z-index:7; max-width:min(720px,60%);
     padding:6px 12px; border-radius:8px; background:var(--panel); border:1px solid var(--line); box-shadow:var(--shadow);
     color:var(--text); font-size:12px; opacity:0; pointer-events:none; transition:opacity .2s;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    /* it wraps, growing upward from the dock: the long ones are the ones that name the
+       files that failed, and cut to one line with a tooltip nobody can hover (it lets
+       the pointer through) they were lost */
+    white-space:normal; overflow-wrap:anywhere; width:max-content;
   }
   #status.show{opacity:1}
   #status.bad{color:#eda99c; border-color:#6b3a33} #status.good{color:#9fcf8c}
@@ -462,9 +486,9 @@ if (location.hash === '#forget') {
     <span class="dim">/</span>
     <input id="key" type="text" placeholder="treeent" title="The sprite's name. Files are name-0.png, name-1.png">
     <span id="dimNote" class="dim" style="font:11px var(--mono); flex:none"></span>
-    <span id="pbPath" class="pick" title="Where saving writes. Click to pick a different folder.">art-live/creatures/</span>
+    <span id="pbPath" class="pick" role="button" tabindex="0" title="Where saving writes. Click to pick a different folder.">art-live/creatures/</span>
     <div style="flex:1"></div>
-    <span id="lookPill" class="pill" style="display:none"></span>
+    <span id="lookPill" class="pill" role="button" tabindex="0" style="display:none"></span>
     <button id="bForce" class="danger" style="display:none">Export anyway</button>
     <button id="bGen" title="Generate sprites with PixelLab. Every generation is kept.">Generate&hellip;</button>
     <button id="bExport" title="Download every frame as PNG files">Export</button>
@@ -569,7 +593,7 @@ if (location.hash === '#forget') {
     <button id="zoomLabel" title="Fit (0)">16x</button>
     <button id="zIn" class="z" title="Zoom in">+</button>
     <button id="bGrid" class="on">Grid</button>
-    <button id="bGuides" class="on" title="The feet line and the centre line">Guides</button>
+    <button id="bGuides" class="on" title="Centre lines across and down the middle">Guides</button>
   </div>
 
   <div id="side" class="panel">
@@ -589,7 +613,7 @@ if (location.hash === '#forget') {
         <button id="bPlay2" style="padding:3px 10px; font-size:11px">&#9654; Play</button>
       </div>
       <div class="sec" id="castRow" style="display:flex; align-items:center">
-        <span class="hint" style="font-size:11px">Next to your game&#8217;s own creatures &#183; <span id="bEditRefs" class="lnk">Edit references</span></span>
+        <span class="hint" style="font-size:11px">Next to your game&#8217;s own creatures &#183; <span id="bEditRefs" class="lnk" role="button" tabindex="0">Edit references</span></span>
       </div>
       <div class="sec" id="tileRow" style="display:none; align-items:center; gap:8px; flex-wrap:wrap">
         <span class="hint" style="font-size:11px">Repeat every</span>
@@ -608,14 +632,14 @@ if (location.hash === '#forget') {
         <button id="bBoardClear">Clear</button>
         <button id="bBoardFill" title="Scatter this row&#8217;s painted cells over the board">Fill from row</button>
         <button id="bBoardSeams" title="Mark the joins where two tiles do not line up">Seams</button>
-        <span class="chip mono" id="boardSize" title="How big the board is. Click to change.">10 &#215; 6</span>
+        <span class="chip mono" id="boardSize" role="button" tabindex="0" title="How big the board is. Click to change.">10 &#215; 6</span>
         <span class="hint" id="boardNote" style="font-size:10px; flex:1 0 100%">Drag to lay the cell down. Right-click or hold Alt to lift it, Shift-click to pick one up.</span>
       </div>
       <div class="sec tight"><canvas id="preview" height="150"></canvas></div>
       <div class="sec winrow">
         <span class="hint" style="font-size:11px">Window</span>
         <div class="seg" id="scales"></div>
-        <span id="fpsChip" class="chip mono" title="How fast Play runs. Click to change.">6 / s</span>
+        <span id="fpsChip" class="chip mono" role="button" tabindex="0" title="How fast Play runs. Click to change.">6 / s</span>
         <div id="speedPop" class="panel">
           <div class="lab" style="margin-bottom:6px">Speed</div>
           <input id="fps" type="range" min="1" max="20" value="6">
@@ -644,7 +668,7 @@ if (location.hash === '#forget') {
     <div id="paneChecks" class="pane">
       <div class="sec" style="display:flex; align-items:center; justify-content:space-between; padding-top:12px">
         <span class="hint" style="font-size:11px">Your game&#8217;s rules</span>
-        <span id="bEditRules" class="lnk">Edit rules</span>
+        <span id="bEditRules" class="lnk" role="button" tabindex="0">Edit rules</span>
       </div>
       <div class="sec tight">
         <label class="master"><input type="checkbox" id="rulesBox" checked>
@@ -668,14 +692,14 @@ if (location.hash === '#forget') {
   <div id="snapHint"></div>
   <div id="gripL" class="grip" title="Drag to make the sprites and tools panels wider or narrower. Double click puts it back."></div>
   <div id="gripR" class="grip" title="Drag to make the inspector wider or narrower. Double click puts it back."></div>
-  <div id="keptNote" title="What this browser is keeping. Click for details.">kept in this browser</div>
+  <div id="keptNote" role="button" tabindex="0" title="What this browser is keeping. Click for details.">kept in this browser</div>
   <div id="keptPop" class="panel">
     <div id="keptText"></div>
     <div class="row" style="margin-top:8px"><button id="bForget" style="width:100%">Forget all</button></div>
     <div class="row" id="keepMineRow" style="display:none"><button id="bKeepMine" style="width:100%" title="Write what is open now over the copy this version cannot read. That copy is gone after this.">Keep mine instead</button></div>
   </div>
   <div id="sizeNote" title="Where the pointer is, in pixels"><span id="posLabel">&mdash;</span></div>
-  <div id="status"></div>
+  <div id="status" role="status" aria-live="polite"></div>
 
   <!-- shells for ids the engine still speaks to but the redesign has no place for -->
   <div class="ghost"><span id="framesHd"></span><span id="selHint"></span><span id="pbCmd"></span><span id="pbWarn"></span>
@@ -694,7 +718,8 @@ if (location.hash === '#forget') {
       <div class="mono" style="margin-top:8px">
         Cmd or Ctrl + Z undo &nbsp; Shift + Z redo<br>
         Cmd+C copy &nbsp; Cmd+X cut &nbsp; Cmd+V paste &nbsp; Cmd+S save<br>
-        - and + zoom, or the wheel &nbsp; Shift + wheel or middle drag moves about &nbsp; Space play<br>
+        - and + zoom, or the wheel &nbsp; 0 fits &nbsp; Shift + wheel or middle drag moves about &nbsp; Space play<br>
+        Arrows nudge the box, or the picture &nbsp; Delete clears the box &nbsp; Esc drops it<br>
         [ and ] step to the cell before or after, on a tilesheet &nbsp; Shift with either selects it
       </div>
       <div style="margin-top:8px">Square: Shift squares the box off, Alt flips outline and filled
@@ -919,7 +944,7 @@ var REF_LIST = (function () {
   try {
     var kept = JSON.parse(window.localStorage.getItem(REFS_KEY) || 'null');
     // an entry with no picture cannot be drawn, and one bad entry must not stop the page
-    if (Array.isArray(kept)) return kept.filter(function (r) { return r && r.id && typeof r.png === 'string'; });
+    if (Array.isArray(kept)) return kept.filter(function (r) { return r && r.id && isImageData(r.png); });
   } catch (e) { /* unreadable is the same as unset */ }
   return REFS.map(function (r) { return { id: r.id, label: r.label, upp: r.upp, png: 'data:image/png;base64,' + r.png, builtin: true }; });
 })();
@@ -995,6 +1020,54 @@ function rgb2hex(c) {
 function isLight(hex) {
   var c = hex2rgb(hex) || [0, 0, 0];
   return (c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114) > 128;
+}
+
+// for the few places that build markup: anything that came from a person, a file or the
+// browser's store goes in as text, never as tags
+function escHtml(v) {
+  return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+// only a picture held in the page itself may be drawn from the store: a kept entry that
+// names a web address would have the page fetch it, and nothing is meant to go out
+function isImageData(u) { return typeof u === 'string' && /^data:image\/[a-z0-9.+-]+;base64,/i.test(u); }
+
+// a row, a swatch or a chip that is clicked like a button answers the keyboard like one:
+// Tab reaches it, Enter and Space press it (see the keydown handler), and it has a name
+function asButton(el, name) {
+  el.setAttribute('role', 'button');
+  el.tabIndex = 0;
+  if (name) el.setAttribute('aria-label', name);
+  return el;
+}
+// Most lists here are drawn afresh on every change, which dropped the keyboard's place
+// the moment a key pressed something in them. The place is noted before the redraw and
+// handed to whatever stands in the same spot after it. Only a place the keyboard put
+// there: after a click the focus is let go as it always was, so Space is still Play.
+var FOCUSABLE = 'button,input,select,[tabindex]';
+// Whether the keyboard put the focus where it is. :focus-visible cannot say: both engines
+// turn a clicked control focus-visible the moment any key is pressed after the click, so
+// Space after clicking Onion pressed Onion again instead of playing. The page notes the
+// last kind of input instead, and marks each element as the focus reaches it
+var lastInput = 'pointer', keyFocused = null;
+document.addEventListener('pointerdown', function () { lastInput = 'pointer'; }, true);
+document.addEventListener('keydown', function () { lastInput = 'key'; }, true);
+document.addEventListener('focusin', function (e) { keyFocused = lastInput === 'key' ? e.target : null; }, true);
+function byKeyboard(el) { return !!el && el === keyFocused; }
+function focusMark(box) {
+  var a = document.activeElement;
+  if (!a || !box || box === a || !box.contains(a)) return -1;
+  return byKeyboard(a) ? Array.prototype.indexOf.call(box.querySelectorAll(FOCUSABLE), a) : -1;
+}
+function focusBack(box, at) {
+  if (at < 0 || box.contains(document.activeElement)) return;
+  var n = box.querySelectorAll(FOCUSABLE)[at];
+  if (n) n.focus();
+  // a close cross that has gone back to hiding cannot take it; its row can
+  if (n && document.activeElement !== n && n.parentNode && n.parentNode.closest) {
+    var up = n.parentNode.closest('[tabindex]');
+    if (up && box.contains(up)) up.focus();
+  }
 }
 
 var sayTimer = null;
@@ -1083,9 +1156,36 @@ function sameGrid(a, b) {
   return a.cw === b.cw && a.ch === b.ch && a.gap === b.gap && a.ox === b.ox && a.oy === b.oy;
 }
 function copyCells(cells) { return (cells || []).map(function (c) { return c ? { cx: c.cx, cy: c.cy } : null; }); }
-function snapshot(s) {
+// the same pixels, compared four bytes at a time: a byte at a time was 27 ms for eight
+// 1000 by 2000 frames, and a stroke's commit asks it of every frame
+function samePixels(a, b) {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  if (!(a.byteOffset & 3) && !(b.byteOffset & 3) && !(a.length & 3)) {
+    var x = new Uint32Array(a.buffer, a.byteOffset, a.length >> 2), y = new Uint32Array(b.buffer, b.byteOffset, b.length >> 2);
+    for (var i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+    return true;
+  }
+  for (var j = 0; j < a.length; j++) if (a[j] !== b[j]) return false;
+  return true;
+}
+// A step keeps its own copy of every frame, but a stroke only changes one: a frame that
+// is the same as in `prev` (the step on screen when this one is made) shares prev's copy
+// rather than taking another. Eight 1000 by 2000 frames were 64 MB a step and are 8 MB
+// now. Sharing is safe because nothing ever writes into a step's copies: restore() and
+// this take copies out of them, and the frames on the canvas are always copies of their
+// own. `own` is what this step added, which is what the undo budget counts.
+var HIST_CLOCK = 0;
+function snapshot(s, prev) {
+  var own = 0;
+  var frames = s.frames.map(function (f, i) {
+    var was = prev && prev.frames[i];
+    if (was && samePixels(f, was)) return was;
+    own += f.length;
+    return f.slice();
+  });
   return {
-    w: s.w, h: s.h, cur: s.cur, frames: s.frames.map(function (f) { return f.slice(); }),
+    w: s.w, h: s.h, cur: s.cur, frames: frames, own: own, t: ++HIST_CLOCK,
     sheet: copyGrid(sheetOf(s)), gen: s.gridGen || 0,
     sheetCur: s.sheetCur ? { cx: s.sheetCur.cx, cy: s.sheetCur.cy } : null,
     board: s.board && s.board.cols > 0 ? { cols: s.board.cols, rows: s.board.rows, cells: copyCells(s.board.cells) } : null
@@ -1106,31 +1206,76 @@ function sameAsHead(s) {
   var a = s.hist[s.hi];
   if (!a || a.w !== s.w || a.h !== s.h || a.frames.length !== s.frames.length) return false;
   if (!sameGrid(a.sheet, sheetOf(s))) return false;
-  for (var i = 0; i < s.frames.length; i++) {
-    var x = s.frames[i], y = a.frames[i];
-    if (x.length !== y.length) return false;
-    for (var j = 0; j < x.length; j++) if (x[j] !== y[j]) return false;
-  }
+  for (var i = 0; i < s.frames.length; i++) if (!samePixels(s.frames[i], a.frames[i])) return false;
   return true;
 }
 // 200 steps back, but never more than about 40 MB of them: a 128 px sprite with eight
 // frames would otherwise hold half a gigabyte of undo. Two copies is the floor so the
 // last stroke can still be undone; forcing eight would keep 512 MB for a 4k frame.
-var HIST_STEPS = 200, HIST_BYTES = 40 * 1024 * 1024;
-// the sprite can be named, for a stroke that has to land on the sprite it began on
+// HIST_ALL is the same kind of limit over every sprite open at once. Each sprite keeping
+// its own 40 MB let ten big pictures hold 400 MB of undo between them, and nothing said
+// stop. Past HIST_ALL the oldest step anywhere goes first, whichever sprite it is in, so
+// the sprites you have left alone lose their far past before the one you are drawing
+// on loses any of its. No sprite is ever taken below the step before the one on screen:
+// the last stroke can always be undone, even if that leaves the total over.
+var HIST_STEPS = 200, HIST_BYTES = 40 * 1024 * 1024, HIST_ALL = 200 * 1024 * 1024;
+// the bytes a sprite's undo holds. A step shares frames only with the step made just
+// before it (see snapshot), and steps only leave from the two ends, so every step after
+// the first holds its `own` and the first holds all of its frames.
+function histHeld(s) {
+  var h = s.hist, n = 0, i;
+  if (!h.length) return 0;
+  for (i = 0; i < h[0].frames.length; i++) n += h[0].frames[i].length;
+  for (i = 1; i < h.length; i++) n += h[i].own;
+  return n;
+}
+function trimAllHistory() {
+  var held = S.sprites.map(histHeld), total = 0, i;
+  for (i = 0; i < held.length; i++) total += held[i];
+  while (total > HIST_ALL) {
+    var at = -1;
+    for (i = 0; i < S.sprites.length; i++) {
+      var x = S.sprites[i];
+      if (x.hi >= 2 && (at < 0 || x.hist[0].t < S.sprites[at].hist[0].t)) at = i;
+    }
+    if (at < 0) return;   // everyone is down to the step before their last
+    var s = S.sprites[at];
+    s.hist.shift(); s.hi--;
+    var now = histHeld(s);
+    total -= held[at] - now; held[at] = now;
+  }
+}
+// the sprite can be named, for a stroke that has to land on the sprite it began on.
+// Says whether a step was made (and so the page redrawn).
 function commit(s) {
-  s = s || spr(); if (!s) return;
-  if (sameAsHead(s)) return;
+  s = s || spr(); if (!s) return false;
+  // the new step shares every frame the head already holds as it is, so a frame the head
+  // does not share is exactly a frame that changed: nothing shared differently, no grid
+  // or size change, is the same as sameAsHead, found without comparing everything twice
+  var head = s.hist[s.hi], snap = snapshot(s, head);
+  if (head && head.w === snap.w && head.h === snap.h && sameGrid(head.sheet, snap.sheet) &&
+      head.frames.length === snap.frames.length &&
+      snap.frames.every(function (f, i) { return f === head.frames[i]; })) {
+    // nothing to keep, but a scale by 1 or a flip that gives the same picture back has
+    // still moved the cell numbers on (carryGrid). The step on screen takes the new
+    // numbering, or noteWhere, which only writes into a step of the same numbering,
+    // forgot every cell and board square chosen from here to the next change
+    head.gen = s.gridGen || 0;
+    return false;
+  }
+  // the step being left keeps the cell you were on, as an undo or a turn leaves it: an
+  // undo back into it from another numbering brings that cell back, not the one it began with
+  noteWhere(s);
   s.hist.length = s.hi + 1;
-  s.hist.push(snapshot(s));
-  var each = s.w * s.h * 4 * s.frames.length;
-  var cap = Math.max(2, Math.min(HIST_STEPS, Math.floor(HIST_BYTES / Math.max(1, each))));
-  while (s.hist.length > cap) s.hist.shift();
+  s.hist.push(snap);
+  while (s.hist.length > HIST_STEPS || (s.hist.length > 2 && histHeld(s) > HIST_BYTES)) s.hist.shift();
   s.hi = s.hist.length - 1;
+  trimAllHistory();
   s.bytes = [];
   touched(s);
   scheduleSave();
   redraw();
+  return true;
 }
 // puts a step back, and says whether that step was a ruling of the grid (a new grid on
 // the same picture), which the status line names so an undo of it is never a surprise
@@ -1145,7 +1290,9 @@ function restore(snap) {
   // are left where you put them
   if ((snap.gen || 0) !== (s.gridGen || 0)) {
     s.sheetCur = snap.sheetCur ? { cx: snap.sheetCur.cx, cy: snap.sheetCur.cy } : null;
-    if (snap.board) s.board = { cols: snap.board.cols, rows: snap.board.rows, cells: copyCells(snap.board.cells) };
+    // no board beside that step means none yet: one laid since is in the other numbering,
+    // and kept it put every square on another tile
+    s.board = snap.board ? { cols: snap.board.cols, rows: snap.board.rows, cells: copyCells(snap.board.cells) } : null;
     s.gridGen = snap.gen || 0;
     clipCell = null;
   }
@@ -1159,6 +1306,11 @@ function undo() {
   // a change not in the history yet (a paste still floating, pixels nudged before the
   // key came up) is the step to take back; stepping past it lost two steps at once
   var loose = !sameAsHead(s);
+  // a paste that changed nothing (clear pixels, or the same ones) with nothing behind it:
+  // the button says it can be taken back, so it is
+  // ...and so is one with steps behind it: the undo takes back the float and stops there,
+  // rather than going on to take the step before it as well
+  if (!loose && lift) { dropSelection(true); redraw(); return; }
   if (!loose && s.hi <= 0) return;
   dropSelection(true);
   noteWhere(s);
@@ -1349,15 +1501,22 @@ function beginLift() {
 }
 function stampLift(nx, ny) {
   var s = spr();
-  var f = s.frames[s.cur];
+  var f = s.frames[s.cur], b = lift.buf;
   f.set(lift.base);
-  for (var y = 0; y < lift.h; y++) for (var x = 0; x < lift.w; x++) {
-    var tx = nx + x, ty = ny + y;
-    if (!inside(s, tx, ty)) continue;
-    var si = (y * lift.w + x) * 4;
-    if (lift.buf[si + 3] === 0) continue;
-    var di = (ty * s.w + tx) * 4;
-    f[di] = lift.buf[si]; f[di + 1] = lift.buf[si + 1]; f[di + 2] = lift.buf[si + 2]; f[di + 3] = lift.buf[si + 3];
+  // the box clipped to the picture once rather than tested a pixel at a time, and a pixel
+  // moved as one four-byte word: dragging a 700 by 1400 box was 7 ms a pointer move
+  var x0 = Math.max(0, -nx), x1 = Math.min(lift.w, s.w - nx), y0 = Math.max(0, -ny), y1 = Math.min(lift.h, s.h - ny);
+  var word = !(f.byteOffset & 3) && !(b.byteOffset & 3);
+  var f32 = word ? new Uint32Array(f.buffer, f.byteOffset, f.length >> 2) : null;
+  var b32 = word ? new Uint32Array(b.buffer, b.byteOffset, b.length >> 2) : null;
+  for (var y = y0; y < y1; y++) {
+    var srow = y * lift.w, drow = (ny + y) * s.w + nx;
+    for (var x = x0; x < x1; x++) {
+      var si = srow + x, di = drow + x;
+      if (b[si * 4 + 3] === 0) continue;
+      if (word) { f32[di] = b32[si]; continue; }
+      f[di * 4] = b[si * 4]; f[di * 4 + 1] = b[si * 4 + 1]; f[di * 4 + 2] = b[si * 4 + 2]; f[di * 4 + 3] = b[si * 4 + 3];
+    }
   }
   S.sel.x = nx; S.sel.y = ny;
 }
@@ -1378,6 +1537,12 @@ function clearSelection() {
     // and keeping the lift brought them back on the next nudge.
     f.set(lift.base);
     lift = null;
+    // the box stays where the pixels were, but only the part of it still on the picture:
+    // one carried off the edge would otherwise be left at rest out of sight, where it
+    // holds nothing and a crop to it makes a blank picture
+    var on = boxAnd(b, { x: 0, y: 0, w: s.w, h: s.h });
+    S.sel = on.w > 0 && on.h > 0 ? on : null;
+    if (!S.sel) $('selHint').style.display = 'none';
   } else {
     for (var y = Math.max(0, b.y); y < Math.min(s.h, b.y + b.h); y++) {
       for (var x = Math.max(0, b.x); x < Math.min(s.w, b.x + b.w); x++) {
@@ -1390,6 +1555,10 @@ function clearSelection() {
 }
 // Arrows move the pixels inside the box, or the whole picture when there is no box.
 // Moving the whole picture must NOT leave a box behind: a box changes where paint lands.
+// The move is a step when the key comes up, and it is a step of the sprite that moved:
+// with the key still held another sprite can be opened, duplicated or chosen, and the
+// commit landed on that one, leaving the move out of the history.
+var nudged = null;
 function nudge(dx, dy) {
   var s = spr(); if (!s) return;
   if (S.sel) {
@@ -1406,7 +1575,13 @@ function nudge(dx, dy) {
     out[di] = f[si]; out[di + 1] = f[si + 1]; out[di + 2] = f[si + 2]; out[di + 3] = f[si + 3];
   }
   s.frames[s.cur] = out;
+  if (nudged && nudged !== s) settleNudge();   // a second arrow held over another sprite
+  nudged = s;
   redraw();
+}
+function settleNudge() {
+  var s = nudged; nudged = null;
+  if (s && S.sprites.indexOf(s) >= 0) commit(s);
 }
 
 // ---------- the whole picture: canvas size, scale, crop, trim, flip, rotate ----------
@@ -1575,16 +1750,19 @@ var szAnchorX = 0.5, szAnchorY = 1;   // feet on the ground, centred
 function sizeOpen() { return $('sizeModal').className === 'show'; }
 function szMode() { return document.querySelector('input[name=szMode]:checked').value; }
 function drawSzAnchor() {
-  var g = $('szAnchor');
+  var g = $('szAnchor'), fk = focusMark(g);
   g.innerHTML = '';
   [0, 0.5, 1].forEach(function (ay) {
     [0, 0.5, 1].forEach(function (ax) {
       var b = document.createElement('b');
       b.className = (ax === szAnchorX && ay === szAnchorY) ? 'on' : '';
       b.onclick = function () { szAnchorX = ax; szAnchorY = ay; drawSzAnchor(); };
+      asButton(b, (ay === 0 ? 'top' : ay === 1 ? 'bottom' : 'middle') + ' ' + (ax === 0 ? 'left' : ax === 1 ? 'right' : 'centre') + ' stays put');
+      b.setAttribute('aria-pressed', b.className === 'on' ? 'true' : 'false');
       g.appendChild(b);
     });
   });
+  focusBack(g, fk);
   var v = szAnchorY === 1 ? 'Feet stay on the ground' : (szAnchorY === 0 ? 'The top stays put' : 'The middle stays put');
   var h = szAnchorX === 0.5 ? ', centred.' : (szAnchorX === 0 ? ', against the left edge.' : ', against the right edge.');
   $('szAnchorNote').textContent = v + h;
@@ -1825,7 +2003,8 @@ function selectCell(cx, cy) {
 // the cell goes into the same clipboard a dragged box does, so Cmd+V knows about it too
 function copyCell(cx, cy) {
   var s = spr(), f = frm(); if (!sheetOf(s) || !f) return;
-  var r = cellRect(s, cx, cy); if (!r) return;
+  // a cell the grid no longer has (the menu outlived a re-rule) has no pixels to copy
+  var r = cellRect(s, cx, cy); if (!r || r.w < 1 || r.h < 1) return;
   var buf = new Uint8ClampedArray(r.w * r.h * 4);
   for (var y = 0; y < r.h; y++) {
     var si = ((r.y + y) * s.w + r.x) * 4;
@@ -2062,6 +2241,7 @@ function openSplitModal() {
     (s.frames.length > 1 ? ' Only frame ' + s.cur + ', the one on the canvas, is cut up; the other ' +
       (s.frames.length - 1) + (s.frames.length === 2 ? ' is' : ' are') + ' left out.' : '');
   $('splitModal').className = 'show';
+  $('bSplitGo').focus();
 }
 function closeSplitModal() { $('splitModal').className = ''; }
 function splitModalOpen() { return $('splitModal').className === 'show'; }
@@ -2229,8 +2409,9 @@ function openAddToSheetModal(from) {
   drawAddSheetInto(true);
   drawAddSheetNote();
   $('addSheetModal').className = 'show';
+  $('bAddSheetGo').focus();
 }
-function closeAddToSheetModal() { $('addSheetModal').className = ''; }
+function closeAddToSheetModal() { $('addSheetModal').className = ''; asCands = []; asPick = {}; }   // nor are the sprites it listed
 function asChosen() { return asCands.filter(function (x, i) { return !!asPick[i]; }); }
 // the size the sheet is being built at: the first sprite ticked. Nothing ticked, no size,
 // and every sprite in the list is fair game again.
@@ -2239,7 +2420,7 @@ function asSize() {
   return null;
 }
 function drawAddSheetList() {
-  var box = $('asList'), size = asSize();
+  var box = $('asList'), size = asSize(), fk = focusMark(box);
   box.innerHTML = '';
   asCands.forEach(function (x, i) {
     var fits = !size || (x.w === size.w && x.h === size.h);
@@ -2264,6 +2445,7 @@ function drawAddSheetList() {
     row.appendChild(t);
     box.appendChild(row);
   });
+  focusBack(box, fk);
 }
 // the sheets these tiles would fit: the cell has to be their size exactly
 function drawAddSheetInto(reset) {
@@ -2357,22 +2539,27 @@ function thumb(f, w, h, size) {
 }
 // The sprite list and the frames row redrew every thumbnail on every redraw, which on
 // big pictures was most of a redraw. A thumbnail is kept against the frame it was drawn
-// from, keyed on that frame object, the sprite's size, its _rev and anything else the
-// picture depends on. Why that cannot go stale: a frame's pixels change in place without
-// commit() (and so without touched() moving _rev) only while a stroke is held or pixels
+// from, keyed on that frame object, the sprite's size, the undo step's copy of that frame
+// (see snapshot) and anything else the picture depends on. Why that cannot go stale: a
+// frame's pixels change in place without commit() only while a stroke is held or pixels
 // float over it, and those belong to one sprite, drag.s or lift.s. While either is open
 // every thumbnail of that sprite is drawn fresh, and the frame on the canvas always is;
-// once they close, commit has moved _rev. Every other write either makes new frame
-// objects (undo, resize, flip, a nudge of the whole picture) or ends in commit.
+// once they close, commit has given every frame that changed a new copy in the new step,
+// and a frame whose copy is shared with the step before did not change. Every other
+// write either makes new frame objects (undo, resize, flip, a nudge of the whole picture)
+// or ends in commit. Keyed on _rev, as it was, a stroke on one of eight frames drew all
+// eight again: 14 ms of lifting the pen on a 1000 by 2000 picture.
 // The page gets a copy, since one canvas cannot sit in two rows.
 var THUMBS = new WeakMap();
 function keptThumb(kind, s, f, key, draw) {
   var live = (s === spr() && f === s.frames[s.cur]) || (drag && drag.s === s) || (lift && lift.s === s);
   var box = THUMBS.get(f);
   if (live) { if (box) delete box[kind]; return draw(); }
-  var k = key + '|' + s.w + 'x' + s.h + '|' + (s._rev || 0);
+  var step = s.hist && s.hist[s.hi], held = step ? step.frames[s.frames.indexOf(f)] : null;
+  var k = key + '|' + s.w + 'x' + s.h;
   if (!box) { box = {}; THUMBS.set(f, box); }
-  if (!box[kind] || box[kind].k !== k) box[kind] = { k: k, c: draw() };
+  // a frame the step does not hold (not committed yet) is never kept, only drawn
+  if (!held || !box[kind] || box[kind].k !== k || box[kind].held !== held) box[kind] = { k: k, held: held, c: draw() };
   var src = box[kind].c, c = document.createElement('canvas');
   c.width = src.width; c.height = src.height;
   c.getContext('2d').drawImage(src, 0, 0);
@@ -2399,16 +2586,19 @@ function setBg(id) {
 }
 function drawBgSwatches() {
   var box = $('canvasBgs'); if (!box) return;
-  var cur = bgChoice();
+  var cur = bgChoice(), fk = focusMark(box);
   box.innerHTML = '';
   BG_CHOICES.forEach(function (c) {
     var b = document.createElement('b');
     b.className = (c.id === 'checker' ? 'checker' : '') + (c.id === cur ? ' on' : '');
     if (c.id !== 'checker') b.style.background = c.id;
     b.title = c.tip;
+    asButton(b, 'Canvas: ' + c.tip);
+    b.setAttribute('aria-pressed', c.id === cur ? 'true' : 'false');
     b.onclick = function () { setBg(c.id); };
     box.appendChild(b);
   });
+  focusBack(box, fk);
   var known = BG_CHOICES.some(function (c) { return c.id === cur; });
   $('bgCustom').value = cur === 'checker' ? '#131519' : cur;
   $('bgCustom').className = known ? '' : 'on';
@@ -2558,16 +2748,16 @@ function paintCanvas() {
     }
   }
 
-  // guides: the feet line and the centre line
+  // guides: a centre line each way, so a sprite can be balanced about its middle. They
+  // fall on the pixel edge nearest the middle, never through a pixel
   if (S.guides) {
-    var footOk = bottomRowPainted(s, s.frames[s.cur]);
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = footOk ? 'rgba(210,170,70,.85)' : 'rgba(209,104,90,.95)';
-    ctx.beginPath(); ctx.moveTo(0, H - z); ctx.lineTo(W, H - z); ctx.stroke();
     ctx.strokeStyle = 'rgba(120,160,220,.6)';
     ctx.lineWidth = 1;
-    var cxp = Math.round(s.w / 2) * z;
-    ctx.beginPath(); ctx.moveTo(cxp + .5, 0); ctx.lineTo(cxp + .5, H); ctx.stroke();
+    var cxp = Math.round(s.w / 2) * z, cyp = Math.round(s.h / 2) * z;
+    ctx.beginPath();
+    ctx.moveTo(cxp + .5, 0); ctx.lineTo(cxp + .5, H);
+    ctx.moveTo(0, cyp + .5); ctx.lineTo(W, cyp + .5);
+    ctx.stroke();
   }
 
   // selection box
@@ -2610,12 +2800,12 @@ function redraw() {
     $('bSave').disabled = !can;
     if (!saveArmed) $('bSave').textContent = toDest ? 'Save' : 'Save over';
     $('bSave').title = toDest
-      ? 'Write every frame into ' + s.dest.label + '. Change\u2026 in the bar below picks another folder.'
+      ? 'Write every frame into ' + s.dest.label + '. Click the path beside the name to pick another folder.'
       : (can
         ? 'Write every frame back over the files it was opened from. No moving files about after.'
         : (s && s.handles && s.handles.length
-          ? 'The name no longer matches the files this sprite was opened from. Set it back, use Export frames, or pick a folder with Change\u2026 below.'
-          : 'Nothing here came from a file opened this session. Open PNGs, drop files on the window, or pick a folder with Change\u2026 below.'));
+          ? 'The name no longer matches the files this sprite was opened from. Set it back, use Export, or click the path beside the name to pick a folder.'
+          : 'Nothing here came from a file opened this session. Open PNGs, drop files on the window, or click the path beside the name to pick a folder.'));
     $('pbChange').style.display = '';
   } else {
     $('bSave').style.display = 'none';   // Firefox and Safari cannot write files in place
@@ -2627,7 +2817,14 @@ function redraw() {
   $('frames').style.display = s ? 'flex' : 'none';
   $('framesHd').style.display = s ? 'block' : 'none';
   drawSheetRow();
-  if (!s) { drawStrip(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept(); return; }
+  if (!s) {
+    // the frames row is only hidden with nothing open, and its tiles and buttons were
+    // closures over the last sprite closed: it stayed in memory, history and all. The
+    // canvas behind blit() held a copy of that sprite's pixels as well.
+    drawFrames();
+    blitF = null; off.width = 0; off.height = 0;
+    drawStrip(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept(); return;
+  }
 
   paintCanvas();
   $('bUndo').disabled = s.hi <= 0 && !lift;   // a floating paste can be taken back too
@@ -2672,11 +2869,13 @@ function moveSprite(from, to) {
   say('Moved ' + s.key + ' to spot ' + (to + 1) + ' in the list', 'good');
 }
 function drawStrip() {
-  var list = $('stripList');
+  var list = $('stripList'), fk = focusMark(list);
   list.innerHTML = '';
   S.sprites.forEach(function (s, i) {
     var d = document.createElement('div');
     d.className = 'item' + (i === S.si ? ' on' : '');
+    asButton(d, s.key);
+    if (i === S.si) d.setAttribute('aria-current', 'true');
     var c = keptThumb('strip', s, s.frames[0], '', function () { return thumb(s.frames[0], s.w, s.h, 20); });
     var t = document.createElement('div');
     t.className = 't';
@@ -2694,6 +2893,7 @@ function drawStrip() {
     x.className = 'x' + (closeArmed === s ? ' armed' : '');
     x.textContent = '\u00d7';
     x.title = closeArmed === s ? 'Press again to close ' + s.key + ' and lose it' : 'Close this sprite';
+    asButton(x, (closeArmed === s ? 'Really close ' : 'Close ') + s.key);
     x.onclick = function (e) { e.stopPropagation(); closeSprite(i); };
     d.appendChild(x);
     d.onclick = function () { selectSprite(i); };
@@ -2740,6 +2940,7 @@ function drawStrip() {
   // the reference picker offers the open sprites by name
   var dl = $('openSprites');
   if (dl) { dl.innerHTML = ''; S.sprites.forEach(function (s) { var o = document.createElement('option'); o.value = s.key; dl.appendChild(o); }); }
+  focusBack(list, fk);
 }
 // closing asks twice, the way Close always has: the first press arms the row's cross.
 // The sprite is armed, not the row number, so a reorder in between cannot pass the
@@ -2764,7 +2965,7 @@ function closeSprite(i) {
   say('Closed ' + gone + '. It is not kept any more.', 'good');
 }
 function drawFrames() {
-  var s = spr(), wrap = $('frames');
+  var s = spr(), wrap = $('frames'), fk = focusMark(wrap), fka = focusMark($('frameActs'));
   wrap.innerHTML = '';
   wrap.className = frameFocus ? 'kb' : '';
   if (!s) { $('frameActs').innerHTML = ''; return; }
@@ -2788,6 +2989,8 @@ function drawFrames() {
     var lab = document.createElement('div');
     lab.textContent = i;
     d.appendChild(c); d.appendChild(lab);
+    asButton(d, 'Frame ' + i);
+    if (i === s.cur) d.setAttribute('aria-current', 'true');
     d.onclick = function () { dropSelection(); s.cur = i; frameFocus = true; redraw(); };
     d.oncontextmenu = function (e) {
       if (s.cur !== i) { dropSelection(); s.cur = i; frameFocus = true; redraw(); }
@@ -2846,6 +3049,7 @@ function drawFrames() {
     b.className = 'fbtn ' + kind;
     b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICON[kind] + '</svg><span></span>';
     b.lastChild.textContent = label;
+    b.setAttribute('aria-label', label);   // the word goes when the row is tight; the name stays
     b.onclick = fn; b.title = title;
     acts.appendChild(b);
   };
@@ -2856,6 +3060,16 @@ function drawFrames() {
   if (pasteBtn) pasteBtn.disabled = !FRAME_CLIP;
   mk('del', 'Delete', deleteFrame, 'Delete this frame. Backspace with a frame clicked does this too.');
   mk('file', 'From file', function () { $('fileFrame').click(); }, 'Load a PNG as another frame of this sprite');
+  fitStagebar();
+  focusBack(wrap, fk); focusBack(acts, fka);
+}
+// the frames row is laid out for a wide window. Measured with the words on, and when
+// they do not fit the row goes tight: icons only, and a scroll for anything still over
+function fitStagebar() {
+  var sb = $('stagebar');
+  if (sb.style.display === 'none') return;
+  sb.classList.remove('tight');
+  if (sb.scrollWidth > sb.clientWidth + 1) sb.classList.add('tight');
 }
 
 // a right click on a frame or a sprite opens a short menu of what can be done to it
@@ -2877,10 +3091,14 @@ function openCtx(e, items) {
   var w = m.offsetWidth, h = m.offsetHeight;
   m.style.left = Math.min(e.clientX, window.innerWidth - w - 6) + 'px';
   m.style.top = Math.min(e.clientY, window.innerHeight - h - 6) + 'px';
+  // opened from the keyboard (the menu key on a focused row), the keys go into the menu
+  var go = m.querySelector('button:not(:disabled)');
+  if (go) go.focus();
 }
-function closeCtx() { $('ctxMenu').className = 'panel'; }
+// emptied as it closes: its items close over the sprite they were for, closed or not
+function closeCtx() { $('ctxMenu').className = 'panel'; $('ctxMenu').innerHTML = ''; }
 function duplicateFrame(i) {
-  var s = spr(); if (!s) return;
+  var s = spr(); if (!s || !s.frames[i]) return;   // a menu can outlive the frame it was opened on
   dropSelection();
   s.frames.splice(i + 1, 0, s.frames[i].slice());
   s.cur = i + 1;
@@ -2953,21 +3171,22 @@ function moveFrame(from, to) {
 }
 
 // the list handed back is the cache itself, shared by the checks and the palette until
-// the sprite changes: read it, count it, copy it, never change it
-function colourList(s, which) {
+// the sprite changes: read it, count it, copy it, never change it. `stats`, when given, is
+// every frame's frameStats read a moment ago by the caller, with nothing drawn since
+function colourList(s, which, stats) {
   if (isHeavy(s) && !deepCheck) return [];
   var rev = s._rev || 0;
   if (!s._colCache || s._colRev !== rev) { s._colCache = {}; s._colRev = rev; }
   var key = which + ':' + (which === 'all' ? '' : s.cur);
   if (s._colCache[key]) return s._colCache[key];
+  // added up frame by frame in frame order, each frame's colours in the order they first
+  // turn up: the same order one pass over all the frames met them in, so the sort (which
+  // keeps ties in that order) hands back exactly the list it always did
   var m = new Map();
-  var fs = which === 'all' ? s.frames : [s.frames[s.cur]];
-  fs.forEach(function (f) {
-    for (var i = 0; i < f.length; i += 4) {
-      if (f[i + 3] < 128) continue;
-      var k = (f[i] << 16) | (f[i + 1] << 8) | f[i + 2];
-      m.set(k, (m.get(k) || 0) + 1);
-    }
+  var ids = which === 'all' ? s.frames.map(function (_, i) { return i; }) : [s.cur];
+  ids.forEach(function (fi) {
+    var st = stats ? stats[fi] : frameStats(s, fi);
+    for (var j = 0; j < st.keys.length; j++) m.set(st.keys[j], (m.get(st.keys[j]) || 0) + st.counts[j]);
   });
   var out = Array.from(m.entries()).sort(function (a, b) { return b[1] - a[1]; })
     .map(function (e) { return [(e[0] >> 16) & 255, (e[0] >> 8) & 255, e[0] & 255]; });
@@ -2975,7 +3194,7 @@ function colourList(s, which) {
   return out;
 }
 function drawPalette() {
-  var p = $('palette'), s = spr();
+  var p = $('palette'), s = spr(), fk = focusMark(p);
   p.innerHTML = '';
   // a copy: the current colour goes on the front of this one, and putting it on the
   // cached list counted every colour you ever picked as one the sprite uses
@@ -2992,9 +3211,12 @@ function drawPalette() {
     d.style.background = h;
     d.title = h;
     d.innerHTML = '<i></i>';
+    asButton(d, 'Draw with ' + h);
+    if (h === cur) d.setAttribute('aria-pressed', 'true');
     d.onclick = function () { setColor(c); };
     p.appendChild(d);
   });
+  focusBack(p, fk);
   $('palHint').textContent = s
     ? (cols.length + ' in the palette. Click one to draw with it.' +
       (cols.length > PAL_MAX ? ' Showing the ' + PAL_MAX + ' most used.' : ''))
@@ -3007,13 +3229,49 @@ function bottomRowPainted(s, f) {
 }
 function countSoft(s) {
   var n = 0;
-  s.frames.forEach(function (f) {
-    for (var i = 3; i < f.length; i += 4) if (f[i] !== 0 && f[i] !== 255) n++;
-  });
+  for (var i = 0; i < s.frames.length; i++) n += frameStats(s, i).soft;
   return n;
 }
-function anyInk(f) { for (var i = 3; i < f.length; i += 4) if (f[i] >= 128) return true; return false; }
-function anyClear(f) { for (var i = 3; i < f.length; i += 4) if (f[i] === 0) return true; return false; }
+// What the checks and the palette count, one frame at a time: its colours with how often
+// each is used (in the order they first turn up), its part see-through pixels, whether it
+// has any ink and any clear. On a big picture the checks read every frame whole several
+// times over, which was 150 ms after every stroke on eight 1000 by 2000 frames, though a
+// stroke changes one frame. So each frame's count is kept against the history step's copy
+// of that frame, and used again while the frame is still byte for byte that copy.
+// Why that cannot go stale: nothing writes into a step's copies (see snapshot), so the copy
+// still holds exactly the pixels that were counted; the count is handed back only after
+// samePixels has found the frame on the canvas identical to it. A frame that differs from
+// the step, a stroke still held, a paste floating, is counted afresh and not kept.
+// Holding one count a frame, against the step on screen, keeps this to one frame's worth.
+function countFrame(f) {
+  var m = new Map(), soft = 0, ink = false, clear = false, last = -1, run = 0;
+  for (var i = 0; i < f.length; i += 4) {
+    var a = f[i + 3];
+    if (a === 0) clear = true; else if (a !== 255) soft++;
+    if (a < 128) continue;
+    ink = true;
+    var k = (f[i] << 16) | (f[i + 1] << 8) | f[i + 2];
+    // pixel art runs one colour along a row, so the map is only visited when it changes;
+    // a colour goes in the map the first time it is seen, which keeps the order
+    if (k === last) { run++; continue; }
+    if (run) m.set(last, m.get(last) + run);
+    if (!m.has(k)) m.set(k, 0);
+    last = k; run = 1;
+  }
+  if (run) m.set(last, m.get(last) + run);
+  var keys = new Int32Array(m.size), counts = new Uint32Array(m.size), j = 0;
+  m.forEach(function (v, key) { keys[j] = key; counts[j] = v; j++; });
+  return { keys: keys, counts: counts, soft: soft, ink: ink, clear: clear };
+}
+function frameStats(s, i) {
+  var f = s.frames[i], step = s.hist && s.hist[s.hi], held = step && step.frames[i];
+  var c = s._fst || (s._fst = []);
+  if (c.length > s.frames.length) c.length = s.frames.length;
+  if (c[i] && c[i].held === held && samePixels(f, held)) return c[i].st;
+  var st = countFrame(f);
+  c[i] = held && samePixels(f, held) ? { held: held, st: st } : null;
+  return st;
+}
 
 // =====================================================================================
 // The checks. `bad` is what pack-art.mjs REFUSES, `warn` is what it warns about, `ok` is
@@ -3025,9 +3283,10 @@ function anyClear(f) { for (var i = 3; i < f.length; i += 4) if (f[i] === 0) ret
 // the ones that change how paint lands and what leaves in a file.
 var RULE_DEFS = [
   { id: 'name', name: 'A name and folder that can be filenames' },
-  { id: 'square', name: 'Square frames', gated: true },
+  { id: 'square', name: 'Square frames, or a building’s own footprint', gated: true },
   { id: 'hard', name: 'Every pixel solid or clear', gated: true },
-  { id: 'colours', name: 'At most 32 colours, one palette', gated: true },
+  { id: 'colours', name: 'At most 32 colours a frame, more in some families', gated: true },
+  { id: 'outline', name: 'No drawn black outline where the game draws one' },
   { id: 'empty', name: 'No empty frames' },
   { id: 'same', name: 'All frames the same size' },
   { id: 'feet', name: 'Something on the bottom row (feet)' },
@@ -3035,6 +3294,8 @@ var RULE_DEFS = [
   { id: 'frames', name: 'At least two frames' },
   { id: 'palette', name: 'Later frames stick to frame 0\u2019s colours' },
   { id: 'bytes', name: 'Opened files under 64 KB' },
+  { id: 'panes', name: 'A town building has a window pane to light' },
+  { id: 'rim', name: 'A clipped piece keeps off its own edge' },
   { id: 'tile', name: 'Tile edges meet where they lap', off: true },
   { id: 'edges', name: 'Sheet edges line up' }
 ];
@@ -3043,6 +3304,50 @@ var RULE_DEFS = [
 // frame 0's colours; where the art sits in its tile's square it does not warn of hovering.
 var VARIANT_FAMILIES = { terrain: 1, flora: 1, npcs: 1, town: 1, decor: 1, home: 1 };
 var TILE_ANCHORED = { flora: 1, town: 1, decor: 1, home: 1 };
+// and the rest of its per-family tables: FAMILY_MAX_COLORS, the ceiling a family may raise
+// (every file is counted on its own); FAMILY_FOOTPRINT, the town's buildings and the
+// furniture, each key pinned to its size at 16 px a tile and no other key taken;
+// FAMILY_NO_BAKED_OUTLINE, whose rim the game grows itself; TOWN_UNLIT_KEYS, the ruins
+// that never light a window; and the one pane colour a lit window is drawn in.
+var FAMILY_MAX_COLORS = { npcs: 48, town: 64, ingredients: 48, goods: 48, home: 48, flora: 56 };
+var FAMILY_FOOTPRINT = {
+  town: { cottage: [2, 1], shop: [2, 2], smithy: [2, 2], lodge: [2, 2], hall: [3, 2], inn: [3, 2], guard: [1, 2],
+          home: [1, 1], ruinsmithy: [2, 2], ruininn: [3, 2], ruinhall: [3, 2] },
+  decor: { bed: [1, 1], well: [1, 1], lamp: [1, 1], bench: [1, 1], stall: [1, 1], anvil: [1, 1], dummy: [1, 1],
+           cart: [1, 1], crates: [1, 1], barrel: [1, 1], garden: [2, 1], haypen: [2, 2], rubble: [1, 1] },
+  home: { pillar: [1, 1], chest: [1, 1], rack: [1, 1], bunk: [1, 1], hearth: [1, 1], table: [1, 1], anvil: [1, 1],
+          forge: [1, 1], rug: [1, 1], shelf: [1, 1], bookshelf: [1, 1], armour: [1, 1], crate: [1, 1], plant: [1, 1],
+          barrel: [1, 1], bench: [1, 1], mat: [1, 1] }
+};
+var NO_OUTLINE = { ingredients: 1, goods: 1, flora: 1, npcs: 1, town: 1, decor: 1, home: 1 };
+var TOWN_UNLIT_KEYS = { ruinsmithy: 1, ruininn: 1, ruinhall: 1 };
+var PANE_INK = [0x2d, 0x0d, 0x32];
+function footprintOf(s) {
+  var t = FAMILY_FOOTPRINT[s.family], f = t && t.hasOwnProperty(cleanName(s.key)) ? t[cleanName(s.key)] : null;
+  return f ? { tw: f[0], th: f[1], w: f[0] * 16, h: f[1] * 16 } : null;
+}
+// the town is blitted under a clip the size of its picture, and on decor only the pieces
+// wider than one tile are; ink on the picture's edge loses its grown rim there
+function clippedRim(s) {
+  if (s.family === 'town') return true;
+  var f = footprintOf(s);
+  return s.family === 'decor' && !!f && f.tw * f.th > 1;
+}
+// the silhouette's edge and how much of it is near-black, the packer's boundaryInk: an
+// opaque pixel with a clear or off-picture neighbour is on the edge, and it is ink when no
+// channel is above 40. More than a quarter ink is an outline drawn in.
+function boundaryInk(s, f) {
+  var w = s.w, h = s.h, edge = 0, ink = 0, first = null, x, y;
+  var solid = function (px, py) { return px >= 0 && py >= 0 && px < w && py < h && f[(py * w + px) * 4 + 3] >= 128; };
+  for (y = 0; y < h; y++) for (x = 0; x < w; x++) {
+    var i = (y * w + x) * 4;
+    if (f[i + 3] < 128) continue;
+    if (solid(x - 1, y) && solid(x + 1, y) && solid(x, y - 1) && solid(x, y + 1)) continue;
+    edge++;
+    if (f[i] <= 40 && f[i + 1] <= 40 && f[i + 2] <= 40) { ink++; if (!first) first = { x: x, y: y }; }
+  }
+  return { edge: edge, ink: ink, first: first };
+}
 function ruleOn(id) { return !(UI.ruleOff && UI.ruleOff[id]) && !(UI.ruleGone && UI.ruleGone[id]); }
 function customRules() { return Array.isArray(UI.customRules) ? UI.customRules : []; }
 function rulesChanged() {
@@ -3087,10 +3392,22 @@ function strayCells(s, f) {
   }
   return out;
 }
+// the check before a file is written reads every pixel whatever the size. The live panel
+// skips the colour count on a large picture to stay quick while you draw, but a refusal
+// the packer would make cannot be skipped on the way out, or a 40-colour picture over
+// 128 px square would be saved without a word
+function fullCheck(s) {
+  var was = deepCheck;
+  deepCheck = true;
+  try { return checkSprite(s); } finally { deepCheck = was; }
+}
 function checkSprite(s) {
   var bad = [], warn = [], ok = [], note = [];
-  var all = colourList(s, 'all').length;
-  var here = colourList(s, 'cur').length;
+  // every frame's counts, each proved against its step once (see frameStats) and read by
+  // every rule below; proving it again for each rule was most of what the kept counts saved
+  var fst = s.frames.map(function (_, i) { return frameStats(s, i); });
+  var all = colourList(s, 'all', fst).length;
+  var here = colourList(s, 'cur', fst).length;
 
   if (ruleOn('name')) {
     if (!cleanName(s.key)) bad.push('The name is empty. A file has to be called <b>name-0.png</b>.');
@@ -3099,22 +3416,35 @@ function checkSprite(s) {
 
   if (rulesOn()) {
     // a sheet is many sprites in one picture, so it is the cells that have to be square
-    var sq = sheetOf(s);
+    var sq = sheetOf(s), fp = FAMILY_FOOTPRINT[s.family] ? footprintOf(s) : null;
     if (ruleOn('square') && sq) {
       if (sq.cw !== sq.ch) bad.push('<b>Cells are not square</b>, ' + sq.cw + ' by ' + sq.ch + '. Each one becomes a sprite, and a sprite is a square grid.');
       else ok.push('Square cells, ' + sq.cw + ' by ' + sq.ch + ', ' + sheetCols(s) + ' by ' + sheetRows(s) + ' of them.');
+    } else if (ruleOn('square') && FAMILY_FOOTPRINT[s.family]) {
+      // the buildings and the furniture: a closed list, each exactly its footprint
+      if (!fp) bad.push('<b>' + cleanName(s.key) + ' is not a ' + s.family + ' piece the game can draw.</b> The packer only takes ' + Object.keys(FAMILY_FOOTPRINT[s.family]).join(', ') + '.');
+      else if (s.w !== fp.w || s.h !== fp.h) bad.push('<b>' + s.w + ' by ' + s.h + '</b>, but a ' + cleanName(s.key) + ' stands on ' + fp.tw + ' by ' + fp.th + (fp.tw * fp.th === 1 ? ' tile' : ' tiles') + ', so it is exactly ' + fp.w + ' by ' + fp.h + '.');
+      else ok.push(s.w + ' by ' + s.h + ', the size of its ' + fp.tw + ' by ' + fp.th + ' footprint.');
     } else if (ruleOn('square')) {
       if (s.w !== s.h) bad.push('<b>Not square</b>, ' + s.w + ' by ' + s.h + '. A sprite is a square grid.');
       else ok.push('Square, ' + s.w + ' by ' + s.h + '.');
     }
     if (ruleOn('hard')) {
-      var soft = countSoft(s);
+      var soft = fst.reduce(function (n, st) { return n + st.soft; }, 0);   // countSoft, from the counts in hand
       if (soft) bad.push('<b>' + soft + ' part see-through pixels.</b> Every pixel has to be fully solid or fully clear.');
       else ok.push('Every pixel is fully solid or fully clear.');
     }
     if (ruleOn('colours')) {
-      if (all > 32) bad.push('<b>' + all + ' colours</b> across the frames, and the packer stops at 32. That many means the picture was resized or blurred rather than drawn.');
-      else ok.push(here + ' colours in this frame, ' + all + ' across all frames.');
+      // the packer counts each file on its own, against its family's ceiling
+      var ceil = Math.max(32, FAMILY_MAX_COLORS[s.family] || 0), most = all, mostAt = 0;
+      if (s.frames.length > 1 && all) {
+        most = 0;
+        // each frame's own colours are already counted in fst; counting them again here on
+        // throwaway sprites was the double pass the kept counts exist to save
+        fst.forEach(function (st, i) { var n = st.keys.length; if (n > most) { most = n; mostAt = i; } });
+      }
+      if (most > ceil) bad.push('<b>' + most + ' colours</b>' + (s.frames.length > 1 ? ' in frame ' + mostAt : '') + ', and the packer stops at ' + ceil + (ceil > 32 ? ' for ' + s.family : '') + '. That many means the picture was resized or blurred rather than drawn.');
+      else ok.push(here + ' colours in this frame, ' + all + ' across all frames' + (ceil > 32 ? ', and ' + s.family + ' may use up to ' + ceil + ' a frame.' : '.'));
     }
   } else {
     ok.push('The game rules are off. ' + here + ' colours in this frame, and soft pixels are kept as painted.');
@@ -3122,8 +3452,20 @@ function checkSprite(s) {
 
   if (ruleOn('empty')) {
     var empties = [];
-    s.frames.forEach(function (f, i) { if (!anyInk(f)) empties.push(i); });
+    fst.forEach(function (st, i) { if (!st.ink) empties.push(i); });
     if (empties.length) bad.push('Frame ' + empties.join(' and ') + ' ' + (empties.length > 1 ? 'are' : 'is') + ' <b>empty</b>. There is no sprite in that file.');
+  }
+
+  // these families have their 1 px black edge grown by the game, so one drawn in as well
+  // is drawn twice and thickens with the zoom
+  if (ruleOn('outline') && NO_OUTLINE[s.family] && !sheetOf(s)) {
+    var inked = [];
+    s.frames.forEach(function (f, i) {
+      var b = boundaryInk(s, f);
+      if (b.edge && b.ink / b.edge > 0.25) inked.push({ i: i, pc: Math.round(b.ink / b.edge * 100), at: b.first });
+    });
+    if (inked.length) bad.push('<b>A black outline is drawn in</b>: ' + inked[0].pc + '% of the edge of frame ' + inked[0].i + ' is near-black, first at ' + inked[0].at.x + ', ' + inked[0].at.y + '. The game draws the ' + s.family + ' outline itself, so delete the drawn one.');
+    else ok.push('No outline drawn in; the game draws its own.');
   }
 
   if (ruleOn('same')) {
@@ -3136,7 +3478,7 @@ function checkSprite(s) {
   // looking at frame 0
   if (ruleOn('feet') && !sheetOf(s) && !TILE_ANCHORED[s.family]) {
     var hover = [];
-    s.frames.forEach(function (f, i) { if (anyInk(f) && !bottomRowPainted(s, f)) hover.push(i); });
+    s.frames.forEach(function (f, i) { if (fst[i].ink && !bottomRowPainted(s, f)) hover.push(i); });
     if (hover.length) warn.push('<b>Nothing on the bottom row</b> of frame ' + hover.join(' and ') + '. The game plants that row at the feet, so this creature hovers. Move it down and keep the empty rows at the top.');
     else ok.push('The bottom row is painted, so the feet sit on the ground.');
   }
@@ -3202,7 +3544,7 @@ function checkSprite(s) {
 
   if (ruleOn('clear')) {
     var baked = [];
-    s.frames.forEach(function (f, i) { if (!anyClear(f)) baked.push(i); });
+    fst.forEach(function (st, i) { if (!st.clear) baked.push(i); });
     if (baked.length) warn.push('No clear pixels in frame ' + baked.join(' and ') + '. The background looks painted in, and it has to be see-through.');
   }
 
@@ -3211,10 +3553,11 @@ function checkSprite(s) {
   if (ruleOn('frames') && s.frames.length < 2 && !sheetOf(s) && !VARIANT_FAMILIES[s.family]) warn.push('Only one frame. The game wants two, a standing one and a stepping one.');
 
   if (ruleOn('palette') && s.frames.length > 1 && !VARIANT_FAMILIES[s.family]) {
-    var base = {}, extra = 0;
-    colourList({ frames: [s.frames[0]], cur: 0 }, 'all').forEach(function (c) { base[rgb2hex(c)] = 1; });
+    // each frame's colours come from its count rather than being counted again here,
+    // which was half of what a big picture's checks cost
+    var base = new Set(fst[0].keys), extra = 0;
     for (var k = 1; k < s.frames.length; k++) {
-      colourList({ frames: [s.frames[k]], cur: 0 }, 'all').forEach(function (c) { if (!base[rgb2hex(c)]) extra++; });
+      fst[k].keys.forEach(function (c) { if (!base.has(c)) extra++; });
     }
     if (extra) warn.push(extra + ' colour' + (extra > 1 ? 's' : '') + ' turn up in a later frame that frame 0 does not have. All the frames of one creature share one palette.');
   }
@@ -3225,7 +3568,30 @@ function checkSprite(s) {
     if (big.length) warn.push(big.length + ' of the files you opened ' + (big.length > 1 ? 'are' : 'is') + ' over 64 KB, which at this size means an embedded colour profile or editor notes rather than art. Exporting from here strips that.');
   }
 
-  customRules().forEach(function (r) { if (r.on) note.push(r.name + ' \u2014 not checked yet; wire it to your packer.'); });
+  // the town lights its windows at night by swapping one colour for gold
+  if (ruleOn('panes') && s.family === 'town' && !TOWN_UNLIT_KEYS[cleanName(s.key)] && !sheetOf(s)) {
+    var dark = [];
+    s.frames.forEach(function (f, i) {
+      if (!fst[i].ink) return;   // an empty frame is the empty rule's to report
+      for (var j = 0; j < f.length; j += 4) if (f[j + 3] >= 128 && f[j] === PANE_INK[0] && f[j + 1] === PANE_INK[1] && f[j + 2] === PANE_INK[2]) return;
+      dark.push(i);
+    });
+    if (dark.length) warn.push('Not one pixel of <b>#2d0d32</b> in frame ' + dark.join(' and ') + ', so this building never lights up at night. The game lights windows drawn in exactly that colour.');
+  }
+  // drawn under a clip the size of the picture, so ink on its edge loses the grown rim
+  if (ruleOn('rim') && clippedRim(s) && !sheetOf(s)) {
+    var sides = [];
+    s.frames.forEach(function (f) {
+      var on = function (x, y) { return f[(y * s.w + x) * 4 + 3] >= 128; }, x, y;
+      for (x = 0; x < s.w; x++) { if (on(x, 0) && sides.indexOf('top') < 0) sides.push('top'); if (on(x, s.h - 1) && sides.indexOf('bottom') < 0) sides.push('bottom'); }
+      for (y = 0; y < s.h; y++) { if (on(0, y) && sides.indexOf('left') < 0) sides.push('left'); if (on(s.w - 1, y) && sides.indexOf('right') < 0) sides.push('right'); }
+    });
+    if (sides.length) warn.push('The drawing touches its own <b>' + sides.join(', ') + '</b> edge. It is drawn under a clip the size of the picture, so the outline the game grows there is cut off. Leave a pixel of margin.');
+  }
+
+  // the panel reads these lines as markup for their <b>, and a rule's name is whatever was
+  // typed or kept, so it goes in escaped: a rule named <img onerror=...> is only words
+  customRules().forEach(function (r) { if (r.on) note.push(escHtml(r.name) + ' \u2014 not checked yet; wire it to your packer.'); });
 
   return { bad: bad, warn: warn, ok: ok, note: note };
 }
@@ -3278,7 +3644,7 @@ function drawRulesEdit() {
   $('bEditRules').textContent = rulesEditing ? 'Done' : 'Edit rules';
   $('bEditRules').className = 'lnk' + (rulesEditing ? ' on' : '');
   if (!rulesEditing) return;
-  var box = $('rulesList');
+  var box = $('rulesList'), fk = focusMark(box);
   box.innerHTML = '';
   var row = function (name, on, toggle, remove, builtin) {
     var d = document.createElement('div');
@@ -3287,6 +3653,8 @@ function drawRulesEdit() {
     var nm = document.createElement('span'); nm.className = 'nm' + (on ? '' : ' off'); nm.textContent = name;
     var x = document.createElement('span'); x.className = 'x'; x.textContent = '\u00d7';
     x.title = builtin ? 'Retire this rule. Back to Eldermyr\u2019s rules brings it back.' : 'Remove this rule';
+    asButton(x, (builtin ? 'Retire ' : 'Remove ') + name);
+    cb.setAttribute('aria-label', name);
     x.onclick = remove;
     d.appendChild(cb); d.appendChild(nm); d.appendChild(x);
     box.appendChild(d);
@@ -3302,6 +3670,7 @@ function drawRulesEdit() {
       function () { cr.on = this.checked; rulesChanged(); },
       function () { UI.customRules.splice(i, 1); rulesChanged(); }, false);
   });
+  focusBack(box, fk);
 }
 
 // ---------- the path bar: where the file goes and what to run next ----------
@@ -3790,6 +4159,9 @@ function drawPreviewMode() {
   }
 }
 function drawPreview() {
+  // everything this draws is in the Game tab, which showTab redraws as it comes back, so
+  // behind the Checks tab it was a field of tiles painted after every stroke for no one
+  if (UI.tab === 'Checks') return;
   var s = spr();
   var W = pv.clientWidth || 296;
   var scale = S.scale;
@@ -3874,7 +4246,7 @@ function drawRefs() {
   $('bEditRefs').textContent = refsEditing ? 'Done' : 'Edit references';
   $('bEditRefs').className = 'lnk' + (refsEditing ? ' on' : '');
   if (!refsEditing) return;
-  var box = $('refsList');
+  var box = $('refsList'), fk = focusMark(box);
   box.innerHTML = '';
   if (!REF_LIST.length) box.innerHTML = '<div class="hint">No references. Yours stands alone until you add some.</div>';
   REF_LIST.forEach(function (r, i) {
@@ -3886,10 +4258,12 @@ function drawRefs() {
     var im = refImg[r.id];
     sz.textContent = im && im.naturalWidth ? im.naturalWidth + '\u00d7' + im.naturalHeight : '';
     var x = document.createElement('span'); x.className = 'x'; x.textContent = '\u00d7'; x.title = 'Remove this reference';
+    asButton(x, 'Remove ' + r.label);
     x.onclick = function () { REF_LIST.splice(i, 1); saveRefs(); drawRefs(); drawPreview(); say('Removed ' + r.label + ' from the references', 'good'); };
     row.appendChild(img); row.appendChild(nm); row.appendChild(sz); row.appendChild(x);
     box.appendChild(row);
   });
+  focusBack(box, fk);
 }
 function addRefSprite(name) {
   var k = cleanName(name);
@@ -4086,6 +4460,7 @@ function loadStore() {
     var rec = data.sprites[idx++] || {};
     Promise.all((Array.isArray(rec.frames) ? rec.frames : []).map(function (u) {
       return new Promise(function (res) {
+        if (!isImageData(u)) { res(null); return; }   // a kept frame is a picture, never an address
         var im = new Image();
         im.onload = function () { try { res(toPixels(im)); } catch (e) { res(null); } };
         im.onerror = function () { res(null); };
@@ -4094,9 +4469,15 @@ function loadStore() {
     })).then(function (all) {
       // the pictures say how big the sprite is; a frame of another size cannot join it
       var first = all.filter(Boolean)[0], w = first ? first.w : 0, h = first ? first.h : 0;
-      var frames = all.filter(function (d) { return d && d.w === w && d.h === h; }).map(function (d) { return d.px; });
+      var frames = [], uris = [];
+      all.forEach(function (d, j) { if (d && d.w === w && d.h === h) { frames.push(d.px); uris.push(rec.frames[j]); } });
       if (frames.length) {
         var s = makeSprite(cleanName(rec.key) || 'sprite', w, h, frames, cleanName(rec.family) || 'creatures');
+        // each frame's pixels were read out of this very picture, so the picture already is
+        // a faithful kept copy of them: held against their hash as keptURI would hold it,
+        // the first save after opening encodes only what has changed since, where it used
+        // to encode every frame of every sprite in one long go (157 ms for forty sprites)
+        s._kept = frames.map(function (f, j) { var k = frameHash(s, f); return k ? { k: k, u: uris[j] } : null; });
         s.bytes = Array.isArray(rec.bytes) ? rec.bytes : [];
         if (rec.tilePitch) s.tilePitch = rec.tilePitch;
         if (rec.sheet && rec.sheet.cw > 0) s.sheet = { cw: rec.sheet.cw, ch: rec.sheet.ch, gap: rec.sheet.gap || 0, ox: rec.sheet.ox || 0, oy: rec.sheet.oy || 0 };
@@ -4134,7 +4515,9 @@ function drawKept() {
   if (!S.store.on) {
     n.textContent = 'nothing is being kept';
     n.style.color = 'var(--warn)';
-    t.innerHTML = '<span style="color:var(--warn)">Nothing is being saved.</span><br>' + (S.store.why || '') + ' Export before you close the tab.';
+    // the reason carries words the browser chose, so it goes in as text like the others
+    t.innerHTML = '<span style="color:var(--warn)">Nothing is being saved.</span><br><span></span>';
+    t.lastChild.textContent = (S.store.why || '') + ' Export before you close the tab.';
     b.style.display = 'none';
     return;
   }
@@ -4197,7 +4580,7 @@ var TOOL_GLYPH = {
 };
 function toolSvg(id) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + TOOL_GLYPH[id] + '</svg>'; }
 function buildTools() {
-  var g = $('tools');
+  var g = $('tools'), fk = focusMark(g);
   g.innerHTML = '';
   TOOLS.forEach(function (t) {
     var b = document.createElement('button');
@@ -4206,9 +4589,11 @@ function buildTools() {
     b.children[0].innerHTML = toolSvg(t[0]) || '';
     b.children[1].textContent = t[1];
     b.children[2].textContent = (KEYS[t[0]] || '').toUpperCase();
+    b.setAttribute('aria-pressed', S.tool === t[0] ? 'true' : 'false');
     b.onclick = function () { setTool(t[0]); };
     g.appendChild(b);
   });
+  focusBack(g, fk);
 }
 
 // ---------- the keys, yours to change ----------
@@ -4243,7 +4628,7 @@ function saveKeys() {
 }
 var keyWait = null;   // the action waiting for its new key
 function drawKeys() {
-  var box = $('keyRows');
+  var box = $('keyRows'), fk = focusMark(box);
   box.innerHTML = '';
   KEY_ACTIONS.forEach(function (a) {
     var row = document.createElement('span');
@@ -4260,6 +4645,7 @@ function drawKeys() {
     row.appendChild(document.createTextNode(a[1].toLowerCase()));
     box.appendChild(row);
   });
+  focusBack(box, fk);
 }
 function assignKey(raw) {
   var act = keyWait;
@@ -4320,6 +4706,9 @@ function setColor(c) {
 }
 
 // ---------- pointer ----------
+// a Mac's secondary click is Control with the one button as often as it is a right button
+var MAC = /Mac/.test(navigator.platform || '') || /Macintosh/.test(navigator.userAgent || '');
+function secondary(e) { return e.button === 2 || (e.button === 0 && e.ctrlKey && MAC); }
 var drag = null;
 var dragPid = null;   // the pointer that started the stroke; another cannot steer or end it
 function pxAt(e) {
@@ -4357,12 +4746,12 @@ stage.addEventListener('pointerdown', function (e) {
     if (clipCellOn()) clipCell = cellRect(s, pc.cx, pc.cy);
   }
   // on a sheet the right button belongs to the cell menu, so it must not also rub out
-  if (e.button === 2 && sheetOf(s)) return;
+  if (secondary(e) && sheetOf(s)) return;
   // a pointer already gone by the time this runs cannot be captured, and throwing here
   // would leave the press drawing nothing at all
   try { stage.setPointerCapture(e.pointerId); } catch (err) { /* the moves still land while over the stage */ }
   if (S.tool === 'pick') { clipCell = null; eyedrop(p.x, p.y); return; }
-  if (S.tool === 'fill') { fill(p.x, p.y, e.button === 2); clipCell = null; commit(); redraw(); return; }
+  if (S.tool === 'fill') { fill(p.x, p.y, secondary(e)); clipCell = null; commit(); redraw(); return; }
   if (S.tool === 'select') {
     if (S.sel && ptInSel(p.x, p.y)) {
       if (!lift) beginLift();
@@ -4383,7 +4772,7 @@ stage.addEventListener('pointerdown', function (e) {
   if (S.tool === 'spray') {
     // no strokeSeen: a spray is meant to land on the same pixel twice and build up
     strokeSeen = null;
-    drag = { s: s, f: frm(), mode: 'spray', erase: e.button === 2, x: p.x, y: p.y };
+    drag = { s: s, f: frm(), mode: 'spray', erase: secondary(e), x: p.x, y: p.y };
     spray(p.x, p.y, drag.erase);
     requestCanvas();
     sprayTimer = setInterval(function () {
@@ -4396,7 +4785,7 @@ stage.addEventListener('pointerdown', function (e) {
   }
   if (S.tool === 'square') {
     drag = {
-      s: s, f: frm(), mode: 'square', erase: e.button === 2, base: frm().slice(),
+      s: s, f: frm(), mode: 'square', erase: secondary(e), base: frm().slice(),
       x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y))
     };
     strokeSeen = new Uint8Array(s.w * s.h);
@@ -4407,7 +4796,7 @@ stage.addEventListener('pointerdown', function (e) {
   if (S.tool === 'line') {
     // anchor the line and keep a clean copy of the frame to redraw it against
     drag = {
-      s: s, f: frm(), mode: 'line', erase: e.button === 2, base: frm().slice(),
+      s: s, f: frm(), mode: 'line', erase: secondary(e), base: frm().slice(),
       x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y))
     };
     strokeSeen = new Uint8Array(s.w * s.h);
@@ -4416,7 +4805,7 @@ stage.addEventListener('pointerdown', function (e) {
     return;
   }
   strokeSeen = new Uint8Array(s.w * s.h);
-  drag = { s: s, f: frm(), mode: 'draw', erase: S.tool === 'eraser' || e.button === 2, lx: p.x, ly: p.y };
+  drag = { s: s, f: frm(), mode: 'draw', erase: S.tool === 'eraser' || secondary(e), lx: p.x, ly: p.y };
   paint(p.x, p.y, drag.erase);
   requestCanvas();
 });
@@ -4496,8 +4885,10 @@ function endDrag(e) {
   strokeSeen = null;
   clipCell = null;
   var was = drag.mode, on = drag.s; drag = null;
-  if (was === 'draw' || was === 'move' || was === 'line' || was === 'square' || was === 'spray') commit(on);
-  redraw();
+  // a commit that makes a step has redrawn already; redrawing again ran every panel a
+  // second time for nothing
+  var made = (was === 'draw' || was === 'move' || was === 'line' || was === 'square' || was === 'spray') && commit(on);
+  if (!made) redraw();
 }
 stage.addEventListener('pointerup', endDrag);
 stage.addEventListener('pointercancel', endDrag);
@@ -4563,10 +4954,39 @@ function zoomAt(nz, cx, cy) {
 // Plain scroll zooms at the cursor, on purpose. Shift and scroll moves the picture
 // instead, both ways at once from a trackpad; a pinch arrives as a scroll with Ctrl held
 // and always zooms, Shift or not.
-var wheelAcc = 0, wheelAt = 0;
+var wheelSmooth = false, wheelAcc = 0, wheelAt = 0;
+// Safari and the Mac app hand a trackpad pinch over as gesture events rather than the
+// Control-wheel Chrome sends, so without these a pinch did nothing there. The zoom follows
+// the fingers from where the pinch began, on the same steps the wheel takes, about the
+// point between them
+var pinchFrom = 0;
+// the wheel's own steps, one up and one down from a zoom
+function zoomUp(z) { return Math.min(MAX_ZOOM, z + (z < 8 ? 1 : 4)); }
+function zoomDown(z) { return Math.max(1, z - (z <= 8 ? 1 : 4)); }
+stage.addEventListener('gesturestart', function (e) {
+  if (!spr()) return;
+  e.preventDefault();
+  pinchFrom = S.zoom;
+});
+stage.addEventListener('gesturechange', function (e) {
+  if (!spr() || !pinchFrom) return;
+  e.preventDefault();
+  // only as far as the fingers have gone past a whole step from where the pinch began, so
+  // the first touch of a pinch does not jump a Fit zoom of 38 to 40
+  var want = pinchFrom * (e.scale || 1), nz = pinchFrom;
+  if (want > pinchFrom) { while (zoomUp(nz) !== nz && zoomUp(nz) <= want) nz = zoomUp(nz); }
+  else { while (zoomDown(nz) !== nz && zoomDown(nz) >= want) nz = zoomDown(nz); }
+  if (nz !== S.zoom) zoomAt(nz, e.clientX, e.clientY);
+});
+stage.addEventListener('gestureend', function (e) {
+  if (pinchFrom) e.preventDefault();
+  pinchFrom = 0;
+});
 stage.addEventListener('wheel', function (e) {
   if (!spr()) return;
   e.preventDefault();
+  // a browser that sends a pinch both ways must not zoom it twice
+  if (pinchFrom && e.ctrlKey) return;
   var unit = e.deltaMode === 1 ? 33 : (e.deltaMode === 2 ? 100 : 1);   // lines and pages to pixels
   if (e.shiftKey && !e.ctrlKey) {
     stage.scrollLeft += e.deltaX * unit;
@@ -4574,7 +4994,20 @@ stage.addEventListener('wheel', function (e) {
     return;
   }
   var d = e.deltaY * unit;
-  if (e.timeStamp - wheelAt > 250 || d * wheelAcc < 0) wheelAcc = 0;      // new gesture or turned around
+  // On a Mac a wheel notch comes as exactly 40 px with a wheelDeltaY of 120, in the Mac
+  // app and in Chrome alike, so it took three notches to make a step, and notches turned
+  // slowly, each one a new gesture, made none at all. Each one is a whole step. A
+  // trackpad's stream of fractions never looks like that.
+  // WebKit reports a trackpad's stream the same way (wheelDeltaY three times deltaY), so a
+  // trackpad event of exactly 40 looked like a notch. A gesture that has sent anything but
+  // whole multiples of 40 is a trackpad's, and stays one until it ends
+  var fresh = e.timeStamp - wheelAt > 250;
+  if (fresh) wheelSmooth = false;
+  if (e.deltaY % 40 !== 0) wheelSmooth = true;
+  var clicks = e.wheelDeltaY / 120;
+  if (!e.ctrlKey && !wheelSmooth && e.deltaMode === 0 && clicks && clicks === Math.round(clicks) &&
+      Math.abs(e.deltaY) === Math.abs(clicks) * 40) d = -clicks * 90;
+  if (fresh || d * wheelAcc < 0) wheelAcc = 0;      // new gesture or turned around
   wheelAt = e.timeStamp;
   wheelAcc += d;
   var NOTCH = 90, nz = S.zoom;
@@ -4648,6 +5081,14 @@ function toPixels(img) {
   }
 }
 
+// The packer reads the family off the folder a file sits in, art-live/<family>/. The Mac
+// app says which folder that is, so there the folder decides, and a terrain sheet opened
+// while a creature was on screen is not checked as a creature. A browser hands out no
+// folder, and the box in the top bar stays the guess.
+function familyOf(h) {
+  var m = h && typeof h.dir === 'string' ? /(?:^|\/)art(?:-live)?\/([^\/]+)\/?$/.exec(h.dir) : null;
+  return m && cleanName(m[1]) === m[1] ? m[1] : '';
+}
 function openFiles(files) {
   closeAddMenu();
   var list = Array.prototype.slice.call(files).filter(function (f) { return /\.png$/i.test(f.name) || /image/.test(f.type); });
@@ -4688,7 +5129,8 @@ function openFiles(files) {
       var other = g.filter(function (e) { return e.d.w !== w || e.d.h !== h; });
       // frames must start at 0 with no gaps, so say when the numbering had to change
       if (same.some(function (e, i) { return e.idx !== i; })) renumbered.push(key);
-      var s = makeSprite(cleanName(key) || 'sprite', w, h, same.map(function (e) { return e.d.px; }), cleanName($('family').value));
+      var fam = familyOf(g[0].d.handle) || cleanName($('family').value);
+      var s = makeSprite(cleanName(key) || 'sprite', w, h, same.map(function (e) { return e.d.px; }), fam);
       s.bytes = same.map(function (e) { return e.d.size || 0; });   // the size of the file as it arrived
       s.handles = same.map(function (e) { return e.d.handle; }).filter(Boolean);  // the files themselves, for Save over
       if (s.handles.length) rememberPlace(s.handles[0], null, s.handles[0].dir || '');
@@ -4696,7 +5138,7 @@ function openFiles(files) {
       if (rd) ruled.push(rd);
       S.sprites.push(s); made++;
       other.forEach(function (e) {
-        var lone = makeSprite((cleanName(key) || 'sprite') + '-' + e.idx, e.d.w, e.d.h, [e.d.px], cleanName($('family').value));
+        var lone = makeSprite((cleanName(key) || 'sprite') + '-' + e.idx, e.d.w, e.d.h, [e.d.px], familyOf(e.d.handle) || fam);
         lone.handles = e.d.handle ? [e.d.handle] : [];
         S.sprites.push(lone);
         split++;
@@ -4761,6 +5203,7 @@ function selectSprite(i) {
   if (s) { $('key').value = s.key; $('key').title = s.key; $('family').value = s.family; s.softDismissed = false; }
   else $('key').value = '';   // no sprite, no name: the path bar should not name a ghost
   if (s && sheetOf(s)) lastSheet = s;
+  else if (S.sprites.indexOf(lastSheet) < 0) lastSheet = null;   // a closed sheet is not held on to
   setPlaying(false);
   checkAlpha();
   // show the stage first so Fit can measure it, and pick zoom BEFORE the first
@@ -4831,7 +5274,7 @@ function exportAll(oneOnly, force) {
   $('key').value = s.key; $('key').title = s.key; $('family').value = s.family;
   touched(s); scheduleSave();
 
-  var r = checkSprite(s);
+  var r = fullCheck(s);
   if (r.bad.length && !force) {
     var plain = r.bad[0].replace(/<[^>]+>/g, '');
     say('The packer would refuse this. ' + plain, 'bad');
@@ -4863,7 +5306,7 @@ function exportAll(oneOnly, force) {
 // dialog or dropped on the window. While the sprite still has files whose names match
 // what export would write, Save over writes straight into them: no downloads folder, no
 // moving files about after. Firefox and Safari never hand out handles, so there the
-// button never appears and Export frames stays the way.
+// button never appears and Export stays the way.
 // true where the page can write files in place at all: Chrome and Edge have the picker,
 // the Mac app fills it in through mac/bridge.js, and drops can carry handles too
 var FS_OK = !!window.showOpenFilePicker ||
@@ -4907,7 +5350,7 @@ function saveOver(force) {
   $('key').value = s.key; $('key').title = s.key; $('family').value = s.family;
   touched(s); scheduleSave();
 
-  var r = checkSprite(s);
+  var r = fullCheck(s);
   if (r.bad.length && !force) {
     var plain = r.bad[0].replace(/<[^>]+>/g, '');
     say('The packer would refuse this. ' + plain, 'bad');
@@ -4939,7 +5382,7 @@ function saveOver(force) {
           '. Run npm run pack-art', 'good');
         scheduleSave(); redraw();
       }, function () {
-        say('Could not write into ' + s.dest.label + '. The folder may have moved. Export frames still works.', 'bad');
+        say('Could not write into ' + s.dest.label + '. The folder may have moved. Export still works.', 'bad');
       });
     }, function () {
       say('The browser would not ask for leave to write in ' + s.dest.label + '. Nothing was touched. Press Save again.', 'bad');
@@ -4981,7 +5424,7 @@ function saveOver(force) {
     if (wrote.length) bits.push('Saved over ' + list(wrote) + (realDir ? ' in ' + realDir : ' in place'));
     if (fresh.length) bits.push(list(fresh.map(function (p) { return p.name; })) + (fresh.length > 1 ? ' are new frames' : ' is a new frame') + ' with no file yet, downloaded instead');
     if (blocked.length) bits.push('The browser held back ' + list(blocked) + '. It asks once per file: press Save over again');
-    if (failed.length) bits.push('Could not write ' + list(failed) + '. The file may have moved. Export frames still works');
+    if (failed.length) bits.push('Could not write ' + list(failed) + '. The file may have moved. Export still works');
     var stale = (s.handles || []).filter(function (h) { return h && names.indexOf(h.name) < 0; }).map(function (h) { return h.name; });
     if (wrote.length && stale.length) bits.push(list(stale) + ' on disk ' + (stale.length > 1 ? 'are' : 'is') + ' not a frame of this sprite any more. Delete ' + (stale.length > 1 ? 'them yourself if they' : 'it yourself if it') + ' should go');
     if (wrote.length && !blocked.length && !failed.length) {
@@ -5016,6 +5459,7 @@ function applyPanels() {
   $('app').style.setProperty('--leftW', l + 'px');
   $('app').style.setProperty('--sideW', r + 'px');
   toolsFollow();
+  fitStagebar();   // the frames row is what the two widths leave over
 }
 function wireGrip(id, which) {
   var h = $(id);
@@ -5105,6 +5549,8 @@ function toolsPlace(x, y, dragged) {
   var maxX = app.clientWidth - p.offsetWidth - 6, maxY = app.clientHeight - 30;
   x = Math.max(6, Math.min(maxX, +x || 0)); y = Math.max(6, Math.min(maxY, +y || 0));
   p.style.left = x + 'px'; p.style.top = y + 'px';
+  // set low, it scrolls rather than hanging its colour and palette off the window
+  p.style.maxHeight = Math.max(80, app.clientHeight - y - 14) + 'px';
   if (dragged) UI.toolsPos = { x: x, y: y };
 }
 function toolsSetDock(dock) {
@@ -5182,6 +5628,20 @@ $('alpha').oninput = function () {
 };
 
 // ---------- wiring ----------
+// the fields whose label is a word laid beside them rather than tied to them, named for
+// a screen reader; a mouse user reads the word, a listener hears this
+var FIELD_NAMES = {
+  pick: 'Colour', hex: 'Colour as hex', sprayR: 'Spray size', sprayD: 'Spray flow',
+  tilePitch: 'Repeat every, in pixels', fps: 'Play speed, frames a second',
+  szT: 'Add to the top', szB: 'Add to the bottom', szL: 'Add to the left', szR: 'Add to the right',
+  szW: 'Width', szH: 'Height', szF: 'Scale factor', szWhat: 'What to scale',
+  shCW: 'Cell width', shCH: 'Cell height', shOX: 'Margin x', shOY: 'Margin y', shGap: 'Gap',
+  shCols: 'Columns to grow to', shRows: 'Rows to grow to',
+  nsCell: 'Cell size in pixels', nsCols: 'Columns', nsRows: 'Rows', nsName: 'Name',
+  asInto: 'Into which sheet', plKey: 'PixelLab API key', plPrompt: 'What to draw',
+  plSize: 'Size', plCount: 'How many', refDraft: 'An open sprite to add as a reference', ruleDraft: 'New rule'
+};
+Object.keys(FIELD_NAMES).forEach(function (id) { if ($(id)) $(id).setAttribute('aria-label', FIELD_NAMES[id]); });
 buildTools();
 drawKeys();
 setTool('pencil');
@@ -5191,6 +5651,7 @@ GROUNDS.forEach(function (g) {
   b.style.background = g.tiles[0];
   b.className = g.id === S.ground.id ? 'on' : '';
   b.title = g.name;
+  asButton(b, 'Ground: ' + g.name);
   b.onclick = function () {
     S.ground = g;
     Array.prototype.forEach.call($('bgs').children, function (n) { n.className = ''; });
@@ -5366,6 +5827,12 @@ $('pbPath').onclick = function () {
 $('bAdd').onclick = function (e) { e.stopPropagation(); $('addMenu').className = $('addMenu').className === 'show' ? '' : 'show'; };
 $('addMenu').onclick = function (e) { e.stopPropagation(); };
 function closeAddMenu() { $('addMenu').className = ''; }
+// WebKit opens the menu for a Control-click on the press and still sends a click on the
+// release, which shut the menu the moment it opened (and selected the row under it). On a
+// Mac that click is the secondary click's, so it goes no further
+window.addEventListener('click', function (e) {
+  if (MAC && e.ctrlKey && e.button === 0) { e.stopPropagation(); e.preventDefault(); }
+}, true);
 document.addEventListener('click', function () { closeCtx(); $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; $('imgMenu').className = ''; });
 $('keptNote').onclick = function (e) { e.stopPropagation(); $('keptPop').className = $('keptPop').className === 'panel show' ? 'panel' : 'panel show'; };
 $('keptPop').onclick = function (e) { e.stopPropagation(); };
@@ -5432,7 +5899,7 @@ function boardPointer(e, down) {
     if (had) setSheetCell(had.cx, had.cy);
     return;
   }
-  var lift = e.button === 2 || (e.buttons & 2) || e.altKey;
+  var lift = secondary(e) || (e.buttons & 2) || e.altKey;
   if (down) { boardDrag = lift ? 2 : 1; boardLast = -1; try { pv.setPointerCapture(e.pointerId); } catch (err) { /* no capture, the move still lands */ } }
   var what = boardDrag === 2 || lift ? null : curCell(s), cols = BOARD_GEO.cols;
   // a quick drag skips squares between one move and the next, so walk the squares between
@@ -5591,7 +6058,7 @@ var plHist = (function () {
   // only records with a picture are worth anything; one without must not break the dialog
   try {
     var kept = JSON.parse(window.localStorage.getItem(PL_HIST_KEY) || '[]');
-    return (Array.isArray(kept) ? kept : []).filter(function (r) { return r && typeof r.png === 'string'; })
+    return (Array.isArray(kept) ? kept : []).filter(function (r) { return r && isImageData(r.png); })
       .map(function (r) { r.prompt = String(r.prompt || ''); return r; });
   } catch (e) { return []; }
 })();
@@ -5659,6 +6126,7 @@ function plThumb(rec) {
   img.src = rec.png;
   img.title = rec.prompt + ' — ' + rec.w + 'x' + rec.h + ', ' + when(rec.at) + '. Click to open as a sprite.';
   img.onclick = function () { plOpen(rec); };
+  asButton(img, 'Open as a sprite: ' + rec.prompt);
   return img;
 }
 function plOpen(rec) {
@@ -5705,6 +6173,7 @@ function plGenerate() {
       var uri = r && r.image && r.image.base64 ? String(r.image.base64) : null;
       if (!uri) throw new Error('no image came back');
       if (uri.indexOf('data:') !== 0) uri = 'data:image/png;base64,' + uri;
+      if (!isImageData(uri)) throw new Error('what came back was not an image');
       if (r.usage && +r.usage.usd) spent += +r.usage.usd;   // a string here would glue, not add
       var rec = { at: Date.now(), prompt: prompt, w: size, h: size, png: uri };
       plHist.unshift(rec);
@@ -5736,7 +6205,7 @@ function plSaveAll() {
       var chain = Promise.resolve(), wrote = 0, used = {};
       plHist.forEach(function (rec) {
         chain = chain.then(function () {
-          var name = 'pixellab-' + rec.at + '-' + (cleanName(rec.prompt.split(/\s+/).slice(0, 3).join('-')) || 'image');
+          var name = 'pixellab-' + (Math.floor(+rec.at) || 0) + '-' +(cleanName(rec.prompt.split(/\s+/).slice(0, 3).join('-')) || 'image');
           // two of one batch can land in the same millisecond; neither may write over the other
           var n = 2, base = name;
           while (used[name]) name = base + '-' + n++;
@@ -5920,6 +6389,25 @@ window.addEventListener('keydown', function (e) {
     if (!meta) { e.preventDefault(); assignKey(e.key); return; }
     keyWait = null; drawKeys();
   }
+  // the keyboard's own presses: Enter or Space on a focused button, or on a row acting as
+  // one, presses it, and the arrows walk a row of choices. Only for focus the keyboard put
+  // there: a click leaves the focus on a button too, and after a click Space is still
+  // Play and the arrows still nudge, as they always were
+  var kbFocus = el !== document.body && byKeyboard(el);
+  if (kbFocus && !meta && (t === 'BUTTON' || el.getAttribute('role') === 'button')) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      if (t !== 'BUTTON') { e.preventDefault(); if (!e.repeat) el.click(); }
+      return;
+    }
+    var row = el.parentNode;
+    if (row && (/(^| )seg( |$)/.test(row.className) || row.id === 'tabs') && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault();
+      var sib = el;
+      do { sib = e.key === 'ArrowLeft' ? sib.previousElementSibling : sib.nextElementSibling; } while (sib && sib.offsetParent === null);
+      if (sib) { sib.focus(); sib.click(); }
+      return;
+    }
+  }
   // a key that does something mid-stroke (undo, Esc, a tool, an arrow) lands after the
   // stroke is set down. Acting under it restored the stroke's saved frame over an undo,
   // and Esc or a tool key in the middle of moving a box threw on the next move. Zoom and
@@ -5954,6 +6442,15 @@ window.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { e.preventDefault(); closeAddToSheetModal(); }
     return;
   }
+  // a right-click menu is about the frame, the cell or the sprite it was opened on, and
+  // a key can take that away under it (Backspace a frame, undo a ruling): its Duplicate
+  // frame then threw on a frame that was gone. A key that acts shuts it first, as a
+  // menu does, and Esc only shuts it. The keys that work the menu are its own: up and down
+  // walk it (below), and Enter, Space and Tab act on the item that has the focus, which
+  // shutting the menu first would take away before it could be pressed
+  var menuKey = e.key === 'ArrowUp' || e.key === 'ArrowDown' ||
+    ($('ctxMenu').contains(document.activeElement) && /^(Enter| |Tab)$/.test(e.key));
+  if (!bare && !menuKey && $('ctxMenu').className === 'panel show') { closeCtx(); if (e.key === 'Escape') return; }
   // [ and ] walk the sheet a cell at a time; with Shift they select as they go
   // with Shift held most layouts send { and } rather than [ and ]
   var cellStep = e.key === '[' || e.key === '{' ? -1 : e.key === ']' || e.key === '}' ? 1 : 0;
@@ -5962,7 +6459,14 @@ window.addEventListener('keydown', function (e) {
     stepCell(cellStep, e.shiftKey);
     return;
   }
-  if (e.key === 'Escape' && $('ctxMenu').className === 'panel show') { closeCtx(); return; }
+  // up and down walk an open menu rather than nudging the picture behind it
+  if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && $('ctxMenu').className === 'panel show') {
+    e.preventDefault();
+    var mb = Array.prototype.slice.call($('ctxMenu').querySelectorAll('button:not(:disabled)'));
+    var mi = mb.indexOf(document.activeElement);
+    if (mb.length) mb[(mi + (e.key === 'ArrowDown' ? 1 : mb.length - 1 + (mi < 0 ? 1 : 0))) % mb.length].focus();
+    return;
+  }
   if (e.key === 'Escape' && $('imgMenu').className === 'show') { $('imgMenu').className = ''; return; }
   if (e.key === 'Escape' && ($('addMenu').className === 'show' || $('keptPop').className === 'panel show' || $('speedPop').className === 'panel show')) {
     $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; return;
@@ -6019,12 +6523,36 @@ window.addEventListener('keydown', function (e) {
   }
   if ($('addMenu').className === 'show' && $('addMenu').contains(e.target)) { e.target.blur(); closeAddMenu(); }
 });
-window.addEventListener('keyup', function (e) {
-  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') commit();
+// Tab stays inside an open dialog, round and round, rather than wandering off into the
+// panels behind the veil where nothing it lands on can be seen or pressed
+var MODAL_IDS = ['settings', 'gen', 'sizeModal', 'sheetModal', 'splitModal', 'newSheetModal', 'addSheetModal'];
+window.addEventListener('keydown', function (e) {
+  if (e.key !== 'Tab' || e.defaultPrevented) return;
+  var box = null;
+  MODAL_IDS.forEach(function (id) { if (!box && $(id).className === 'show') box = $(id).querySelector('.box'); });
+  if (!box) return;
+  var all = Array.prototype.filter.call(box.querySelectorAll(FOCUSABLE), function (n) {
+    return !n.disabled && n.tabIndex >= 0 && n.offsetParent !== null;
+  });
+  if (!all.length) return;
+  var a = document.activeElement, first = all[0], last = all[all.length - 1];
+  if (!box.contains(a)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+  else if (e.shiftKey && a === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && a === last) { e.preventDefault(); first.focus(); }
 });
-window.addEventListener('resize', function () { if (spr()) paintCanvas(); drawPreview(); });
-// last chance to write, for the tab that gets closed mid-stroke
-window.addEventListener('beforeunload', function () { if (saveTimer) { clearTimeout(saveTimer); saveStore(); } });
+window.addEventListener('keyup', function (e) {
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    settleNudge();
+    commit();
+  }
+});
+window.addEventListener('resize', function () { if (spr()) { paintCanvas(); fitStagebar(); } drawPreview(); });
+// last chance to write, for the tab that gets closed mid-stroke. WebKit sends no
+// beforeunload when the Mac app loads the page again itself (Reload Now after an update),
+// only pagehide, so both are heard; the second finds nothing waiting
+function lastWrite() { if (saveTimer) { clearTimeout(saveTimer); saveStore(); } }
+window.addEventListener('beforeunload', lastWrite);
+window.addEventListener('pagehide', lastWrite);
 
 S.store.on = storageOK();
 redraw();
@@ -6033,7 +6561,7 @@ loadStore();
 // the settings modal. The Mac menu bar's Settings item still calls showKeys, so the
 // old door opens the new room.
 function settingsOpen() { return $('settings').className === 'show'; }
-function openSettings() { keyWait = null; drawKeys(); $('settings').className = 'show'; }
+function openSettings() { keyWait = null; drawKeys(); $('settings').className = 'show'; $('bSettingsClose').focus(); }
 function closeSettings() { keyWait = null; drawKeys(); $('settings').className = ''; }
 function showKeys() { openSettings(); }
 
