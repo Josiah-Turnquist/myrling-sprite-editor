@@ -3303,6 +3303,15 @@ function strayCells(s, f) {
   }
   return out;
 }
+// the check before a file is written reads every pixel whatever the size. The live panel
+// skips the colour count on a large picture to stay quick while you draw, but a refusal
+// the packer would make cannot be skipped on the way out, or a 40-colour picture over
+// 128 px square would be saved without a word
+function fullCheck(s) {
+  var was = deepCheck;
+  deepCheck = true;
+  try { return checkSprite(s); } finally { deepCheck = was; }
+}
 function checkSprite(s) {
   var bad = [], warn = [], ok = [], note = [];
   // every frame's counts, each proved against its step once (see frameStats) and read by
@@ -5076,7 +5085,7 @@ function exportAll(oneOnly, force) {
   $('key').value = s.key; $('key').title = s.key; $('family').value = s.family;
   touched(s); scheduleSave();
 
-  var r = checkSprite(s);
+  var r = fullCheck(s);
   if (r.bad.length && !force) {
     var plain = r.bad[0].replace(/<[^>]+>/g, '');
     say('The packer would refuse this. ' + plain, 'bad');
@@ -5152,7 +5161,7 @@ function saveOver(force) {
   $('key').value = s.key; $('key').title = s.key; $('family').value = s.family;
   touched(s); scheduleSave();
 
-  var r = checkSprite(s);
+  var r = fullCheck(s);
   if (r.bad.length && !force) {
     var plain = r.bad[0].replace(/<[^>]+>/g, '');
     say('The packer would refuse this. ' + plain, 'bad');
