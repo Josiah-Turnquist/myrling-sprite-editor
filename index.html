@@ -6130,8 +6130,12 @@ window.addEventListener('keyup', function (e) {
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') commit();
 });
 window.addEventListener('resize', function () { if (spr()) paintCanvas(); drawPreview(); });
-// last chance to write, for the tab that gets closed mid-stroke
-window.addEventListener('beforeunload', function () { if (saveTimer) { clearTimeout(saveTimer); saveStore(); } });
+// last chance to write, for the tab that gets closed mid-stroke. WebKit sends no
+// beforeunload when the Mac app loads the page again itself (Reload Now after an update),
+// only pagehide, so both are heard; the second finds nothing waiting
+function lastWrite() { if (saveTimer) { clearTimeout(saveTimer); saveStore(); } }
+window.addEventListener('beforeunload', lastWrite);
+window.addEventListener('pagehide', lastWrite);
 
 S.store.on = storageOK();
 redraw();
