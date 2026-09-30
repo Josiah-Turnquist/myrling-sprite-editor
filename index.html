@@ -1166,7 +1166,9 @@ function undo() {
   // a change not in the history yet (a paste still floating, pixels nudged before the
   // key came up) is the step to take back; stepping past it lost two steps at once
   var loose = !sameAsHead(s);
-  if (!loose && s.hi <= 0) return;
+  // a paste that changed nothing (clear pixels, or the same ones) with nothing behind it:
+  // the button says it can be taken back, so it is
+  if (!loose && s.hi <= 0) { if (lift) { dropSelection(true); redraw(); } return; }
   dropSelection(true);
   noteWhere(s);
   if (!loose) s.hi--;
