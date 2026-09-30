@@ -1083,9 +1083,36 @@ function sameGrid(a, b) {
   return a.cw === b.cw && a.ch === b.ch && a.gap === b.gap && a.ox === b.ox && a.oy === b.oy;
 }
 function copyCells(cells) { return (cells || []).map(function (c) { return c ? { cx: c.cx, cy: c.cy } : null; }); }
-function snapshot(s) {
+// the same pixels, compared four bytes at a time: a byte at a time was 27 ms for eight
+// 1000 by 2000 frames, and a stroke's commit asks it of every frame
+function samePixels(a, b) {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  if (!(a.byteOffset & 3) && !(b.byteOffset & 3) && !(a.length & 3)) {
+    var x = new Uint32Array(a.buffer, a.byteOffset, a.length >> 2), y = new Uint32Array(b.buffer, b.byteOffset, b.length >> 2);
+    for (var i = 0; i < x.length; i++) if (x[i] !== y[i]) return false;
+    return true;
+  }
+  for (var j = 0; j < a.length; j++) if (a[j] !== b[j]) return false;
+  return true;
+}
+// A step keeps its own copy of every frame, but a stroke only changes one: a frame that
+// is the same as in `prev` (the step on screen when this one is made) shares prev's copy
+// rather than taking another. Eight 1000 by 2000 frames were 64 MB a step and are 8 MB
+// now. Sharing is safe because nothing ever writes into a step's copies: restore() and
+// this take copies out of them, and the frames on the canvas are always copies of their
+// own. `own` is what this step added, which is what the undo budget counts.
+var HIST_CLOCK = 0;
+function snapshot(s, prev) {
+  var own = 0;
+  var frames = s.frames.map(function (f, i) {
+    var was = prev && prev.frames[i];
+    if (was && samePixels(f, was)) return was;
+    own += f.length;
+    return f.slice();
+  });
   return {
-    w: s.w, h: s.h, cur: s.cur, frames: s.frames.map(function (f) { return f.slice(); }),
+    w: s.w, h: s.h, cur: s.cur, frames: frames, own: own, t: ++HIST_CLOCK,
     sheet: copyGrid(sheetOf(s)), gen: s.gridGen || 0,
     sheetCur: s.sheetCur ? { cx: s.sheetCur.cx, cy: s.sheetCur.cy } : null,
     board: s.board && s.board.cols > 0 ? { cols: s.board.cols, rows: s.board.rows, cells: copyCells(s.board.cells) } : null
@@ -1106,31 +1133,66 @@ function sameAsHead(s) {
   var a = s.hist[s.hi];
   if (!a || a.w !== s.w || a.h !== s.h || a.frames.length !== s.frames.length) return false;
   if (!sameGrid(a.sheet, sheetOf(s))) return false;
-  for (var i = 0; i < s.frames.length; i++) {
-    var x = s.frames[i], y = a.frames[i];
-    if (x.length !== y.length) return false;
-    for (var j = 0; j < x.length; j++) if (x[j] !== y[j]) return false;
-  }
+  for (var i = 0; i < s.frames.length; i++) if (!samePixels(s.frames[i], a.frames[i])) return false;
   return true;
 }
 // 200 steps back, but never more than about 40 MB of them: a 128 px sprite with eight
 // frames would otherwise hold half a gigabyte of undo. Two copies is the floor so the
 // last stroke can still be undone; forcing eight would keep 512 MB for a 4k frame.
-var HIST_STEPS = 200, HIST_BYTES = 40 * 1024 * 1024;
-// the sprite can be named, for a stroke that has to land on the sprite it began on
+// HIST_ALL is the same kind of limit over every sprite open at once. Each sprite keeping
+// its own 40 MB let ten big pictures hold 400 MB of undo between them, and nothing said
+// stop. Past HIST_ALL the oldest step anywhere goes first, whichever sprite it is in, so
+// the sprites you have left alone lose their far past before the one you are drawing
+// on loses any of its. No sprite is ever taken below the step before the one on screen:
+// the last stroke can always be undone, even if that leaves the total over.
+var HIST_STEPS = 200, HIST_BYTES = 40 * 1024 * 1024, HIST_ALL = 200 * 1024 * 1024;
+// the bytes a sprite's undo holds. A step shares frames only with the step made just
+// before it (see snapshot), and steps only leave from the two ends, so every step after
+// the first holds its `own` and the first holds all of its frames.
+function histHeld(s) {
+  var h = s.hist, n = 0, i;
+  if (!h.length) return 0;
+  for (i = 0; i < h[0].frames.length; i++) n += h[0].frames[i].length;
+  for (i = 1; i < h.length; i++) n += h[i].own;
+  return n;
+}
+function trimAllHistory() {
+  var held = S.sprites.map(histHeld), total = 0, i;
+  for (i = 0; i < held.length; i++) total += held[i];
+  while (total > HIST_ALL) {
+    var at = -1;
+    for (i = 0; i < S.sprites.length; i++) {
+      var x = S.sprites[i];
+      if (x.hi >= 2 && (at < 0 || x.hist[0].t < S.sprites[at].hist[0].t)) at = i;
+    }
+    if (at < 0) return;   // everyone is down to the step before their last
+    var s = S.sprites[at];
+    s.hist.shift(); s.hi--;
+    var now = histHeld(s);
+    total -= held[at] - now; held[at] = now;
+  }
+}
+// the sprite can be named, for a stroke that has to land on the sprite it began on.
+// Says whether a step was made (and so the page redrawn).
 function commit(s) {
-  s = s || spr(); if (!s) return;
-  if (sameAsHead(s)) return;
+  s = s || spr(); if (!s) return false;
+  // the new step shares every frame the head already holds as it is, so a frame the head
+  // does not share is exactly a frame that changed: nothing shared differently, no grid
+  // or size change, is the same as sameAsHead, found without comparing everything twice
+  var head = s.hist[s.hi], snap = snapshot(s, head);
+  if (head && head.w === snap.w && head.h === snap.h && sameGrid(head.sheet, snap.sheet) &&
+      head.frames.length === snap.frames.length &&
+      snap.frames.every(function (f, i) { return f === head.frames[i]; })) return false;
   s.hist.length = s.hi + 1;
-  s.hist.push(snapshot(s));
-  var each = s.w * s.h * 4 * s.frames.length;
-  var cap = Math.max(2, Math.min(HIST_STEPS, Math.floor(HIST_BYTES / Math.max(1, each))));
-  while (s.hist.length > cap) s.hist.shift();
+  s.hist.push(snap);
+  while (s.hist.length > HIST_STEPS || (s.hist.length > 2 && histHeld(s) > HIST_BYTES)) s.hist.shift();
   s.hi = s.hist.length - 1;
+  trimAllHistory();
   s.bytes = [];
   touched(s);
   scheduleSave();
   redraw();
+  return true;
 }
 // puts a step back, and says whether that step was a ruling of the grid (a new grid on
 // the same picture), which the status line names so an undo of it is never a surprise
@@ -2230,7 +2292,7 @@ function openAddToSheetModal(from) {
   drawAddSheetNote();
   $('addSheetModal').className = 'show';
 }
-function closeAddToSheetModal() { $('addSheetModal').className = ''; }
+function closeAddToSheetModal() { $('addSheetModal').className = ''; asCands = []; asPick = {}; }   // nor are the sprites it listed
 function asChosen() { return asCands.filter(function (x, i) { return !!asPick[i]; }); }
 // the size the sheet is being built at: the first sprite ticked. Nothing ticked, no size,
 // and every sprite in the list is fair game again.
@@ -2627,7 +2689,14 @@ function redraw() {
   $('frames').style.display = s ? 'flex' : 'none';
   $('framesHd').style.display = s ? 'block' : 'none';
   drawSheetRow();
-  if (!s) { drawStrip(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept(); return; }
+  if (!s) {
+    // the frames row is only hidden with nothing open, and its tiles and buttons were
+    // closures over the last sprite closed: it stayed in memory, history and all. The
+    // canvas behind blit() held a copy of that sprite's pixels as well.
+    drawFrames();
+    blitF = null; off.width = 0; off.height = 0;
+    drawStrip(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept(); return;
+  }
 
   paintCanvas();
   $('bUndo').disabled = s.hi <= 0 && !lift;   // a floating paste can be taken back too
@@ -2878,7 +2947,8 @@ function openCtx(e, items) {
   m.style.left = Math.min(e.clientX, window.innerWidth - w - 6) + 'px';
   m.style.top = Math.min(e.clientY, window.innerHeight - h - 6) + 'px';
 }
-function closeCtx() { $('ctxMenu').className = 'panel'; }
+// emptied as it closes: its items close over the sprite they were for, closed or not
+function closeCtx() { $('ctxMenu').className = 'panel'; $('ctxMenu').innerHTML = ''; }
 function duplicateFrame(i) {
   var s = spr(); if (!s) return;
   dropSelection();
@@ -2953,21 +3023,22 @@ function moveFrame(from, to) {
 }
 
 // the list handed back is the cache itself, shared by the checks and the palette until
-// the sprite changes: read it, count it, copy it, never change it
-function colourList(s, which) {
+// the sprite changes: read it, count it, copy it, never change it. `stats`, when given, is
+// every frame's frameStats read a moment ago by the caller, with nothing drawn since
+function colourList(s, which, stats) {
   if (isHeavy(s) && !deepCheck) return [];
   var rev = s._rev || 0;
   if (!s._colCache || s._colRev !== rev) { s._colCache = {}; s._colRev = rev; }
   var key = which + ':' + (which === 'all' ? '' : s.cur);
   if (s._colCache[key]) return s._colCache[key];
+  // added up frame by frame in frame order, each frame's colours in the order they first
+  // turn up: the same order one pass over all the frames met them in, so the sort (which
+  // keeps ties in that order) hands back exactly the list it always did
   var m = new Map();
-  var fs = which === 'all' ? s.frames : [s.frames[s.cur]];
-  fs.forEach(function (f) {
-    for (var i = 0; i < f.length; i += 4) {
-      if (f[i + 3] < 128) continue;
-      var k = (f[i] << 16) | (f[i + 1] << 8) | f[i + 2];
-      m.set(k, (m.get(k) || 0) + 1);
-    }
+  var ids = which === 'all' ? s.frames.map(function (_, i) { return i; }) : [s.cur];
+  ids.forEach(function (fi) {
+    var st = stats ? stats[fi] : frameStats(s, fi);
+    for (var j = 0; j < st.keys.length; j++) m.set(st.keys[j], (m.get(st.keys[j]) || 0) + st.counts[j]);
   });
   var out = Array.from(m.entries()).sort(function (a, b) { return b[1] - a[1]; })
     .map(function (e) { return [(e[0] >> 16) & 255, (e[0] >> 8) & 255, e[0] & 255]; });
@@ -3007,13 +3078,49 @@ function bottomRowPainted(s, f) {
 }
 function countSoft(s) {
   var n = 0;
-  s.frames.forEach(function (f) {
-    for (var i = 3; i < f.length; i += 4) if (f[i] !== 0 && f[i] !== 255) n++;
-  });
+  for (var i = 0; i < s.frames.length; i++) n += frameStats(s, i).soft;
   return n;
 }
-function anyInk(f) { for (var i = 3; i < f.length; i += 4) if (f[i] >= 128) return true; return false; }
-function anyClear(f) { for (var i = 3; i < f.length; i += 4) if (f[i] === 0) return true; return false; }
+// What the checks and the palette count, one frame at a time: its colours with how often
+// each is used (in the order they first turn up), its part see-through pixels, whether it
+// has any ink and any clear. On a big picture the checks read every frame whole several
+// times over, which was 150 ms after every stroke on eight 1000 by 2000 frames, though a
+// stroke changes one frame. So each frame's count is kept against the history step's copy
+// of that frame, and used again while the frame is still byte for byte that copy.
+// Why that cannot go stale: nothing writes into a step's copies (see snapshot), so the copy
+// still holds exactly the pixels that were counted; the count is handed back only after
+// samePixels has found the frame on the canvas identical to it. A frame that differs from
+// the step, a stroke still held, a paste floating, is counted afresh and not kept.
+// Holding one count a frame, against the step on screen, keeps this to one frame's worth.
+function countFrame(f) {
+  var m = new Map(), soft = 0, ink = false, clear = false, last = -1, run = 0;
+  for (var i = 0; i < f.length; i += 4) {
+    var a = f[i + 3];
+    if (a === 0) clear = true; else if (a !== 255) soft++;
+    if (a < 128) continue;
+    ink = true;
+    var k = (f[i] << 16) | (f[i + 1] << 8) | f[i + 2];
+    // pixel art runs one colour along a row, so the map is only visited when it changes;
+    // a colour goes in the map the first time it is seen, which keeps the order
+    if (k === last) { run++; continue; }
+    if (run) m.set(last, m.get(last) + run);
+    if (!m.has(k)) m.set(k, 0);
+    last = k; run = 1;
+  }
+  if (run) m.set(last, m.get(last) + run);
+  var keys = new Int32Array(m.size), counts = new Uint32Array(m.size), j = 0;
+  m.forEach(function (v, key) { keys[j] = key; counts[j] = v; j++; });
+  return { keys: keys, counts: counts, soft: soft, ink: ink, clear: clear };
+}
+function frameStats(s, i) {
+  var f = s.frames[i], step = s.hist && s.hist[s.hi], held = step && step.frames[i];
+  var c = s._fst || (s._fst = []);
+  if (c.length > s.frames.length) c.length = s.frames.length;
+  if (c[i] && c[i].held === held && samePixels(f, held)) return c[i].st;
+  var st = countFrame(f);
+  c[i] = held && samePixels(f, held) ? { held: held, st: st } : null;
+  return st;
+}
 
 // =====================================================================================
 // The checks. `bad` is what pack-art.mjs REFUSES, `warn` is what it warns about, `ok` is
@@ -3089,8 +3196,11 @@ function strayCells(s, f) {
 }
 function checkSprite(s) {
   var bad = [], warn = [], ok = [], note = [];
-  var all = colourList(s, 'all').length;
-  var here = colourList(s, 'cur').length;
+  // every frame's counts, each proved against its step once (see frameStats) and read by
+  // every rule below; proving it again for each rule was most of what the kept counts saved
+  var fst = s.frames.map(function (_, i) { return frameStats(s, i); });
+  var all = colourList(s, 'all', fst).length;
+  var here = colourList(s, 'cur', fst).length;
 
   if (ruleOn('name')) {
     if (!cleanName(s.key)) bad.push('The name is empty. A file has to be called <b>name-0.png</b>.');
@@ -3108,7 +3218,7 @@ function checkSprite(s) {
       else ok.push('Square, ' + s.w + ' by ' + s.h + '.');
     }
     if (ruleOn('hard')) {
-      var soft = countSoft(s);
+      var soft = fst.reduce(function (n, st) { return n + st.soft; }, 0);   // countSoft, from the counts in hand
       if (soft) bad.push('<b>' + soft + ' part see-through pixels.</b> Every pixel has to be fully solid or fully clear.');
       else ok.push('Every pixel is fully solid or fully clear.');
     }
@@ -3122,7 +3232,7 @@ function checkSprite(s) {
 
   if (ruleOn('empty')) {
     var empties = [];
-    s.frames.forEach(function (f, i) { if (!anyInk(f)) empties.push(i); });
+    fst.forEach(function (st, i) { if (!st.ink) empties.push(i); });
     if (empties.length) bad.push('Frame ' + empties.join(' and ') + ' ' + (empties.length > 1 ? 'are' : 'is') + ' <b>empty</b>. There is no sprite in that file.');
   }
 
@@ -3136,7 +3246,7 @@ function checkSprite(s) {
   // looking at frame 0
   if (ruleOn('feet') && !sheetOf(s) && !TILE_ANCHORED[s.family]) {
     var hover = [];
-    s.frames.forEach(function (f, i) { if (anyInk(f) && !bottomRowPainted(s, f)) hover.push(i); });
+    s.frames.forEach(function (f, i) { if (fst[i].ink && !bottomRowPainted(s, f)) hover.push(i); });
     if (hover.length) warn.push('<b>Nothing on the bottom row</b> of frame ' + hover.join(' and ') + '. The game plants that row at the feet, so this creature hovers. Move it down and keep the empty rows at the top.');
     else ok.push('The bottom row is painted, so the feet sit on the ground.');
   }
@@ -3202,7 +3312,7 @@ function checkSprite(s) {
 
   if (ruleOn('clear')) {
     var baked = [];
-    s.frames.forEach(function (f, i) { if (!anyClear(f)) baked.push(i); });
+    fst.forEach(function (st, i) { if (!st.clear) baked.push(i); });
     if (baked.length) warn.push('No clear pixels in frame ' + baked.join(' and ') + '. The background looks painted in, and it has to be see-through.');
   }
 
@@ -3211,10 +3321,11 @@ function checkSprite(s) {
   if (ruleOn('frames') && s.frames.length < 2 && !sheetOf(s) && !VARIANT_FAMILIES[s.family]) warn.push('Only one frame. The game wants two, a standing one and a stepping one.');
 
   if (ruleOn('palette') && s.frames.length > 1 && !VARIANT_FAMILIES[s.family]) {
-    var base = {}, extra = 0;
-    colourList({ frames: [s.frames[0]], cur: 0 }, 'all').forEach(function (c) { base[rgb2hex(c)] = 1; });
+    // each frame's colours come from its count rather than being counted again here,
+    // which was half of what a big picture's checks cost
+    var base = new Set(fst[0].keys), extra = 0;
     for (var k = 1; k < s.frames.length; k++) {
-      colourList({ frames: [s.frames[k]], cur: 0 }, 'all').forEach(function (c) { if (!base[rgb2hex(c)]) extra++; });
+      fst[k].keys.forEach(function (c) { if (!base.has(c)) extra++; });
     }
     if (extra) warn.push(extra + ' colour' + (extra > 1 ? 's' : '') + ' turn up in a later frame that frame 0 does not have. All the frames of one creature share one palette.');
   }
@@ -3790,6 +3901,9 @@ function drawPreviewMode() {
   }
 }
 function drawPreview() {
+  // everything this draws is in the Game tab, which showTab redraws as it comes back, so
+  // behind the Checks tab it was a field of tiles painted after every stroke for no one
+  if (UI.tab === 'Checks') return;
   var s = spr();
   var W = pv.clientWidth || 296;
   var scale = S.scale;
@@ -4094,9 +4208,15 @@ function loadStore() {
     })).then(function (all) {
       // the pictures say how big the sprite is; a frame of another size cannot join it
       var first = all.filter(Boolean)[0], w = first ? first.w : 0, h = first ? first.h : 0;
-      var frames = all.filter(function (d) { return d && d.w === w && d.h === h; }).map(function (d) { return d.px; });
+      var frames = [], uris = [];
+      all.forEach(function (d, j) { if (d && d.w === w && d.h === h) { frames.push(d.px); uris.push(rec.frames[j]); } });
       if (frames.length) {
         var s = makeSprite(cleanName(rec.key) || 'sprite', w, h, frames, cleanName(rec.family) || 'creatures');
+        // each frame's pixels were read out of this very picture, so the picture already is
+        // a faithful kept copy of them: held against their hash as keptURI would hold it,
+        // the first save after opening encodes only what has changed since, where it used
+        // to encode every frame of every sprite in one long go (157 ms for forty sprites)
+        s._kept = frames.map(function (f, j) { var k = frameHash(s, f); return k ? { k: k, u: uris[j] } : null; });
         s.bytes = Array.isArray(rec.bytes) ? rec.bytes : [];
         if (rec.tilePitch) s.tilePitch = rec.tilePitch;
         if (rec.sheet && rec.sheet.cw > 0) s.sheet = { cw: rec.sheet.cw, ch: rec.sheet.ch, gap: rec.sheet.gap || 0, ox: rec.sheet.ox || 0, oy: rec.sheet.oy || 0 };
@@ -4496,8 +4616,10 @@ function endDrag(e) {
   strokeSeen = null;
   clipCell = null;
   var was = drag.mode, on = drag.s; drag = null;
-  if (was === 'draw' || was === 'move' || was === 'line' || was === 'square' || was === 'spray') commit(on);
-  redraw();
+  // a commit that makes a step has redrawn already; redrawing again ran every panel a
+  // second time for nothing
+  var made = (was === 'draw' || was === 'move' || was === 'line' || was === 'square' || was === 'spray') && commit(on);
+  if (!made) redraw();
 }
 stage.addEventListener('pointerup', endDrag);
 stage.addEventListener('pointercancel', endDrag);
@@ -4761,6 +4883,7 @@ function selectSprite(i) {
   if (s) { $('key').value = s.key; $('key').title = s.key; $('family').value = s.family; s.softDismissed = false; }
   else $('key').value = '';   // no sprite, no name: the path bar should not name a ghost
   if (s && sheetOf(s)) lastSheet = s;
+  else if (S.sprites.indexOf(lastSheet) < 0) lastSheet = null;   // a closed sheet is not held on to
   setPlaying(false);
   checkAlpha();
   // show the stage first so Fit can measure it, and pick zoom BEFORE the first
