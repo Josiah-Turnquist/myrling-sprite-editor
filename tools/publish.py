@@ -9,8 +9,13 @@ the page's sha256 and an Ed25519 signature over both version and hash.
 
 When nothing in the page has changed (the version tag aside), the published
 page, its version and its signature are left exactly as they are, so no
-installed copy is sent an identical editor under a new number. Only the app
-half of update.json, which is not signed, is brought up to date.
+installed copy is sent an identical editor under a new number.
+
+The app half of update.json, which is not signed, names the newest Mac app you
+can download. Publishing the page never changes it: it is only moved on by
+--announce, which the release workflow runs once the download actually exists.
+Announcing from `make release` instead would tell every installed copy about a
+version whose build might still fail, and each copy mentions a version once.
 
 The signature is over exactly:
 
@@ -27,6 +32,9 @@ every installed copy of the app, which would quietly stop updates for everybody.
     python3 tools/publish.py --check      say what publishing would do; fail if it
                                           would need the key and the key is missing
     python3 tools/publish.py --check-key  just check the key is there
+    python3 tools/publish.py --announce 1.2
+                                          tell installed copies Mac app 1.2 is out;
+                                          touches only the app half, needs no key
 """
 
 import datetime
@@ -174,8 +182,56 @@ def app_version():
         return plistlib.load(f).get("CFBundleShortVersionString", "1.0")
 
 
+def app_entry(version):
+    return {
+        "version": version,
+        "url": RELEASES,
+        "notes": "Myrling %s for macOS, from GitHub Releases." % version,
+    }
+
+
+def announced():
+    """The app half update.json carries now, or None if there is none to keep."""
+    try:
+        with open(MANIFEST) as f:
+            app = json.load(f).get("app")
+    except (OSError, ValueError, AttributeError):
+        return None
+    if isinstance(app, dict) and isinstance(app.get("version"), str) and app["version"]:
+        return app
+    return None
+
+
+def announce(version):
+    """Moves the app half on to a released version, and nothing else: the page, its
+    number and its signature stay exactly as published, so no key is needed."""
+    if not re.match(r"^[0-9]+(\.[0-9]+)*$", version):
+        die("'%s' does not look like a version number (1.1, 1.2.3)." % version)
+    try:
+        with open(MANIFEST) as f:
+            manifest = json.load(f)
+    except (OSError, ValueError):
+        die("docs/update.json is missing or unreadable; run make site first.")
+    if not isinstance(manifest.get("page"), dict):
+        die("docs/update.json has no page entry; run make site first.")
+    current = announced()
+    if current and not newer(version, current["version"]) and version != current["version"]:
+        die("update.json already announces %s, which is newer than %s." % (current["version"], version))
+    manifest["app"] = app_entry(version)
+    if write(MANIFEST, (json.dumps(manifest, indent=2) + "\n").encode("utf-8")):
+        print("docs/update.json now announces Mac app %s." % version)
+    else:
+        print("docs/update.json already announces Mac app %s." % version)
+
+
 def main():
     args = sys.argv[1:]
+    if "--announce" in args:
+        at = args.index("--announce")
+        if at + 1 >= len(args):
+            die("--announce needs a version: --announce 1.2")
+        announce(args[at + 1])
+        return
     if "--check-key" in args:
         check_key()
         print("update key found at " + key_path())
@@ -225,11 +281,8 @@ def main():
             "sha256": sha,
             "signature": signature,
         },
-        "app": {
-            "version": app_version(),
-            "url": RELEASES,
-            "notes": "Myrling %s for macOS, from GitHub Releases." % app_version(),
-        },
+        # kept as announced; only the first publish ever takes it from the plist
+        "app": announced() or app_entry(app_version()),
     }
 
     wrote = [name for name, path, data in (

@@ -59,7 +59,8 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: write   # the release, and the announcement pushed to main after it
+  pages: write      # asking Pages to rebuild so the announcement goes live
 
 jobs:
   build:
@@ -255,6 +256,41 @@ jobs:
           gh release create "$TAG" "dist/Myrling-$NUMBER.zip" \
             --title "Myrling $NUMBER" \
             --notes-file notes.md
+
+      # Only now that the download exists do installed copies hear about it. Doing
+      # this from `make release` would announce a version whose build might still
+      # fail, and each installed copy mentions a given version only once. If this
+      # step cannot push, the release still stands; the warning says what to run.
+      - name: Announce the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.version.outputs.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch -q origin main
+          git checkout -q -B main origin/main
+          python3 tools/publish.py --announce "$NUMBER"
+          if git diff --quiet -- docs/update.json; then
+            echo "docs/update.json already announces $NUMBER."
+            exit 0
+          fi
+          git add docs/update.json
+          git commit -q -m "Announce Myrling $NUMBER"
+          pushed=
+          for attempt in 1 2 3; do
+            if git push -q origin main; then pushed=1; break; fi
+            git pull -q --rebase origin main || { git rebase --abort || true; break; }
+          done
+          if [ -z "$pushed" ]; then
+            echo "::warning::Could not push the announcement. Run 'python3 tools/publish.py --announce $NUMBER', then commit and push docs/update.json."
+            exit 0
+          fi
+          # a push made with this job's token may not start a Pages build by itself
+          gh api -X POST "repos/$REPO/pages/builds" >/dev/null \
+            || echo "::warning::Pushed the announcement, but could not ask Pages to rebuild; the next push to main will publish it."
 
       - name: Put the keychain back
         if: always()

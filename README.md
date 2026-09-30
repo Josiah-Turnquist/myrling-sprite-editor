@@ -120,6 +120,12 @@ Store Connect API key, staples it, zips it with `ditto`, and attaches it to a Gi
 Release with notes made from the commits since the previous tag. Nothing happens until
 the tag is pushed.
 
+Installed copies hear about the new app only after that: the last step of the workflow
+moves the app half of `docs/update.json` on to the released version and pushes it to
+`main`. `make site` never changes that half, so a build that fails is never announced.
+If the workflow could not push the announcement it says so in its log, and
+`python3 tools/publish.py --announce 1.1` does it by hand; it needs no key.
+
 ### The signing key
 
 The private key lives at **`~/.myrling/update-key.b64`** — base64 of 32 raw bytes,

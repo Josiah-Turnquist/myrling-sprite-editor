@@ -85,4 +85,5 @@ echo ''
 echo "    git push && git push origin v$VERSION"
 echo ''
 echo 'That runs .github/workflows/release.yml, which builds Myrling.app on a Mac'
-echo 'runner and attaches the zip to a GitHub Release for the tag.'
+echo 'runner, attaches the zip to a GitHub Release for the tag, and only then'
+echo 'tells installed copies about it by updating docs/update.json on main.'
