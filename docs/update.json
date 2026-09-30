@@ -6,8 +6,8 @@
     "signature": "rEEKd0zEQC5iHnKrHWiYJ/oSlTM3EcxyYKJ+cQRHeNz1aUhu8NnkAO+BcIFx9MRrkz5ne3vhVI0QMuFBO5v5Cg=="
   },
   "app": {
-    "version": "1.0.1",
+    "version": "1.0.2",
     "url": "https://github.com/Josiah-Turnquist/myrling-sprite-editor/releases/latest",
-    "notes": "Myrling 1.0.1 for macOS, from GitHub Releases."
+    "notes": "Myrling 1.0.2 for macOS, from GitHub Releases."
   }
 }
