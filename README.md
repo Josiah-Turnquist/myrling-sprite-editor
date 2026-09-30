@@ -282,9 +282,12 @@ refuses those files.
   on this editor never makes one, but a file you open can carry them, and then a bar
   appears at the top with a button to snap them. Anything at half strength or more becomes
   solid, the rest becomes clear.
-- **Not square.** A picture that is not square gets squashed.
-- **More than 32 colours.** A count that high means the picture was resized or blurred
-  rather than drawn cell by cell.
+- **Not square.** A picture that is not square gets squashed. The town's buildings and
+  the furniture are the exception: each is exactly its footprint at 16 px a tile, and a
+  name the game has no piece for is refused.
+- **More than 32 colours in a frame** (48 to 64 for the families the packer allows more).
+  A count that high means the picture was resized or blurred rather than drawn cell by cell.
+- **A drawn black outline** on the families whose outline the game draws itself.
 - **An empty frame**, or **frames that are not all the same size**.
 - **A name or folder that cannot be a filename.**
 
