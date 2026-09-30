@@ -215,8 +215,8 @@ Click one and it opens as a sprite, where the checks panel judges it like anythi
 by hand — generated art usually needs its soft pixels snapped and its palette thinned,
 and the editor already knows how to say so.
 
-You bring your own PixelLab API key. It is kept in your browser and sent only to
-api.pixellab.ai, when you press Generate; each image spends PixelLab credits and the
+You bring your own PixelLab API key. It is kept in your browser until you empty the box,
+and sent only to api.pixellab.ai, when you press Generate; each image spends PixelLab credits and the
 status bar says roughly what a batch cost. In the Mac app the call travels natively.
 
 **Every generation is kept.** The history at the bottom of the dialog holds every image

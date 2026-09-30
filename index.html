@@ -4676,8 +4676,8 @@ function saveUI() {
 }
 // the panels resize at their inner edges; widths are kept with the other UI choices
 function applyPanels() {
-  var l = Math.max(140, Math.min(340, UI.leftW || 172));
-  var r = Math.max(260, Math.min(560, UI.sideW || 320));
+  var l = Math.max(140, Math.min(340, +UI.leftW || 172));   // + so a kept word reads as unset, not NaNpx
+  var r = Math.max(260, Math.min(560, +UI.sideW || 320));
   $('app').style.setProperty('--leftW', l + 'px');
   $('app').style.setProperty('--sideW', r + 'px');
   toolsFollow();
@@ -5383,6 +5383,13 @@ $('bGen').onclick = openGen;
 $('bGenClose').onclick = closeGen;
 $('gen').onclick = function (e) { if (e.target === this) closeGen(); };
 $('bGenGo').onclick = plGenerate;
+// emptying the box is the way to take the key back out of this browser; before, the
+// dialog refilled it from the kept copy every time it opened and nothing could remove it
+$('plKey').onchange = function () {
+  if (this.value.trim()) return;
+  try { window.localStorage.removeItem(PL_KEY_KEY); } catch (e) { /* nothing was kept */ }
+  say('The PixelLab key is no longer kept in this browser', 'good');
+};
 $('bPlSaveAll').onclick = plSaveAll;
 $('settings').onclick = function (e) { if (e.target === this) closeSettings(); };
 $('bKeysReset').onclick = function () {
@@ -5435,6 +5442,9 @@ var dragDepth = 0;
 window.addEventListener('dragenter', function (e) {
   e.preventDefault();
   if (frameDrag !== null || spriteDrag !== null) return;   // a panel item on the move is not files arriving
+  // nor is a bit of text dragged out of a box: only a drag carrying files asks for the drop
+  var types = e.dataTransfer && e.dataTransfer.types;
+  if (types && Array.prototype.indexOf.call(types, 'Files') < 0) return;
   dragDepth++; $('drop').className = 'show';
 });
 window.addEventListener('dragover', function (e) { e.preventDefault(); });
