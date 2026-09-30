@@ -21,6 +21,9 @@ if (location.hash === '#forget') {
     --bad:#d1685a; --warn:#c9a24a; --good:#71a35c;
     --shadow:0 6px 24px rgba(0,0,0,.4);
     --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    /* the page is dark whatever the system says, so the browser's own scrollbars, menus
+       and pickers are drawn dark too rather than as white slabs on a light system */
+    color-scheme:dark;
   }
   *{box-sizing:border-box; margin:0; padding:0}
   html,body{height:100%}
@@ -67,6 +70,10 @@ if (location.hash === '#forget') {
     border:1px solid var(--line); border-radius:3px; padding:0 4px; line-height:14px;
   }
   .lab{font-size:10px; letter-spacing:.08em; color:var(--dim); font-weight:600; text-transform:uppercase}
+  /* a ring for whatever the keyboard lands on, buttons and the rows and swatches that act
+     like them; the browser's own ring is lost against these dark panels */
+  button:focus-visible,[role=button]:focus-visible,input[type=checkbox]:focus-visible,input[type=radio]:focus-visible,
+  input[type=range]:focus-visible,input[type=color]:focus-visible,select:focus-visible{outline:2px solid #7d9dd0; outline-offset:1px}
 
   /* ---------- the stage: the canvas is the whole window, the panels float over it ---------- */
   #app{position:relative; width:100%; height:100%; overflow:hidden; --leftW:172px; --sideW:320px}
@@ -146,7 +153,7 @@ if (location.hash === '#forget') {
   .item.markT{box-shadow:0 -3px 0 -1px var(--green)}
   .item.markB{box-shadow:0 3px 0 -1px var(--green)}
   .item .x{color:var(--dim); font-size:13px; padding:0 3px; display:none; line-height:1}
-  .item:hover .x{display:block}
+  .item:hover .x,.item:focus-within .x{display:block}
   .item .x:hover{color:var(--hot)}
   .item .x.armed{display:block; color:#eda99c}
   #addMenu{
@@ -162,6 +169,10 @@ if (location.hash === '#forget') {
   #newSize{width:54px}
 
   #toolsPanel{display:flex; flex-direction:column; padding:6px; flex:none}
+  /* in the column it shares the height with the sprites, so on a short window it scrolls
+     rather than running off the bottom with the colour and the palette out of reach */
+  #leftcol > #toolsPanel{flex:0 1 auto; min-height:0; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent}
+  #toolsPanel > *{flex-shrink:0}
   .tool{
     display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:7px; cursor:pointer;
     background:transparent; border:0; color:var(--text); width:100%; text-align:left;
@@ -178,11 +189,14 @@ if (location.hash === '#forget') {
   #toolsHead .icon{padding:2px; width:24px; height:22px; display:inline-flex; align-items:center; justify-content:center; color:var(--dim)}
   #toolsHead .icon svg{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round}
   #toolsHead .icon:hover{color:var(--hot); background:var(--sel)}
-  #toolsPanel.floating{position:absolute; z-index:6; width:var(--leftW); margin:0}
+  #toolsPanel.floating{position:absolute; z-index:6; width:var(--leftW); margin:0; overflow-y:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent}
   #toolsPanel.dockedRight{width:var(--sideW); overflow:auto}
-  #toolsPanel:not(.dockedRight){max-height:none !important}
+  #toolsPanel:not(.floating){max-height:none !important}
   #toolsPanel .crow{display:flex; align-items:center; gap:8px; padding:4px 6px}
   #toolsPanel .crow #hex{width:82px}
+  /* the backdrop swatches wrap inside the panel, the picker staying at the end, rather
+     than pushing it out past the panel's edge at the column's usual width */
+  #canvasBgs{flex:1 1 auto; min-width:0; flex-wrap:wrap}
   #shapeRow{display:flex}
   #shapeRow button{flex:1; font-size:11px; padding:4px 0}
   #sprayRow{display:flex; flex-direction:column; gap:2px; padding:4px 6px 0}
@@ -292,7 +306,14 @@ if (location.hash === '#forget') {
   #frameActs .fbtn.del:hover{color:#eda99c; border-color:#6b3a33; background:#2a1c19}
   #frameActs .fgap{width:1px; height:32px; background:var(--line); flex:none; margin:0 4px}
   #zoomLabel{font:12px var(--mono); width:44px; height:24px; padding:0; text-align:center; flex:none}
-  #stagebar button.z{width:24px; height:24px; padding:0}
+  #stagebar button.z{width:24px; height:24px; padding:0; flex:none}
+  #stagebar > button{flex:none}
+  /* a window too narrow for the whole row: the frame buttons drop their words (the
+     tooltip still names each), and whatever is left scrolls rather than hiding under
+     the inspector and off the edge */
+  #stagebar.tight #frameActs .fbtn{padding:0 7px}
+  #stagebar.tight #frameActs .fbtn span{display:none}
+  #stagebar.tight{overflow-x:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent}
 
   /* right inspector */
   #side{
@@ -381,7 +402,10 @@ if (location.hash === '#forget') {
     position:absolute; left:50%; bottom:84px; transform:translateX(-50%); z-index:7; max-width:min(720px,60%);
     padding:6px 12px; border-radius:8px; background:var(--panel); border:1px solid var(--line); box-shadow:var(--shadow);
     color:var(--text); font-size:12px; opacity:0; pointer-events:none; transition:opacity .2s;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    /* it wraps, growing upward from the dock: the long ones are the ones that name the
+       files that failed, and cut to one line with a tooltip nobody can hover (it lets
+       the pointer through) they were lost */
+    white-space:normal; overflow-wrap:anywhere; width:max-content;
   }
   #status.show{opacity:1}
   #status.bad{color:#eda99c; border-color:#6b3a33} #status.good{color:#9fcf8c}
@@ -462,9 +486,9 @@ if (location.hash === '#forget') {
     <span class="dim">/</span>
     <input id="key" type="text" placeholder="treeent" title="The sprite's name. Files are name-0.png, name-1.png">
     <span id="dimNote" class="dim" style="font:11px var(--mono); flex:none"></span>
-    <span id="pbPath" class="pick" title="Where saving writes. Click to pick a different folder.">art-live/creatures/</span>
+    <span id="pbPath" class="pick" role="button" tabindex="0" title="Where saving writes. Click to pick a different folder.">art-live/creatures/</span>
     <div style="flex:1"></div>
-    <span id="lookPill" class="pill" style="display:none"></span>
+    <span id="lookPill" class="pill" role="button" tabindex="0" style="display:none"></span>
     <button id="bForce" class="danger" style="display:none">Export anyway</button>
     <button id="bGen" title="Generate sprites with PixelLab. Every generation is kept.">Generate&hellip;</button>
     <button id="bExport" title="Download every frame as PNG files">Export</button>
@@ -589,7 +613,7 @@ if (location.hash === '#forget') {
         <button id="bPlay2" style="padding:3px 10px; font-size:11px">&#9654; Play</button>
       </div>
       <div class="sec" id="castRow" style="display:flex; align-items:center">
-        <span class="hint" style="font-size:11px">Next to your game&#8217;s own creatures &#183; <span id="bEditRefs" class="lnk">Edit references</span></span>
+        <span class="hint" style="font-size:11px">Next to your game&#8217;s own creatures &#183; <span id="bEditRefs" class="lnk" role="button" tabindex="0">Edit references</span></span>
       </div>
       <div class="sec" id="tileRow" style="display:none; align-items:center; gap:8px; flex-wrap:wrap">
         <span class="hint" style="font-size:11px">Repeat every</span>
@@ -608,14 +632,14 @@ if (location.hash === '#forget') {
         <button id="bBoardClear">Clear</button>
         <button id="bBoardFill" title="Scatter this row&#8217;s painted cells over the board">Fill from row</button>
         <button id="bBoardSeams" title="Mark the joins where two tiles do not line up">Seams</button>
-        <span class="chip mono" id="boardSize" title="How big the board is. Click to change.">10 &#215; 6</span>
+        <span class="chip mono" id="boardSize" role="button" tabindex="0" title="How big the board is. Click to change.">10 &#215; 6</span>
         <span class="hint" id="boardNote" style="font-size:10px; flex:1 0 100%">Drag to lay the cell down. Right-click or hold Alt to lift it, Shift-click to pick one up.</span>
       </div>
       <div class="sec tight"><canvas id="preview" height="150"></canvas></div>
       <div class="sec winrow">
         <span class="hint" style="font-size:11px">Window</span>
         <div class="seg" id="scales"></div>
-        <span id="fpsChip" class="chip mono" title="How fast Play runs. Click to change.">6 / s</span>
+        <span id="fpsChip" class="chip mono" role="button" tabindex="0" title="How fast Play runs. Click to change.">6 / s</span>
         <div id="speedPop" class="panel">
           <div class="lab" style="margin-bottom:6px">Speed</div>
           <input id="fps" type="range" min="1" max="20" value="6">
@@ -644,7 +668,7 @@ if (location.hash === '#forget') {
     <div id="paneChecks" class="pane">
       <div class="sec" style="display:flex; align-items:center; justify-content:space-between; padding-top:12px">
         <span class="hint" style="font-size:11px">Your game&#8217;s rules</span>
-        <span id="bEditRules" class="lnk">Edit rules</span>
+        <span id="bEditRules" class="lnk" role="button" tabindex="0">Edit rules</span>
       </div>
       <div class="sec tight">
         <label class="master"><input type="checkbox" id="rulesBox" checked>
@@ -668,14 +692,14 @@ if (location.hash === '#forget') {
   <div id="snapHint"></div>
   <div id="gripL" class="grip" title="Drag to make the sprites and tools panels wider or narrower. Double click puts it back."></div>
   <div id="gripR" class="grip" title="Drag to make the inspector wider or narrower. Double click puts it back."></div>
-  <div id="keptNote" title="What this browser is keeping. Click for details.">kept in this browser</div>
+  <div id="keptNote" role="button" tabindex="0" title="What this browser is keeping. Click for details.">kept in this browser</div>
   <div id="keptPop" class="panel">
     <div id="keptText"></div>
     <div class="row" style="margin-top:8px"><button id="bForget" style="width:100%">Forget all</button></div>
     <div class="row" id="keepMineRow" style="display:none"><button id="bKeepMine" style="width:100%" title="Write what is open now over the copy this version cannot read. That copy is gone after this.">Keep mine instead</button></div>
   </div>
   <div id="sizeNote" title="Where the pointer is, in pixels"><span id="posLabel">&mdash;</span></div>
-  <div id="status"></div>
+  <div id="status" role="status" aria-live="polite"></div>
 
   <!-- shells for ids the engine still speaks to but the redesign has no place for -->
   <div class="ghost"><span id="framesHd"></span><span id="selHint"></span><span id="pbCmd"></span><span id="pbWarn"></span>
@@ -694,7 +718,8 @@ if (location.hash === '#forget') {
       <div class="mono" style="margin-top:8px">
         Cmd or Ctrl + Z undo &nbsp; Shift + Z redo<br>
         Cmd+C copy &nbsp; Cmd+X cut &nbsp; Cmd+V paste &nbsp; Cmd+S save<br>
-        - and + zoom, or the wheel &nbsp; Shift + wheel or middle drag moves about &nbsp; Space play<br>
+        - and + zoom, or the wheel &nbsp; 0 fits &nbsp; Shift + wheel or middle drag moves about &nbsp; Space play<br>
+        Arrows nudge the box, or the picture &nbsp; Delete clears the box &nbsp; Esc drops it<br>
         [ and ] step to the cell before or after, on a tilesheet &nbsp; Shift with either selects it
       </div>
       <div style="margin-top:8px">Square: Shift squares the box off, Alt flips outline and filled
@@ -919,7 +944,7 @@ var REF_LIST = (function () {
   try {
     var kept = JSON.parse(window.localStorage.getItem(REFS_KEY) || 'null');
     // an entry with no picture cannot be drawn, and one bad entry must not stop the page
-    if (Array.isArray(kept)) return kept.filter(function (r) { return r && r.id && typeof r.png === 'string'; });
+    if (Array.isArray(kept)) return kept.filter(function (r) { return r && r.id && isImageData(r.png); });
   } catch (e) { /* unreadable is the same as unset */ }
   return REFS.map(function (r) { return { id: r.id, label: r.label, upp: r.upp, png: 'data:image/png;base64,' + r.png, builtin: true }; });
 })();
@@ -995,6 +1020,46 @@ function rgb2hex(c) {
 function isLight(hex) {
   var c = hex2rgb(hex) || [0, 0, 0];
   return (c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114) > 128;
+}
+
+// for the few places that build markup: anything that came from a person, a file or the
+// browser's store goes in as text, never as tags
+function escHtml(v) {
+  return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+// only a picture held in the page itself may be drawn from the store: a kept entry that
+// names a web address would have the page fetch it, and nothing is meant to go out
+function isImageData(u) { return typeof u === 'string' && /^data:image\/[a-z0-9.+-]+;base64,/i.test(u); }
+
+// a row, a swatch or a chip that is clicked like a button answers the keyboard like one:
+// Tab reaches it, Enter and Space press it (see the keydown handler), and it has a name
+function asButton(el, name) {
+  el.setAttribute('role', 'button');
+  el.tabIndex = 0;
+  if (name) el.setAttribute('aria-label', name);
+  return el;
+}
+// Most lists here are drawn afresh on every change, which dropped the keyboard's place
+// the moment a key pressed something in them. The place is noted before the redraw and
+// handed to whatever stands in the same spot after it. Only a place the keyboard put
+// there: after a click the focus is let go as it always was, so Space is still Play.
+var FOCUSABLE = 'button,input,select,[tabindex]';
+function focusMark(box) {
+  var a = document.activeElement, kb = false;
+  if (!a || !box || box === a || !box.contains(a)) return -1;
+  try { kb = a.matches(':focus-visible'); } catch (e) { /* no way to tell, so leave it */ }
+  return kb ? Array.prototype.indexOf.call(box.querySelectorAll(FOCUSABLE), a) : -1;
+}
+function focusBack(box, at) {
+  if (at < 0 || box.contains(document.activeElement)) return;
+  var n = box.querySelectorAll(FOCUSABLE)[at];
+  if (n) n.focus();
+  // a close cross that has gone back to hiding cannot take it; its row can
+  if (n && document.activeElement !== n && n.parentNode && n.parentNode.closest) {
+    var up = n.parentNode.closest('[tabindex]');
+    if (up && box.contains(up)) up.focus();
+  }
 }
 
 var sayTimer = null;
@@ -1575,16 +1640,19 @@ var szAnchorX = 0.5, szAnchorY = 1;   // feet on the ground, centred
 function sizeOpen() { return $('sizeModal').className === 'show'; }
 function szMode() { return document.querySelector('input[name=szMode]:checked').value; }
 function drawSzAnchor() {
-  var g = $('szAnchor');
+  var g = $('szAnchor'), fk = focusMark(g);
   g.innerHTML = '';
   [0, 0.5, 1].forEach(function (ay) {
     [0, 0.5, 1].forEach(function (ax) {
       var b = document.createElement('b');
       b.className = (ax === szAnchorX && ay === szAnchorY) ? 'on' : '';
       b.onclick = function () { szAnchorX = ax; szAnchorY = ay; drawSzAnchor(); };
+      asButton(b, (ay === 0 ? 'top' : ay === 1 ? 'bottom' : 'middle') + ' ' + (ax === 0 ? 'left' : ax === 1 ? 'right' : 'centre') + ' stays put');
+      b.setAttribute('aria-pressed', b.className === 'on' ? 'true' : 'false');
       g.appendChild(b);
     });
   });
+  focusBack(g, fk);
   var v = szAnchorY === 1 ? 'Feet stay on the ground' : (szAnchorY === 0 ? 'The top stays put' : 'The middle stays put');
   var h = szAnchorX === 0.5 ? ', centred.' : (szAnchorX === 0 ? ', against the left edge.' : ', against the right edge.');
   $('szAnchorNote').textContent = v + h;
@@ -2062,6 +2130,7 @@ function openSplitModal() {
     (s.frames.length > 1 ? ' Only frame ' + s.cur + ', the one on the canvas, is cut up; the other ' +
       (s.frames.length - 1) + (s.frames.length === 2 ? ' is' : ' are') + ' left out.' : '');
   $('splitModal').className = 'show';
+  $('bSplitGo').focus();
 }
 function closeSplitModal() { $('splitModal').className = ''; }
 function splitModalOpen() { return $('splitModal').className === 'show'; }
@@ -2229,6 +2298,7 @@ function openAddToSheetModal(from) {
   drawAddSheetInto(true);
   drawAddSheetNote();
   $('addSheetModal').className = 'show';
+  $('bAddSheetGo').focus();
 }
 function closeAddToSheetModal() { $('addSheetModal').className = ''; }
 function asChosen() { return asCands.filter(function (x, i) { return !!asPick[i]; }); }
@@ -2239,7 +2309,7 @@ function asSize() {
   return null;
 }
 function drawAddSheetList() {
-  var box = $('asList'), size = asSize();
+  var box = $('asList'), size = asSize(), fk = focusMark(box);
   box.innerHTML = '';
   asCands.forEach(function (x, i) {
     var fits = !size || (x.w === size.w && x.h === size.h);
@@ -2264,6 +2334,7 @@ function drawAddSheetList() {
     row.appendChild(t);
     box.appendChild(row);
   });
+  focusBack(box, fk);
 }
 // the sheets these tiles would fit: the cell has to be their size exactly
 function drawAddSheetInto(reset) {
@@ -2399,16 +2470,19 @@ function setBg(id) {
 }
 function drawBgSwatches() {
   var box = $('canvasBgs'); if (!box) return;
-  var cur = bgChoice();
+  var cur = bgChoice(), fk = focusMark(box);
   box.innerHTML = '';
   BG_CHOICES.forEach(function (c) {
     var b = document.createElement('b');
     b.className = (c.id === 'checker' ? 'checker' : '') + (c.id === cur ? ' on' : '');
     if (c.id !== 'checker') b.style.background = c.id;
     b.title = c.tip;
+    asButton(b, 'Canvas: ' + c.tip);
+    b.setAttribute('aria-pressed', c.id === cur ? 'true' : 'false');
     b.onclick = function () { setBg(c.id); };
     box.appendChild(b);
   });
+  focusBack(box, fk);
   var known = BG_CHOICES.some(function (c) { return c.id === cur; });
   $('bgCustom').value = cur === 'checker' ? '#131519' : cur;
   $('bgCustom').className = known ? '' : 'on';
@@ -2610,12 +2684,12 @@ function redraw() {
     $('bSave').disabled = !can;
     if (!saveArmed) $('bSave').textContent = toDest ? 'Save' : 'Save over';
     $('bSave').title = toDest
-      ? 'Write every frame into ' + s.dest.label + '. Change\u2026 in the bar below picks another folder.'
+      ? 'Write every frame into ' + s.dest.label + '. Click the path beside the name to pick another folder.'
       : (can
         ? 'Write every frame back over the files it was opened from. No moving files about after.'
         : (s && s.handles && s.handles.length
-          ? 'The name no longer matches the files this sprite was opened from. Set it back, use Export frames, or pick a folder with Change\u2026 below.'
-          : 'Nothing here came from a file opened this session. Open PNGs, drop files on the window, or pick a folder with Change\u2026 below.'));
+          ? 'The name no longer matches the files this sprite was opened from. Set it back, use Export, or click the path beside the name to pick a folder.'
+          : 'Nothing here came from a file opened this session. Open PNGs, drop files on the window, or click the path beside the name to pick a folder.'));
     $('pbChange').style.display = '';
   } else {
     $('bSave').style.display = 'none';   // Firefox and Safari cannot write files in place
@@ -2672,11 +2746,13 @@ function moveSprite(from, to) {
   say('Moved ' + s.key + ' to spot ' + (to + 1) + ' in the list', 'good');
 }
 function drawStrip() {
-  var list = $('stripList');
+  var list = $('stripList'), fk = focusMark(list);
   list.innerHTML = '';
   S.sprites.forEach(function (s, i) {
     var d = document.createElement('div');
     d.className = 'item' + (i === S.si ? ' on' : '');
+    asButton(d, s.key);
+    if (i === S.si) d.setAttribute('aria-current', 'true');
     var c = keptThumb('strip', s, s.frames[0], '', function () { return thumb(s.frames[0], s.w, s.h, 20); });
     var t = document.createElement('div');
     t.className = 't';
@@ -2694,6 +2770,7 @@ function drawStrip() {
     x.className = 'x' + (closeArmed === s ? ' armed' : '');
     x.textContent = '\u00d7';
     x.title = closeArmed === s ? 'Press again to close ' + s.key + ' and lose it' : 'Close this sprite';
+    asButton(x, (closeArmed === s ? 'Really close ' : 'Close ') + s.key);
     x.onclick = function (e) { e.stopPropagation(); closeSprite(i); };
     d.appendChild(x);
     d.onclick = function () { selectSprite(i); };
@@ -2740,6 +2817,7 @@ function drawStrip() {
   // the reference picker offers the open sprites by name
   var dl = $('openSprites');
   if (dl) { dl.innerHTML = ''; S.sprites.forEach(function (s) { var o = document.createElement('option'); o.value = s.key; dl.appendChild(o); }); }
+  focusBack(list, fk);
 }
 // closing asks twice, the way Close always has: the first press arms the row's cross.
 // The sprite is armed, not the row number, so a reorder in between cannot pass the
@@ -2764,7 +2842,7 @@ function closeSprite(i) {
   say('Closed ' + gone + '. It is not kept any more.', 'good');
 }
 function drawFrames() {
-  var s = spr(), wrap = $('frames');
+  var s = spr(), wrap = $('frames'), fk = focusMark(wrap), fka = focusMark($('frameActs'));
   wrap.innerHTML = '';
   wrap.className = frameFocus ? 'kb' : '';
   if (!s) { $('frameActs').innerHTML = ''; return; }
@@ -2788,6 +2866,8 @@ function drawFrames() {
     var lab = document.createElement('div');
     lab.textContent = i;
     d.appendChild(c); d.appendChild(lab);
+    asButton(d, 'Frame ' + i);
+    if (i === s.cur) d.setAttribute('aria-current', 'true');
     d.onclick = function () { dropSelection(); s.cur = i; frameFocus = true; redraw(); };
     d.oncontextmenu = function (e) {
       if (s.cur !== i) { dropSelection(); s.cur = i; frameFocus = true; redraw(); }
@@ -2846,6 +2926,7 @@ function drawFrames() {
     b.className = 'fbtn ' + kind;
     b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICON[kind] + '</svg><span></span>';
     b.lastChild.textContent = label;
+    b.setAttribute('aria-label', label);   // the word goes when the row is tight; the name stays
     b.onclick = fn; b.title = title;
     acts.appendChild(b);
   };
@@ -2856,6 +2937,16 @@ function drawFrames() {
   if (pasteBtn) pasteBtn.disabled = !FRAME_CLIP;
   mk('del', 'Delete', deleteFrame, 'Delete this frame. Backspace with a frame clicked does this too.');
   mk('file', 'From file', function () { $('fileFrame').click(); }, 'Load a PNG as another frame of this sprite');
+  fitStagebar();
+  focusBack(wrap, fk); focusBack(acts, fka);
+}
+// the frames row is laid out for a wide window. Measured with the words on, and when
+// they do not fit the row goes tight: icons only, and a scroll for anything still over
+function fitStagebar() {
+  var sb = $('stagebar');
+  if (sb.style.display === 'none') return;
+  sb.classList.remove('tight');
+  if (sb.scrollWidth > sb.clientWidth + 1) sb.classList.add('tight');
 }
 
 // a right click on a frame or a sprite opens a short menu of what can be done to it
@@ -2877,6 +2968,9 @@ function openCtx(e, items) {
   var w = m.offsetWidth, h = m.offsetHeight;
   m.style.left = Math.min(e.clientX, window.innerWidth - w - 6) + 'px';
   m.style.top = Math.min(e.clientY, window.innerHeight - h - 6) + 'px';
+  // opened from the keyboard (the menu key on a focused row), the keys go into the menu
+  var go = m.querySelector('button:not(:disabled)');
+  if (go) go.focus();
 }
 function closeCtx() { $('ctxMenu').className = 'panel'; }
 function duplicateFrame(i) {
@@ -2975,7 +3069,7 @@ function colourList(s, which) {
   return out;
 }
 function drawPalette() {
-  var p = $('palette'), s = spr();
+  var p = $('palette'), s = spr(), fk = focusMark(p);
   p.innerHTML = '';
   // a copy: the current colour goes on the front of this one, and putting it on the
   // cached list counted every colour you ever picked as one the sprite uses
@@ -2992,9 +3086,12 @@ function drawPalette() {
     d.style.background = h;
     d.title = h;
     d.innerHTML = '<i></i>';
+    asButton(d, 'Draw with ' + h);
+    if (h === cur) d.setAttribute('aria-pressed', 'true');
     d.onclick = function () { setColor(c); };
     p.appendChild(d);
   });
+  focusBack(p, fk);
   $('palHint').textContent = s
     ? (cols.length + ' in the palette. Click one to draw with it.' +
       (cols.length > PAL_MAX ? ' Showing the ' + PAL_MAX + ' most used.' : ''))
@@ -3225,7 +3322,9 @@ function checkSprite(s) {
     if (big.length) warn.push(big.length + ' of the files you opened ' + (big.length > 1 ? 'are' : 'is') + ' over 64 KB, which at this size means an embedded colour profile or editor notes rather than art. Exporting from here strips that.');
   }
 
-  customRules().forEach(function (r) { if (r.on) note.push(r.name + ' \u2014 not checked yet; wire it to your packer.'); });
+  // the panel reads these lines as markup for their <b>, and a rule's name is whatever was
+  // typed or kept, so it goes in escaped: a rule named <img onerror=...> is only words
+  customRules().forEach(function (r) { if (r.on) note.push(escHtml(r.name) + ' \u2014 not checked yet; wire it to your packer.'); });
 
   return { bad: bad, warn: warn, ok: ok, note: note };
 }
@@ -3278,7 +3377,7 @@ function drawRulesEdit() {
   $('bEditRules').textContent = rulesEditing ? 'Done' : 'Edit rules';
   $('bEditRules').className = 'lnk' + (rulesEditing ? ' on' : '');
   if (!rulesEditing) return;
-  var box = $('rulesList');
+  var box = $('rulesList'), fk = focusMark(box);
   box.innerHTML = '';
   var row = function (name, on, toggle, remove, builtin) {
     var d = document.createElement('div');
@@ -3287,6 +3386,8 @@ function drawRulesEdit() {
     var nm = document.createElement('span'); nm.className = 'nm' + (on ? '' : ' off'); nm.textContent = name;
     var x = document.createElement('span'); x.className = 'x'; x.textContent = '\u00d7';
     x.title = builtin ? 'Retire this rule. Back to Eldermyr\u2019s rules brings it back.' : 'Remove this rule';
+    asButton(x, (builtin ? 'Retire ' : 'Remove ') + name);
+    cb.setAttribute('aria-label', name);
     x.onclick = remove;
     d.appendChild(cb); d.appendChild(nm); d.appendChild(x);
     box.appendChild(d);
@@ -3302,6 +3403,7 @@ function drawRulesEdit() {
       function () { cr.on = this.checked; rulesChanged(); },
       function () { UI.customRules.splice(i, 1); rulesChanged(); }, false);
   });
+  focusBack(box, fk);
 }
 
 // ---------- the path bar: where the file goes and what to run next ----------
@@ -3874,7 +3976,7 @@ function drawRefs() {
   $('bEditRefs').textContent = refsEditing ? 'Done' : 'Edit references';
   $('bEditRefs').className = 'lnk' + (refsEditing ? ' on' : '');
   if (!refsEditing) return;
-  var box = $('refsList');
+  var box = $('refsList'), fk = focusMark(box);
   box.innerHTML = '';
   if (!REF_LIST.length) box.innerHTML = '<div class="hint">No references. Yours stands alone until you add some.</div>';
   REF_LIST.forEach(function (r, i) {
@@ -3886,10 +3988,12 @@ function drawRefs() {
     var im = refImg[r.id];
     sz.textContent = im && im.naturalWidth ? im.naturalWidth + '\u00d7' + im.naturalHeight : '';
     var x = document.createElement('span'); x.className = 'x'; x.textContent = '\u00d7'; x.title = 'Remove this reference';
+    asButton(x, 'Remove ' + r.label);
     x.onclick = function () { REF_LIST.splice(i, 1); saveRefs(); drawRefs(); drawPreview(); say('Removed ' + r.label + ' from the references', 'good'); };
     row.appendChild(img); row.appendChild(nm); row.appendChild(sz); row.appendChild(x);
     box.appendChild(row);
   });
+  focusBack(box, fk);
 }
 function addRefSprite(name) {
   var k = cleanName(name);
@@ -4086,6 +4190,7 @@ function loadStore() {
     var rec = data.sprites[idx++] || {};
     Promise.all((Array.isArray(rec.frames) ? rec.frames : []).map(function (u) {
       return new Promise(function (res) {
+        if (!isImageData(u)) { res(null); return; }   // a kept frame is a picture, never an address
         var im = new Image();
         im.onload = function () { try { res(toPixels(im)); } catch (e) { res(null); } };
         im.onerror = function () { res(null); };
@@ -4134,7 +4239,9 @@ function drawKept() {
   if (!S.store.on) {
     n.textContent = 'nothing is being kept';
     n.style.color = 'var(--warn)';
-    t.innerHTML = '<span style="color:var(--warn)">Nothing is being saved.</span><br>' + (S.store.why || '') + ' Export before you close the tab.';
+    // the reason carries words the browser chose, so it goes in as text like the others
+    t.innerHTML = '<span style="color:var(--warn)">Nothing is being saved.</span><br><span></span>';
+    t.lastChild.textContent = (S.store.why || '') + ' Export before you close the tab.';
     b.style.display = 'none';
     return;
   }
@@ -4197,7 +4304,7 @@ var TOOL_GLYPH = {
 };
 function toolSvg(id) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + TOOL_GLYPH[id] + '</svg>'; }
 function buildTools() {
-  var g = $('tools');
+  var g = $('tools'), fk = focusMark(g);
   g.innerHTML = '';
   TOOLS.forEach(function (t) {
     var b = document.createElement('button');
@@ -4206,9 +4313,11 @@ function buildTools() {
     b.children[0].innerHTML = toolSvg(t[0]) || '';
     b.children[1].textContent = t[1];
     b.children[2].textContent = (KEYS[t[0]] || '').toUpperCase();
+    b.setAttribute('aria-pressed', S.tool === t[0] ? 'true' : 'false');
     b.onclick = function () { setTool(t[0]); };
     g.appendChild(b);
   });
+  focusBack(g, fk);
 }
 
 // ---------- the keys, yours to change ----------
@@ -4243,7 +4352,7 @@ function saveKeys() {
 }
 var keyWait = null;   // the action waiting for its new key
 function drawKeys() {
-  var box = $('keyRows');
+  var box = $('keyRows'), fk = focusMark(box);
   box.innerHTML = '';
   KEY_ACTIONS.forEach(function (a) {
     var row = document.createElement('span');
@@ -4260,6 +4369,7 @@ function drawKeys() {
     row.appendChild(document.createTextNode(a[1].toLowerCase()));
     box.appendChild(row);
   });
+  focusBack(box, fk);
 }
 function assignKey(raw) {
   var act = keyWait;
@@ -4863,7 +4973,7 @@ function exportAll(oneOnly, force) {
 // dialog or dropped on the window. While the sprite still has files whose names match
 // what export would write, Save over writes straight into them: no downloads folder, no
 // moving files about after. Firefox and Safari never hand out handles, so there the
-// button never appears and Export frames stays the way.
+// button never appears and Export stays the way.
 // true where the page can write files in place at all: Chrome and Edge have the picker,
 // the Mac app fills it in through mac/bridge.js, and drops can carry handles too
 var FS_OK = !!window.showOpenFilePicker ||
@@ -4939,7 +5049,7 @@ function saveOver(force) {
           '. Run npm run pack-art', 'good');
         scheduleSave(); redraw();
       }, function () {
-        say('Could not write into ' + s.dest.label + '. The folder may have moved. Export frames still works.', 'bad');
+        say('Could not write into ' + s.dest.label + '. The folder may have moved. Export still works.', 'bad');
       });
     }, function () {
       say('The browser would not ask for leave to write in ' + s.dest.label + '. Nothing was touched. Press Save again.', 'bad');
@@ -4981,7 +5091,7 @@ function saveOver(force) {
     if (wrote.length) bits.push('Saved over ' + list(wrote) + (realDir ? ' in ' + realDir : ' in place'));
     if (fresh.length) bits.push(list(fresh.map(function (p) { return p.name; })) + (fresh.length > 1 ? ' are new frames' : ' is a new frame') + ' with no file yet, downloaded instead');
     if (blocked.length) bits.push('The browser held back ' + list(blocked) + '. It asks once per file: press Save over again');
-    if (failed.length) bits.push('Could not write ' + list(failed) + '. The file may have moved. Export frames still works');
+    if (failed.length) bits.push('Could not write ' + list(failed) + '. The file may have moved. Export still works');
     var stale = (s.handles || []).filter(function (h) { return h && names.indexOf(h.name) < 0; }).map(function (h) { return h.name; });
     if (wrote.length && stale.length) bits.push(list(stale) + ' on disk ' + (stale.length > 1 ? 'are' : 'is') + ' not a frame of this sprite any more. Delete ' + (stale.length > 1 ? 'them yourself if they' : 'it yourself if it') + ' should go');
     if (wrote.length && !blocked.length && !failed.length) {
@@ -5016,6 +5126,7 @@ function applyPanels() {
   $('app').style.setProperty('--leftW', l + 'px');
   $('app').style.setProperty('--sideW', r + 'px');
   toolsFollow();
+  fitStagebar();   // the frames row is what the two widths leave over
 }
 function wireGrip(id, which) {
   var h = $(id);
@@ -5105,6 +5216,8 @@ function toolsPlace(x, y, dragged) {
   var maxX = app.clientWidth - p.offsetWidth - 6, maxY = app.clientHeight - 30;
   x = Math.max(6, Math.min(maxX, +x || 0)); y = Math.max(6, Math.min(maxY, +y || 0));
   p.style.left = x + 'px'; p.style.top = y + 'px';
+  // set low, it scrolls rather than hanging its colour and palette off the window
+  p.style.maxHeight = Math.max(80, app.clientHeight - y - 14) + 'px';
   if (dragged) UI.toolsPos = { x: x, y: y };
 }
 function toolsSetDock(dock) {
@@ -5182,6 +5295,20 @@ $('alpha').oninput = function () {
 };
 
 // ---------- wiring ----------
+// the fields whose label is a word laid beside them rather than tied to them, named for
+// a screen reader; a mouse user reads the word, a listener hears this
+var FIELD_NAMES = {
+  pick: 'Colour', hex: 'Colour as hex', sprayR: 'Spray size', sprayD: 'Spray flow',
+  tilePitch: 'Repeat every, in pixels', fps: 'Play speed, frames a second',
+  szT: 'Add to the top', szB: 'Add to the bottom', szL: 'Add to the left', szR: 'Add to the right',
+  szW: 'Width', szH: 'Height', szF: 'Scale factor', szWhat: 'What to scale',
+  shCW: 'Cell width', shCH: 'Cell height', shOX: 'Margin x', shOY: 'Margin y', shGap: 'Gap',
+  shCols: 'Columns to grow to', shRows: 'Rows to grow to',
+  nsCell: 'Cell size in pixels', nsCols: 'Columns', nsRows: 'Rows', nsName: 'Name',
+  asInto: 'Into which sheet', plKey: 'PixelLab API key', plPrompt: 'What to draw',
+  plSize: 'Size', plCount: 'How many', refDraft: 'An open sprite to add as a reference', ruleDraft: 'New rule'
+};
+Object.keys(FIELD_NAMES).forEach(function (id) { if ($(id)) $(id).setAttribute('aria-label', FIELD_NAMES[id]); });
 buildTools();
 drawKeys();
 setTool('pencil');
@@ -5191,6 +5318,7 @@ GROUNDS.forEach(function (g) {
   b.style.background = g.tiles[0];
   b.className = g.id === S.ground.id ? 'on' : '';
   b.title = g.name;
+  asButton(b, 'Ground: ' + g.name);
   b.onclick = function () {
     S.ground = g;
     Array.prototype.forEach.call($('bgs').children, function (n) { n.className = ''; });
@@ -5591,7 +5719,7 @@ var plHist = (function () {
   // only records with a picture are worth anything; one without must not break the dialog
   try {
     var kept = JSON.parse(window.localStorage.getItem(PL_HIST_KEY) || '[]');
-    return (Array.isArray(kept) ? kept : []).filter(function (r) { return r && typeof r.png === 'string'; })
+    return (Array.isArray(kept) ? kept : []).filter(function (r) { return r && isImageData(r.png); })
       .map(function (r) { r.prompt = String(r.prompt || ''); return r; });
   } catch (e) { return []; }
 })();
@@ -5659,6 +5787,7 @@ function plThumb(rec) {
   img.src = rec.png;
   img.title = rec.prompt + ' — ' + rec.w + 'x' + rec.h + ', ' + when(rec.at) + '. Click to open as a sprite.';
   img.onclick = function () { plOpen(rec); };
+  asButton(img, 'Open as a sprite: ' + rec.prompt);
   return img;
 }
 function plOpen(rec) {
@@ -5705,6 +5834,7 @@ function plGenerate() {
       var uri = r && r.image && r.image.base64 ? String(r.image.base64) : null;
       if (!uri) throw new Error('no image came back');
       if (uri.indexOf('data:') !== 0) uri = 'data:image/png;base64,' + uri;
+      if (!isImageData(uri)) throw new Error('what came back was not an image');
       if (r.usage && +r.usage.usd) spent += +r.usage.usd;   // a string here would glue, not add
       var rec = { at: Date.now(), prompt: prompt, w: size, h: size, png: uri };
       plHist.unshift(rec);
@@ -5736,7 +5866,7 @@ function plSaveAll() {
       var chain = Promise.resolve(), wrote = 0, used = {};
       plHist.forEach(function (rec) {
         chain = chain.then(function () {
-          var name = 'pixellab-' + rec.at + '-' + (cleanName(rec.prompt.split(/\s+/).slice(0, 3).join('-')) || 'image');
+          var name = 'pixellab-' + (Math.floor(+rec.at) || 0) + '-' +(cleanName(rec.prompt.split(/\s+/).slice(0, 3).join('-')) || 'image');
           // two of one batch can land in the same millisecond; neither may write over the other
           var n = 2, base = name;
           while (used[name]) name = base + '-' + n++;
@@ -5920,6 +6050,26 @@ window.addEventListener('keydown', function (e) {
     if (!meta) { e.preventDefault(); assignKey(e.key); return; }
     keyWait = null; drawKeys();
   }
+  // the keyboard's own presses: Enter or Space on a focused button, or on a row acting as
+  // one, presses it, and the arrows walk a row of choices. Only for focus the keyboard put
+  // there: a click leaves the focus on a button too, and after a click Space is still
+  // Play and the arrows still nudge, as they always were
+  var kbFocus = false;
+  try { kbFocus = el !== document.body && el.matches(':focus-visible'); } catch (err) { /* an engine without it keeps the old keys */ }
+  if (kbFocus && !meta && (t === 'BUTTON' || el.getAttribute('role') === 'button')) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      if (t !== 'BUTTON') { e.preventDefault(); if (!e.repeat) el.click(); }
+      return;
+    }
+    var row = el.parentNode;
+    if (row && (/(^| )seg( |$)/.test(row.className) || row.id === 'tabs') && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      e.preventDefault();
+      var sib = el;
+      do { sib = e.key === 'ArrowLeft' ? sib.previousElementSibling : sib.nextElementSibling; } while (sib && sib.offsetParent === null);
+      if (sib) { sib.focus(); sib.click(); }
+      return;
+    }
+  }
   // a key that does something mid-stroke (undo, Esc, a tool, an arrow) lands after the
   // stroke is set down. Acting under it restored the stroke's saved frame over an undo,
   // and Esc or a tool key in the middle of moving a box threw on the next move. Zoom and
@@ -5963,6 +6113,14 @@ window.addEventListener('keydown', function (e) {
     return;
   }
   if (e.key === 'Escape' && $('ctxMenu').className === 'panel show') { closeCtx(); return; }
+  // up and down walk an open menu rather than nudging the picture behind it
+  if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && $('ctxMenu').className === 'panel show') {
+    e.preventDefault();
+    var mb = Array.prototype.slice.call($('ctxMenu').querySelectorAll('button:not(:disabled)'));
+    var mi = mb.indexOf(document.activeElement);
+    if (mb.length) mb[(mi + (e.key === 'ArrowDown' ? 1 : mb.length - 1 + (mi < 0 ? 1 : 0))) % mb.length].focus();
+    return;
+  }
   if (e.key === 'Escape' && $('imgMenu').className === 'show') { $('imgMenu').className = ''; return; }
   if (e.key === 'Escape' && ($('addMenu').className === 'show' || $('keptPop').className === 'panel show' || $('speedPop').className === 'panel show')) {
     $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; return;
@@ -6019,10 +6177,27 @@ window.addEventListener('keydown', function (e) {
   }
   if ($('addMenu').className === 'show' && $('addMenu').contains(e.target)) { e.target.blur(); closeAddMenu(); }
 });
+// Tab stays inside an open dialog, round and round, rather than wandering off into the
+// panels behind the veil where nothing it lands on can be seen or pressed
+var MODAL_IDS = ['settings', 'gen', 'sizeModal', 'sheetModal', 'splitModal', 'newSheetModal', 'addSheetModal'];
+window.addEventListener('keydown', function (e) {
+  if (e.key !== 'Tab' || e.defaultPrevented) return;
+  var box = null;
+  MODAL_IDS.forEach(function (id) { if (!box && $(id).className === 'show') box = $(id).querySelector('.box'); });
+  if (!box) return;
+  var all = Array.prototype.filter.call(box.querySelectorAll(FOCUSABLE), function (n) {
+    return !n.disabled && n.tabIndex >= 0 && n.offsetParent !== null;
+  });
+  if (!all.length) return;
+  var a = document.activeElement, first = all[0], last = all[all.length - 1];
+  if (!box.contains(a)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+  else if (e.shiftKey && a === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && a === last) { e.preventDefault(); first.focus(); }
+});
 window.addEventListener('keyup', function (e) {
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') commit();
 });
-window.addEventListener('resize', function () { if (spr()) paintCanvas(); drawPreview(); });
+window.addEventListener('resize', function () { if (spr()) { paintCanvas(); fitStagebar(); } drawPreview(); });
 // last chance to write, for the tab that gets closed mid-stroke
 window.addEventListener('beforeunload', function () { if (saveTimer) { clearTimeout(saveTimer); saveStore(); } });
 
@@ -6033,7 +6208,7 @@ loadStore();
 // the settings modal. The Mac menu bar's Settings item still calls showKeys, so the
 // old door opens the new room.
 function settingsOpen() { return $('settings').className === 'show'; }
-function openSettings() { keyWait = null; drawKeys(); $('settings').className = 'show'; }
+function openSettings() { keyWait = null; drawKeys(); $('settings').className = 'show'; $('bSettingsClose').focus(); }
 function closeSettings() { keyWait = null; drawKeys(); $('settings').className = ''; }
 function showKeys() { openSettings(); }
 
