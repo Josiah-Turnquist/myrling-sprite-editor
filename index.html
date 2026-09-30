@@ -1152,7 +1152,9 @@ function restore(snap) {
   // are left where you put them
   if ((snap.gen || 0) !== (s.gridGen || 0)) {
     s.sheetCur = snap.sheetCur ? { cx: snap.sheetCur.cx, cy: snap.sheetCur.cy } : null;
-    if (snap.board) s.board = { cols: snap.board.cols, rows: snap.board.rows, cells: copyCells(snap.board.cells) };
+    // no board beside that step means none yet: one laid since is in the other numbering,
+    // and kept it put every square on another tile
+    s.board = snap.board ? { cols: snap.board.cols, rows: snap.board.rows, cells: copyCells(snap.board.cells) } : null;
     s.gridGen = snap.gen || 0;
     clipCell = null;
   }
