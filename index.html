@@ -2351,6 +2351,29 @@ function thumb(f, w, h, size) {
   cc.drawImage(blit(f, w, h), Math.floor((size - tw) / 2), Math.floor((size - th) / 2), tw, th);
   return c;
 }
+// The sprite list and the frames row redrew every thumbnail on every redraw, which on
+// big pictures was most of a redraw. A thumbnail is kept against the frame it was drawn
+// from, keyed on that frame object, the sprite's size, its _rev and anything else the
+// picture depends on. Why that cannot go stale: a frame's pixels change in place without
+// commit() (and so without touched() moving _rev) only while a stroke is held or pixels
+// float over it, and those belong to one sprite, drag.s or lift.s. While either is open
+// every thumbnail of that sprite is drawn fresh, and the frame on the canvas always is;
+// once they close, commit has moved _rev. Every other write either makes new frame
+// objects (undo, resize, flip, a nudge of the whole picture) or ends in commit.
+// The page gets a copy, since one canvas cannot sit in two rows.
+var THUMBS = new WeakMap();
+function keptThumb(kind, s, f, key, draw) {
+  var live = (s === spr() && f === s.frames[s.cur]) || (drag && drag.s === s) || (lift && lift.s === s);
+  var box = THUMBS.get(f);
+  if (live) { if (box) delete box[kind]; return draw(); }
+  var k = key + '|' + s.w + 'x' + s.h + '|' + (s._rev || 0);
+  if (!box) { box = {}; THUMBS.set(f, box); }
+  if (!box[kind] || box[kind].k !== k) box[kind] = { k: k, c: draw() };
+  var src = box[kind].c, c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  c.getContext('2d').drawImage(src, 0, 0);
+  return c;
+}
 // what sits behind the sprite on the canvas. The checkerboard is the honest default
 // because it makes a clear pixel unmistakable, but a flat colour is easier to judge a
 // silhouette against, so the choice is yours and is kept. It is a view, not the art:
@@ -2650,7 +2673,7 @@ function drawStrip() {
   S.sprites.forEach(function (s, i) {
     var d = document.createElement('div');
     d.className = 'item' + (i === S.si ? ' on' : '');
-    var c = thumb(s.frames[0], s.w, s.h, 20);
+    var c = keptThumb('strip', s, s.frames[0], '', function () { return thumb(s.frames[0], s.w, s.h, 20); });
     var t = document.createElement('div');
     t.className = 't';
     t.innerHTML = '<b></b><span></span>';
@@ -2749,12 +2772,15 @@ function drawFrames() {
   s.frames.forEach(function (f, i) {
     var d = document.createElement('div');
     d.className = 'fr' + (i === s.cur ? ' on' : '');
-    var c = document.createElement('canvas');
-    c.width = 36; c.height = 36;
-    var cc = c.getContext('2d');
-    cc.imageSmoothingEnabled = false;
-    cc.fillStyle = S.ground.tiles[0]; cc.fillRect(0, 0, 36, 36);
-    cc.drawImage(blit(f, s.w, s.h), 0, 0, 36, 36);
+    var c = keptThumb('frame', s, f, S.ground.tiles[0], function () {
+      var c1 = document.createElement('canvas');
+      c1.width = 36; c1.height = 36;
+      var cc = c1.getContext('2d');
+      cc.imageSmoothingEnabled = false;
+      cc.fillStyle = S.ground.tiles[0]; cc.fillRect(0, 0, 36, 36);
+      cc.drawImage(blit(f, s.w, s.h), 0, 0, 36, 36);
+      return c1;
+    });
     var lab = document.createElement('div');
     lab.textContent = i;
     d.appendChild(c); d.appendChild(lab);
