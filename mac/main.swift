@@ -555,7 +555,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
   }
 
-  @objc func checkForUpdates(_ sender: Any?) { runCheck(quiet: false) }
+  // a second ask while the first is still out would only get the same answer twice,
+  // and with it a second Reload Now
+  private var manualCheckOut = false
+  @objc func checkForUpdates(_ sender: Any?) {
+    guard !manualCheckOut else { return }
+    manualCheckOut = true
+    runCheck(quiet: false)
+  }
 
   @objc func toggleAutoUpdate(_ sender: NSMenuItem) {
     let on = !UserDefaults.standard.bool(forKey: autoKey)
@@ -568,6 +575,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private func runCheck(quiet: Bool) {
     updater.check { [weak self] news, app in
       guard let self = self else { return }
+      if !quiet { self.manualCheckOut = false }
       switch news {
       case .current:
         if !quiet { self.tell("Myrling is up to date.", "This is page version " + self.store.version + ".") }
@@ -732,10 +740,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     item.tag = pageHasKey ? 1 : 0
     menu.addItem(item)
   }
-  // The page answers =, - and 0 itself, with Cmd or without, and lets the key go on
-  // past it, so WebKit hands it to the menu as well and one press used to zoom two
-  // steps. For those items the menu stands aside when its own key equivalent is what
-  // chose it, and acts when it was chosen any other way.
+  // The page takes Cmd with =, - and 0 itself, from anywhere, text boxes included, so a
+  // key press must never zoom here as well; a page that let the key go on past it used
+  // to zoom two steps. For those items the menu stands aside when its own key equivalent
+  // is what chose it, and acts when it was chosen any other way (clicked).
   @objc func runPageAction(_ sender: NSMenuItem) {
     if sender.tag == 1, let ev = NSApp.currentEvent, ev.type == .keyDown, ev.modifierFlags.contains(.command),
        ev.charactersIgnoringModifiers == sender.keyEquivalent { return }

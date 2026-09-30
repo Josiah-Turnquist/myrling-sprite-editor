@@ -2159,6 +2159,10 @@ function addToSheet(sprites, target) {
     var at = S.sprites.indexOf(t);
     if (at < 0) { say('That sheet is not open any more', 'bad'); return; }
     if (S.si !== at) selectSprite(at);
+    // a paste still floating over this sheet is set down first, as its own step: left
+    // floating, its saved picture from before would be stamped back over the new tiles
+    // on the next nudge
+    if (lift && lift.s === t) dropSelection();
     // the canvas grows down and to the right, so nothing already in it moves cell. It is
     // padded here rather than through resizeCanvas so the growing and the tiles landing
     // are one undo step, not two
@@ -4010,11 +4014,21 @@ function saveStore() {
   };
   var text = JSON.stringify(payload);
   try {
-    // the sprites come first: when the browser is full, the PixelLab history gives up
-    // its oldest images until they fit, and only then are the sprites refused
-    for (;;) {
-      try { window.localStorage.setItem(STORE_KEY, text); break; }
-      catch (full) { if (!plMakeRoom()) throw full; }
+    // the sprites come first. When the browser is full, see whether they fit with the
+    // PixelLab history out of the way altogether: if not (one sprite is simply too big),
+    // the history goes back untouched rather than being thrown away for nothing. If they
+    // do, the history takes back whatever room is left, oldest images out first.
+    try { window.localStorage.setItem(STORE_KEY, text); }
+    catch (full) {
+      var hist = null;
+      try { hist = window.localStorage.getItem(PL_HIST_KEY); } catch (e) { /* none to move */ }
+      if (!hist) throw full;
+      try { window.localStorage.removeItem(PL_HIST_KEY); window.localStorage.setItem(STORE_KEY, text); }
+      catch (still) {
+        try { window.localStorage.setItem(PL_HIST_KEY, hist); } catch (e) { /* it fitted a moment ago */ }
+        throw still;
+      }
+      plSaveHist();
     }
     S.store.at = payload.at; S.store.bytes = text.length;
     S.store.why = skipped.length
@@ -4307,6 +4321,7 @@ function setColor(c) {
 
 // ---------- pointer ----------
 var drag = null;
+var dragPid = null;   // the pointer that started the stroke; another cannot steer or end it
 function pxAt(e) {
   var r = $('canvasSizer').getBoundingClientRect();
   return {
@@ -4330,6 +4345,7 @@ stage.addEventListener('pointerdown', function (e) {
   // a second press while one is held (another finger, a pen beside the mouse) settles
   // the first stroke rather than orphaning it, and its spray timer with it
   if (drag) endDrag();
+  dragPid = e.pointerId;
   if (frameFocus) { frameFocus = false; $('frames').className = ''; }
   var p = pxAt(e);
   // the press marks the cell it lands in, whatever the tool, and with In cell on it
@@ -4342,7 +4358,9 @@ stage.addEventListener('pointerdown', function (e) {
   }
   // on a sheet the right button belongs to the cell menu, so it must not also rub out
   if (e.button === 2 && sheetOf(s)) return;
-  stage.setPointerCapture(e.pointerId);
+  // a pointer already gone by the time this runs cannot be captured, and throwing here
+  // would leave the press drawing nothing at all
+  try { stage.setPointerCapture(e.pointerId); } catch (err) { /* the moves still land while over the stage */ }
   if (S.tool === 'pick') { clipCell = null; eyedrop(p.x, p.y); return; }
   if (S.tool === 'fill') { fill(p.x, p.y, e.button === 2); clipCell = null; commit(); redraw(); return; }
   if (S.tool === 'select') {
@@ -4418,6 +4436,7 @@ stage.addEventListener('pointermove', function (e) {
     stage.scrollTop = pan.st - (e.clientY - pan.y);
     return;
   }
+  if (drag && e.pointerId !== dragPid) return;
   var p = pxAt(e);
   // the readout names the cell as well as the pixel, because on a sheet the cell is
   // what you are thinking in
@@ -4468,7 +4487,10 @@ function strayDrag() {
   var s = spr();
   return !!drag && (drag.s !== s || !s || drag.f !== s.frames[s.cur]);
 }
-function endDrag() {
+function endDrag(e) {
+  // a pointer lifting that is not the one drawing leaves the stroke alone; called with
+  // no event (a key, a sprite switch, undo) it always ends
+  if (drag && e && e.pointerId != null && e.pointerId !== dragPid) return;
   if (!drag) { clipCell = null; return; }
   if (sprayTimer) { clearInterval(sprayTimer); sprayTimer = null; }
   strokeSeen = null;
@@ -5577,10 +5599,11 @@ var plHistWhy = '';
 // The history shares the browser's few megabytes with the kept sprites, and the sprites
 // come first. So only the newest images are kept for next time: at most PL_KEEP_N and
 // about PL_KEEP_CHARS of text between them, and fewer when the sprites need the room
-// (saveStore asks plMakeRoom). The older ones last until the tab closes, and Save all
+// (saveStore moves the history aside, keeps the sprites, then lets it refill what room is
+// left). The older ones last until the tab closes, and Save all
 // writes every one of them to a folder.
 var PL_KEEP_N = 60, PL_KEEP_CHARS = 1500000;
-var plKeepN = PL_KEEP_N;              // lowered for good once the sprites have needed the room
+var plKeepN = PL_KEEP_N;              // at most this many; plSaveHist keeps fewer when the room is not there
 var plHistKept = plHist.length;       // how many of the newest are in the browser now
 function plSaveHist() {
   var keep = [], chars = 0;
@@ -5606,14 +5629,6 @@ function plSaveHist() {
       (plHist.length - plHistKept === 1 ? 'one lasts' : 'ones last') + ' until this tab closes. Save all writes every one to a folder.'
     : '';
   drawPlHist();
-}
-// the kept sprites are out of room: the history gives up half of what it holds, oldest
-// first. False when it has nothing left to give
-function plMakeRoom() {
-  if (!plHistKept) return false;
-  plKeepN = Math.floor(plHistKept / 2);
-  plSaveHist();
-  return true;
 }
 // the Mac app carries the call natively (no cross-origin wall in WebKit); a browser
 // asks PixelLab directly. Either way the key rides along and is stored nowhere else.
@@ -5877,6 +5892,17 @@ window.addEventListener('keydown', function (e) {
     saveKey();
     return;
   }
+  // Cmd with =, - or 0 zooms the canvas from anywhere, a text box included, and is taken
+  // here: let past, the browser zoomed the whole page as well, and the Mac app's View
+  // menu, which carries the same shortcuts, zoomed a second step
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && /^[-+=_0]$/.test(e.key) && spr()) {
+    e.preventDefault();
+    if (keyWait) { keyWait = null; drawKeys(); }
+    if (e.key === '0') $('zoomLabel').click();
+    else if (e.key === '-' || e.key === '_') $('zOut').click();
+    else $('zIn').click();
+    return;
+  }
   if (t === 'TEXTAREA' || t === 'SELECT' || el.isContentEditable) return;
   // a text box keeps every key. A slider, a tick box or a colour well only wants its
   // own arrows, space and Enter: blocking everything there left Cmd+Z and the tool keys
@@ -5929,9 +5955,11 @@ window.addEventListener('keydown', function (e) {
     return;
   }
   // [ and ] walk the sheet a cell at a time; with Shift they select as they go
-  if ((e.key === '[' || e.key === ']') && !meta && sheetOf(spr())) {
+  // with Shift held most layouts send { and } rather than [ and ]
+  var cellStep = e.key === '[' || e.key === '{' ? -1 : e.key === ']' || e.key === '}' ? 1 : 0;
+  if (cellStep && !meta && sheetOf(spr())) {
     e.preventDefault();
-    stepCell(e.key === ']' ? 1 : -1, e.shiftKey);
+    stepCell(cellStep, e.shiftKey);
     return;
   }
   if (e.key === 'Escape' && $('ctxMenu').className === 'panel show') { closeCtx(); return; }

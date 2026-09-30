@@ -46,9 +46,10 @@ fi
 
 # An installed copy only mentions a release newer than itself, so an older or equal
 # number would ship an app nobody is ever told about.
+# "Newer" is decided the way publish.py and the app decide it (1.2 and 1.2.0 are the
+# same version), so a release this accepts is always one the app will announce.
 CURRENT=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' mac/Info.plist)
-NEWEST=$(printf '%s\n%s\n' "$CURRENT" "$VERSION" | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n | tail -1)
-if [ "$VERSION" = "$CURRENT" ] || [ "$NEWEST" != "$VERSION" ]; then
+if ! python3 -c 'import sys; sys.path.insert(0, "tools"); import publish; sys.exit(0 if publish.newer(sys.argv[1], sys.argv[2]) else 1)' "$VERSION" "$CURRENT"; then
   echo "release: $VERSION is not newer than the current $CURRENT." >&2
   exit 1
 fi
@@ -64,7 +65,8 @@ BUILD=$((BUILD + 1))
 # go back as they were, so a failed run never leaves a half-bumped plist behind.
 COMMITTED=
 trap 'if [ -z "$COMMITTED" ]; then
-  git checkout -q -- mac/Info.plist index.html docs/editor.html docs/update.json
+  # from HEAD, not the index: a failed commit leaves the bump already staged
+  git checkout -q HEAD -- mac/Info.plist index.html docs/editor.html docs/update.json
   echo "release: stopped before committing; mac/Info.plist and the site are as they were." >&2
 fi' EXIT
 
