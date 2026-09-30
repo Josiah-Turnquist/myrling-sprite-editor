@@ -397,9 +397,11 @@ beside creatures, which is what ground art needs. A sprite in the `terrain` fold
 that way; the switch is yours after that.
 
 - **Repeat every N px** is the pitch, and it is not always the picture's width. Eldermyr
-  draws ground at 32 px from art that is 33 px, so every tile laps one pixel over the
-  next; the default follows that, and the note under the switch says what the number
-  means. Get this wrong and a tile looks seamless here and shows a seam in the game.
+  lays ground every 32 units and stretches each tile over 33, so art drawn 33 px wide laps
+  one pixel over the next and repeats every 32. Art at any other size, 16 px terrain
+  included, repeats at its own width. The default follows that, and the note under the
+  switch says what the number means. Get this wrong and a tile looks seamless here and
+  shows a seam in the game.
 - **Frames are variants, not animation.** The game picks a tile's frame from its world
   hash, so grass's four frames are four different grasses scattered about. The preview
   scatters them the same way rather than blinking them in unison.
@@ -421,7 +423,7 @@ everything below follows from that.
   switches with the current cell ringed; click a cell to work on it, and the canvas
   follows. **Repeat every N px** is now the cell's pitch, not the picture's, and it
   defaults to the cell's width — 16 px art at a 16 px pitch, edge to edge. The one pixel
-  lap is the older 33-px convention; a sheet only has one if you ask for it.
+  lap is the older 33-px convention; only a terrain sheet of 33 px cells gets it unasked.
 - **Row variants** scatters every painted cell of the current row across the field, using
   the same world hash the game uses to pick a tile's variant. The note says how many it
   found and which row they came from. Turn it off to repeat the one cell alone.
