@@ -53,7 +53,8 @@
     DataTransferItem.prototype.getAsFileSystemHandle = function () {
       var f = this.getAsFile ? this.getAsFile() : null;
       if (!f || !f.name) return Promise.resolve(null);
-      return port.postMessage({ op: 'claim', name: f.name }).then(function (r) {
+      // size and time as well as the name, so the app can tell two same-named files apart
+      return port.postMessage({ op: 'claim', name: f.name, size: f.size, modified: f.lastModified }).then(function (r) {
         return r && r.id ? makeHandle({ id: r.id, name: f.name, dir: r.dir }) : null;
       }, function () { return null; });
     };
