@@ -915,7 +915,8 @@ var REFS_KEY = 'myrling-refs-v1';
 var REF_LIST = (function () {
   try {
     var kept = JSON.parse(window.localStorage.getItem(REFS_KEY) || 'null');
-    if (Array.isArray(kept)) return kept;
+    // an entry with no picture cannot be drawn, and one bad entry must not stop the page
+    if (Array.isArray(kept)) return kept.filter(function (r) { return r && r.id && typeof r.png === 'string'; });
   } catch (e) { /* unreadable is the same as unset */ }
   return REFS.map(function (r) { return { id: r.id, label: r.label, upp: r.upp, png: 'data:image/png;base64,' + r.png, builtin: true }; });
 })();
@@ -931,7 +932,7 @@ function loadRefImages() {
 }
 loadRefImages();
 function saveRefs() {
-  try { window.localStorage.setItem(REFS_KEY, JSON.stringify(REF_LIST)); } catch (e) { /* nowhere to keep it */ }
+  try { window.localStorage.setItem(REFS_KEY, JSON.stringify(REF_LIST)); return true; } catch (e) { return false; }
 }
 
 // how many screen pixels one drawn pixel is. The game runs at 2, 3 and 4; games that
@@ -2192,7 +2193,9 @@ function thumb(f, w, h, size) {
   c.width = size; c.height = size;
   var cc = c.getContext('2d');
   cc.imageSmoothingEnabled = false;
-  cc.drawImage(blit(f, w, h), 0, 0, size, size);
+  // fitted, not stretched: a tall sprite should look tall in the list
+  var k = size / Math.max(w, h), tw = Math.max(1, Math.round(w * k)), th = Math.max(1, Math.round(h * k));
+  cc.drawImage(blit(f, w, h), Math.floor((size - tw) / 2), Math.floor((size - th) / 2), tw, th);
   return c;
 }
 // what sits behind the sprite on the canvas. The checkerboard is the honest default
@@ -2508,20 +2511,23 @@ function drawStrip() {
       d.appendChild(flag);
     }
     var x = document.createElement('span');
-    x.className = 'x' + (closeArmedAt === i ? ' armed' : '');
+    x.className = 'x' + (closeArmed === s ? ' armed' : '');
     x.textContent = '\u00d7';
-    x.title = closeArmedAt === i ? 'Press again to close ' + s.key + ' and lose it' : 'Close this sprite';
+    x.title = closeArmed === s ? 'Press again to close ' + s.key + ' and lose it' : 'Close this sprite';
     x.onclick = function (e) { e.stopPropagation(); closeSprite(i); };
     d.appendChild(x);
     d.onclick = function () { selectSprite(i); };
     d.oncontextmenu = function (e) {
-      var items = [{ label: 'Duplicate sprite', act: function () { duplicateSprite(i); } }];
+      // the list can change under an open menu (kept work arriving, a close), so each
+      // item finds its sprite when it is chosen rather than trusting the row number
+      var on = function (fn) { return function () { var at = S.sprites.indexOf(s); if (at >= 0) fn(at); }; };
+      var items = [{ label: 'Duplicate sprite', act: on(duplicateSprite) }];
       // splitting is for the ones ruled as sheets, adding for the ones that are not:
       // a sheet does not go into another sheet
-      if (sheetOf(s)) items.push({ label: 'Split sheet into sprites\u2026', act: function () { selectSprite(i); openSplitModal(); } });
-      else items.push({ label: 'Add to a sheet\u2026', act: function () { selectSprite(i); openAddToSheetModal(s); } });
+      if (sheetOf(s)) items.push({ label: 'Split sheet into sprites\u2026', act: on(function (at) { selectSprite(at); openSplitModal(); }) });
+      else items.push({ label: 'Add to a sheet\u2026', act: on(function (at) { selectSprite(at); openAddToSheetModal(s); }) });
       items.push('-');
-      items.push({ label: closeArmedAt === i ? 'Close and lose it' : 'Close sprite\u2026', act: function () { closeSprite(i); }, danger: true });
+      items.push({ label: closeArmed === s ? 'Close and lose it' : 'Close sprite\u2026', act: on(closeSprite), danger: true });
       openCtx(e, items);
     };
     // sprites rearrange by dragging; the green edge says which side it will land on
@@ -2555,19 +2561,22 @@ function drawStrip() {
   var dl = $('openSprites');
   if (dl) { dl.innerHTML = ''; S.sprites.forEach(function (s) { var o = document.createElement('option'); o.value = s.key; dl.appendChild(o); }); }
 }
-// closing asks twice, the way Close always has: the first press arms the row's cross
-var closeArmedAt = -1, closeArmTimer = null;
+// closing asks twice, the way Close always has: the first press arms the row's cross.
+// The sprite is armed, not the row number, so a reorder in between cannot pass the
+// arming on to whichever sprite slid into that row.
+var closeArmed = null, closeArmTimer = null;
 function closeSprite(i) {
-  if (closeArmedAt !== i) {
-    closeArmedAt = i;
+  if (!S.sprites[i]) return;
+  if (closeArmed !== S.sprites[i]) {
+    closeArmed = S.sprites[i];
     if (closeArmTimer) clearTimeout(closeArmTimer);
-    closeArmTimer = setTimeout(function () { closeArmedAt = -1; drawStrip(); }, 4000);
+    closeArmTimer = setTimeout(function () { closeArmed = null; drawStrip(); }, 4000);
     drawStrip();
     say('Press \u00d7 again to close ' + S.sprites[i].key + ' and lose it', 'bad');
     return;
   }
   if (closeArmTimer) clearTimeout(closeArmTimer);
-  closeArmedAt = -1;
+  closeArmed = null;
   var gone = S.sprites[i].key;
   S.sprites.splice(i, 1);
   selectSprite(Math.min(S.si >= i ? S.si - (S.si === i ? 0 : 1) : S.si, S.sprites.length - 1));
@@ -2704,6 +2713,9 @@ function duplicateSprite(i) {
   c.dest = src.dest || null;   // a copy saves beside its original, under its own name
   c.tilePitch = src.tilePitch;
   if (sheetOf(src)) c.sheet = { cw: src.sheet.cw, ch: src.sheet.ch, gap: src.sheet.gap, ox: src.sheet.ox, oy: src.sheet.oy };
+  // the rest of what is kept with a sprite comes along too, so the copy is the same thing
+  if (src.cellPitch) c.cellPitch = src.cellPitch;
+  if (src.board && src.board.cols) c.board = { cols: src.board.cols, rows: src.board.rows, cells: (src.board.cells || []).map(function (x) { return x ? { cx: x.cx, cy: x.cy } : null; }) };
   S.sprites.splice(i + 1, 0, c);
   selectSprite(i + 1);
   scheduleSave();
@@ -3118,19 +3130,19 @@ function drawPathBar() {
   PB_REAL = here;
   var folder = here ? here.replace(/\/$/, '') + '/' : 'art-live/' + fam + '/';
   $('pbPath').textContent = '\u2192 ' + folder + (names.length ? names.join(', ') : '');
-  $('pbPath').title = here
-    ? 'Saving writes here. Click to pick a different folder.'
+  var tip = here
+    ? 'Saving writes here, then run npm run pack-art. Click to pick a different folder.'
     : (UI.placeLabel
       ? 'Last time this was ' + UI.placeLabel + ', but a browser cannot hold a folder across visits. Click to open it again.'
-      : 'Where saving will write. Click to pick a folder.');
+      : 'Where saving will write, then run npm run pack-art. Click to pick a folder.');
   var w = '';
   if (s) {
     var typed = String($('key').value || '');
-    if (typed && cleanName(typed) !== typed.trim()) w = 'Saved as ' + cleanName(typed) + ', the packer only takes lowercase letters, digits, - and _. ';
+    if (typed && cleanName(typed) !== typed.trim()) w += 'Saved as ' + (cleanName(typed) || 'sprite') + ', the packer only takes lowercase letters, digits, - and _. ';
     var famTyped = String($('family').value || '');
-    if (famTyped && cleanName(famTyped) !== famTyped.trim()) w = 'Folder saved as ' + cleanName(famTyped) + ', same rule. ';
+    if (famTyped && cleanName(famTyped) !== famTyped.trim()) w += 'Folder saved as ' + (cleanName(famTyped) || 'creatures') + ', same rule. ';
   }
-  $('pbPath').title = w + 'Where saving writes' + (here ? '' : ', then run npm run pack-art') + '. Click to pick a different folder.';
+  $('pbPath').title = w + tip;
 }
 function copyText(t, what) {
   var done = function () { say('Copied ' + what, 'good'); };
@@ -3683,8 +3695,9 @@ function addRefSprite(name) {
 function addRefPng(label, png) {
   var id = 'u' + Date.now() + Math.random().toString(36).slice(2, 6);
   REF_LIST.push({ id: id, label: cleanName(label) || 'ref', upp: HERO_UPP, png: png });
-  saveRefs(); loadRefImages(); drawRefs(); drawPreview();
-  say(label + ' stands next to yours now', 'good');
+  var kept = saveRefs(); loadRefImages(); drawRefs(); drawPreview();
+  if (kept) say(label + ' stands next to yours now', 'good');
+  else say(label + ' stands next to yours for now, but the browser has no room to keep it for next time', 'bad');
 }
 var playTimer = null;
 function setPlaying(on) {
@@ -3749,20 +3762,41 @@ function scheduleSave() {
   saveTimer = setTimeout(saveStore, 500);
 }
 var KEEP_PX = 1 << 20;   // about a 1024 by 1024 frame; past this the browser store cannot hold it
+// Every change writes the whole store, but a stroke only changes one frame. Encoding a
+// PNG is the slow part, so each frame's last encoding is held against a hash of its
+// pixels and reused while they are the same. Keyed on the pixels, not on any counter,
+// so nothing that forgets to say it changed a frame can make a stale copy get kept.
+function frameHash(s, f) {
+  if (f.byteOffset & 3) return null;
+  var u = new Uint32Array(f.buffer, f.byteOffset, f.length >> 2), a = 2166136261, b = 5381, v;
+  for (var i = 0; i < u.length; i++) { v = u[i]; a = Math.imul(a ^ v, 16777619); b = (Math.imul(b, 33) + v) | 0; }
+  return s.w + 'x' + s.h + ':' + a + ':' + b;
+}
+function keptURI(s, i) {
+  var c = s._kept || (s._kept = []), k = frameHash(s, s.frames[i]);
+  if (k && c[i] && c[i].k === k) return c[i].u;
+  c[i] = { k: k, u: frameDataURI(s, i) };
+  return c[i].u;
+}
+var restoring = false;   // while kept work is coming back, writing now would drop it
 function saveStore() {
   if (!S.store.on) return;
+  if (restoring) { saveTimer = setTimeout(saveStore, 500); return; }
   saveTimer = null;
   var kept = [], skipped = [];
   S.sprites.forEach(function (s) { (s.w * s.h > KEEP_PX ? skipped : kept).push(s); });
   var payload = {
-    v: 1, at: Date.now(), si: Math.min(S.si, kept.length - 1),
+    v: 1, at: Date.now(), si: Math.max(0, kept.indexOf(spr())),
     sprites: kept.map(function (s) {
+      var frames = s.frames.map(function (_, i) { return keptURI(s, i); });
+      s._kept.length = frames.length;   // a deleted frame's copy goes with it
       return {
         key: s.key, family: s.family, w: s.w, h: s.h, bytes: s.bytes || [],
         tilePitch: s.tilePitch || 0, sheet: sheetOf(s) || null,
-        cellPitch: s.cellPitch || 0,
+        cellPitch: s.cellPitch || 0, cur: s.cur || 0,
+        sheetCur: s.sheetCur ? { cx: s.sheetCur.cx, cy: s.sheetCur.cy } : null,
         board: s.board && s.board.cols ? { cols: s.board.cols, rows: s.board.rows, cells: (s.board.cells || []).map(function (c) { return c ? { cx: c.cx, cy: c.cy } : null; }) } : null,
-        frames: s.frames.map(function (_, i) { return frameDataURI(s, i); })
+        frames: frames
       };
     })
   };
@@ -3804,40 +3838,54 @@ function loadStore() {
   S.store.at = data.at || 0;
   S.store.bytes = text.length;
   say('Bringing back saved work…', 'good');
-  var made = [], idx = 0, wantSi = typeof data.si === 'number' && data.si >= 0 ? data.si : 0;
+  var made = [], idx = 0, wantSi = typeof data.si === 'number' && data.si >= 0 ? data.si : 0, madeSi = 0;
   function step() {
     if (idx >= data.sprites.length) {
+      restoring = false;
       if (!made.length) { drawKept(); return; }
+      // anything opened while this came back stays the one you are on
+      var was = spr();
       S.sprites = made.concat(S.sprites);
-      selectSprite(Math.min(wantSi, made.length - 1));
-      say('Brought back ' + made.length + (made.length === 1 ? ' sprite' : ' sprites') + ' saved ' + when(S.store.at) + '.', 'good');
+      selectSprite(was ? S.sprites.indexOf(was) : Math.min(madeSi, made.length - 1));
+      var lost = data.sprites.length - made.length;
+      say('Brought back ' + made.length + (made.length === 1 ? ' sprite' : ' sprites') + ' saved ' + when(S.store.at) + '.' +
+        (lost ? ' ' + lost + ' more could not be read back and ' + (lost > 1 ? 'are' : 'is') + ' gone.' : ''), lost ? 'bad' : 'good');
       drawKept();
       return;
     }
-    var rec = data.sprites[idx++];
-    Promise.all(rec.frames.map(function (u) {
+    // one record that cannot be read is skipped; it must never stop the rest coming back
+    var rec = data.sprites[idx++] || {};
+    Promise.all((Array.isArray(rec.frames) ? rec.frames : []).map(function (u) {
       return new Promise(function (res) {
         var im = new Image();
-        im.onload = function () { res(toPixels(im).px); };
+        im.onload = function () { try { res(toPixels(im)); } catch (e) { res(null); } };
         im.onerror = function () { res(null); };
         im.src = u;
       });
-    })).then(function (frames) {
-      frames = frames.filter(Boolean);
+    })).then(function (all) {
+      // the pictures say how big the sprite is; a frame of another size cannot join it
+      var first = all.filter(Boolean)[0], w = first ? first.w : 0, h = first ? first.h : 0;
+      var frames = all.filter(function (d) { return d && d.w === w && d.h === h; }).map(function (d) { return d.px; });
       if (frames.length) {
-        var s = makeSprite(rec.key || 'sprite', rec.w, rec.h, frames, rec.family);
+        var s = makeSprite(cleanName(rec.key) || 'sprite', w, h, frames, cleanName(rec.family) || 'creatures');
         s.bytes = Array.isArray(rec.bytes) ? rec.bytes : [];
         if (rec.tilePitch) s.tilePitch = rec.tilePitch;
         if (rec.sheet && rec.sheet.cw > 0) s.sheet = { cw: rec.sheet.cw, ch: rec.sheet.ch, gap: rec.sheet.gap || 0, ox: rec.sheet.ox || 0, oy: rec.sheet.oy || 0 };
         if (rec.cellPitch) s.cellPitch = rec.cellPitch;
+        // the frame and the cell you were on come back too, clamped in case they no longer fit
+        if (rec.cur > 0) s.cur = Math.min(frames.length - 1, Math.floor(rec.cur));
+        if (sheetOf(s) && rec.sheetCur && rec.sheetCur.cx >= 0 && rec.sheetCur.cy >= 0) setCur(s, rec.sheetCur.cx, rec.sheetCur.cy);
         if (rec.board && rec.board.cols > 0 && rec.board.rows > 0) {
-          s.board = { cols: rec.board.cols, rows: rec.board.rows, cells: (rec.board.cells || []).map(function (c) { return c && c.cx >= 0 ? { cx: c.cx, cy: c.cy } : null; }) };
+          s.board = { cols: rec.board.cols, rows: rec.board.rows, cells: (Array.isArray(rec.board.cells) ? rec.board.cells : []).map(function (c) { return c && c.cx >= 0 ? { cx: c.cx, cy: c.cy } : null; }) };
         }
+        if (idx - 1 === wantSi) madeSi = made.length;   // the one you were on, wherever it lands
         made.push(s);
       }
+    }).catch(function () { /* that one is skipped, the rest still come back */ }).then(function () {
       setTimeout(step, 0);
     });
   }
+  restoring = true;
   setTimeout(step, 0);
 }
 function when(ms) {
@@ -3864,7 +3912,8 @@ function drawKept() {
   n.style.color = '';
   if (S.store.why) {
     n.textContent = 'kept in this browser, mostly';
-    t.innerHTML = '<span style="color:var(--warn)">' + S.store.why + '</span>';
+    t.innerHTML = '<span style="color:var(--warn)"></span>';
+    t.firstChild.textContent = S.store.why;   // it names sprites, so it goes in as text
   } else if (!S.sprites.length) {
     n.textContent = 'kept in this browser \u00b7 nothing yet';
     t.textContent = 'Nothing kept yet. Whatever you open or draw is kept here and comes back next time.';
@@ -4277,9 +4326,31 @@ function decode(file) {
 function viaImg(file) {
   return new Promise(function (res, rej) {
     var u = URL.createObjectURL(file), im = new Image();
-    im.onload = function () { res(im); };
-    im.onerror = function () { rej(new Error(file.name)); };
+    im.onload = function () { URL.revokeObjectURL(u); res(im); };
+    im.onerror = function () { URL.revokeObjectURL(u); rej(new Error(file.name)); };
     im.src = u;
+  });
+}
+// A PNG says how big it is in its first 24 bytes, so one past MAX_SIDE is refused
+// before anything decodes it: decoding a 20 000 px picture only to refuse it is the
+// very thing that eats the RAM. Anything that is not a PNG inside goes to the decoder.
+function readPixels(file) {
+  var head = file.slice && window.Blob && Blob.prototype.arrayBuffer
+    ? file.slice(0, 24).arrayBuffer() : Promise.resolve(null);
+  return head.then(function (ab) {
+    var b = ab && ab.byteLength >= 24 ? new DataView(ab) : null;
+    if (b && b.getUint32(0) === 0x89504e47 && b.getUint32(12) === 0x49484452) {
+      var hw = b.getUint32(16), hh = b.getUint32(20);
+      if (hw > MAX_SIDE || hh > MAX_SIDE) throw new Error('too-big:' + hw + 'x' + hh);
+    }
+    return decode(file);
+  }).then(function (img) {
+    try {
+      if (img.width > MAX_SIDE || img.height > MAX_SIDE) throw new Error('too-big:' + img.width + 'x' + img.height);
+      return toPixels(img);
+    } finally {
+      if (img.close) img.close();   // a decoded bitmap holds its pixels until closed
+    }
   });
 }
 function toPixels(img) {
@@ -4303,11 +4374,7 @@ function openFiles(files) {
   if (!list.length) { say('No PNG files in that drop', 'bad'); return; }
   // One unreadable file must never lose the rest of the drop.
   Promise.all(list.map(function (f) {
-    return decode(f).then(function (img) {
-      var d = toPixels(img);
-      if (d.w > MAX_SIDE || d.h > MAX_SIDE) {
-        throw new Error('too-big:' + d.w + 'x' + d.h);
-      }
+    return readPixels(f).then(function (d) {
       d.name = baseName(f.name); d.size = f.size; d.handle = f.handle || null; return d;
     }).catch(function (err) {
       var msg = f.name;
@@ -4320,17 +4387,20 @@ function openFiles(files) {
     var good = all.filter(function (d) { return !d.failed; });
     if (!good.length) { say('Could not read ' + bad.join(', '), 'bad'); return; }
 
-    // name-0.png and name-1.png become one sprite with two frames
-    var groups = new Map();
+    // name-0.png and name-1.png become one sprite with two frames. Grouped by the name
+    // the sprite will carry, so Grass-0.png and grass-1.png do not open as two grasses
+    var groups = new Map(), already = {};
+    S.sprites.forEach(function (x) { already[x.key] = 1; });
     good.forEach(function (d) {
       var m = /^(.*[^-])-(\d+)$/.exec(d.name);
-      var key = m ? m[1] : d.name, idx = m ? parseInt(m[2], 10) : 0;
+      var key = cleanName(m ? m[1] : d.name) || 'sprite', idx = m ? parseInt(m[2], 10) : 0;
       var g = groups.get(key);
       if (!g) { g = []; groups.set(key, g); }
       g.push({ idx: idx, d: d });
     });
-    var made = 0, split = 0, renumbered = [], ruled = [];
+    var made = 0, split = 0, renumbered = [], ruled = [], again = [];
     groups.forEach(function (g, key) {
+      if (already[key]) again.push(key);
       g.sort(function (a, b) { return a.idx - b.idx; });
       var w = g[0].d.w, h = g[0].d.h;
       var same = g.filter(function (e) { return e.d.w === w && e.d.h === h; });
@@ -4361,9 +4431,11 @@ function openFiles(files) {
     } else if (ruled.length) {
       msg += '. ' + ruled.length + ' of them were ruled as sheets; change that under Tilesheet grid.';
     }
+    // two sprites of one name save into the same files, so the second must not be a surprise
+    if (again.length) msg += '. ' + again.join(', ') + (again.length > 1 ? ' were' : ' was') + ' already open, so there are two now and saving either writes the same files';
     if (bad.length) msg += '. Could not read ' + bad.join(', ');
     if (skipped) msg += '. ' + skipped + ' file(s) were not PNGs';
-    say(msg, bad.length ? 'bad' : 'good');
+    say(msg, bad.length || again.length ? 'bad' : 'good');
     checkAlpha();
     scheduleSave();
   });
@@ -4404,8 +4476,8 @@ function selectSprite(i) {
   S.si = (i >= 0 && i < S.sprites.length) ? i : (S.sprites.length ? Math.max(0, Math.min(i, S.sprites.length - 1)) : -1);
   var s = spr();
   if (s) { $('key').value = s.key; $('key').title = s.key; $('family').value = s.family; s.softDismissed = false; }
-  if (s && sheetOf(s)) lastSheet = s;
   else $('key').value = '';   // no sprite, no name: the path bar should not name a ghost
+  if (s && sheetOf(s)) lastSheet = s;
   setPlaying(false);
   checkAlpha();
   // show the stage first so Fit can measure it, and pick zoom BEFORE the first
@@ -4457,8 +4529,9 @@ function frameCanvas(s, i) {
   return c;
 }
 function saveFrame(s, i, name) {
-  return new Promise(function (res) {
+  return new Promise(function (res, rej) {
     frameCanvas(s, i).toBlob(function (b) {
+      if (!b) { rej(new Error(name)); return; }   // the browser could not make the PNG
       var a = document.createElement('a');
       a.href = URL.createObjectURL(b);
       a.download = name;
@@ -4497,6 +4570,8 @@ function exportAll(oneOnly, force) {
       (soft ? '. ' + soft + ' part see-through pixels were snapped on the way out' : ''), 'good');
     scheduleSave();
     redraw();
+  }, function (err) {
+    say('Could not make ' + (err && err.message || 'the PNG') + '. The browser would not encode it.', 'bad');
   });
 }
 
@@ -4527,12 +4602,16 @@ function askWrite(h) {
     return h.requestPermission(opt).then(function (q) { return q === 'granted'; });
   });
 }
+// a writable left open keeps a swap file beside the real one, so a failed write lets go
+function letGo(w) {
+  try { if (w && w.abort) Promise.resolve(w.abort()).catch(function () { /* already gone */ }); } catch (e) { /* already gone */ }
+}
 function writeFrame(s, i, h) {
   return new Promise(function (res, rej) {
     frameCanvas(s, i).toBlob(function (b) {
       if (!b) { rej(new Error('could not encode the PNG')); return; }
       h.createWritable().then(function (w) {
-        return w.write(b).then(function () { return w.close(); });
+        return w.write(b).then(function () { return w.close(); }, function (err) { letGo(w); throw err; });
       }).then(res, rej);
     }, 'image/png');
   });
@@ -4568,13 +4647,19 @@ function saveOver(force) {
       });
       dchain.then(function () {
         s.bytes = [];
+        // a rename or a deleted frame leaves last save's files behind; say so, as Save over does
+        var left = (s.destWrote || []).filter(function (n) { return names.indexOf(n) < 0; });
+        s.destWrote = names.slice();
         say('Saved ' + names.join(', ') + ' into ' + s.dest.label +
           (dsoft ? '. ' + dsoft + ' part see-through pixels were snapped on the way out' : '') +
+          (left.length ? '. ' + left.join(', ') + ' from the last save ' + (left.length > 1 ? 'are' : 'is') + ' still in there; delete ' + (left.length > 1 ? 'them yourself if they' : 'it yourself if it') + ' should go' : '') +
           '. Run npm run pack-art', 'good');
         scheduleSave(); redraw();
       }, function () {
         say('Could not write into ' + s.dest.label + '. The folder may have moved. Export frames still works.', 'bad');
       });
+    }, function () {
+      say('The browser would not ask for leave to write in ' + s.dest.label + '. Nothing was touched. Press Save again.', 'bad');
     });
     return false;
   }
@@ -4602,7 +4687,9 @@ function saveOver(force) {
     });
   });
   // a frame added since opening has no file yet, so it goes to downloads as before
-  fresh.forEach(function (p) { chain = chain.then(function () { return saveFrame(s, p.i, p.name); }); });
+  fresh.forEach(function (p) {
+    chain = chain.then(function () { return saveFrame(s, p.i, p.name).catch(function () { failed.push(p.name); }); });
+  });
   chain.then(function () {
     if (wrote.length) s.bytes = [];   // what is on disk now is exactly what this editor writes
     var list = function (a) { return a.join(', '); };
@@ -4613,7 +4700,7 @@ function saveOver(force) {
     if (blocked.length) bits.push('The browser held back ' + list(blocked) + '. It asks once per file: press Save over again');
     if (failed.length) bits.push('Could not write ' + list(failed) + '. The file may have moved. Export frames still works');
     var stale = (s.handles || []).filter(function (h) { return h && names.indexOf(h.name) < 0; }).map(function (h) { return h.name; });
-    if (wrote.length && stale.length) bits.push(list(stale) + ' on disk ' + (stale.length > 1 ? 'are' : 'is') + ' not a frame of this sprite any more. Delete ' + (stale.length > 1 ? 'them' : 'it') + ' yourself if it should go');
+    if (wrote.length && stale.length) bits.push(list(stale) + ' on disk ' + (stale.length > 1 ? 'are' : 'is') + ' not a frame of this sprite any more. Delete ' + (stale.length > 1 ? 'them yourself if they' : 'it yourself if it') + ' should go');
     if (wrote.length && !blocked.length && !failed.length) {
       bits.push('Run npm run pack-art' + (soft ? '. ' + soft + ' part see-through pixels were snapped on the way out' : ''));
     }
@@ -4629,16 +4716,20 @@ function saveOver(force) {
 // so Forget all spares them too
 var UI_KEY = 'eldermyr-sprite-editor-ui-v1';
 var UI = (function () {
-  try { return JSON.parse(window.localStorage.getItem(UI_KEY) || '{}') || {}; }
-  catch (e) { return {}; }
+  // anything but a plain object is as good as unset: a number or a list here would
+  // throw on the first choice written into it, or quietly never be kept
+  try {
+    var u = JSON.parse(window.localStorage.getItem(UI_KEY) || '{}');
+    return u && typeof u === 'object' && !Array.isArray(u) ? u : {};
+  } catch (e) { return {}; }
 })();
 function saveUI() {
   try { window.localStorage.setItem(UI_KEY, JSON.stringify(UI)); } catch (e) { /* nowhere to keep it */ }
 }
 // the panels resize at their inner edges; widths are kept with the other UI choices
 function applyPanels() {
-  var l = Math.max(140, Math.min(340, UI.leftW || 172));
-  var r = Math.max(260, Math.min(560, UI.sideW || 320));
+  var l = Math.max(140, Math.min(340, +UI.leftW || 172));   // + so a kept word reads as unset, not NaNpx
+  var r = Math.max(260, Math.min(560, +UI.sideW || 320));
   $('app').style.setProperty('--leftW', l + 'px');
   $('app').style.setProperty('--sideW', r + 'px');
   toolsFollow();
@@ -4660,14 +4751,16 @@ function wireGrip(id, which) {
     };
     var up = function () {
       h.removeEventListener('pointermove', mv);
+      h.removeEventListener('pointerup', up);
+      h.removeEventListener('pointercancel', up);
       h.className = 'grip';
       saveUI();
       if (spr()) paintCanvas();
       drawPreview();
     };
     h.addEventListener('pointermove', mv);
-    h.addEventListener('pointerup', up, { once: true });
-    h.addEventListener('pointercancel', up, { once: true });
+    h.addEventListener('pointerup', up);
+    h.addEventListener('pointercancel', up);
   });
   h.addEventListener('dblclick', function () {
     delete UI[which];
@@ -4684,7 +4777,10 @@ applyPanels();
 // it leaves the column to float on its own; double click the title to dock it again.
 // Where it sits and whether it is folded are kept with the other UI choices.
 function toolsDock() {
-  return UI.toolsDock || (UI.toolsPos ? 'free' : 'left');
+  // floating needs a place to float at; a kept choice without one goes back in the column
+  var pos = UI.toolsPos && isFinite(UI.toolsPos.x) && isFinite(UI.toolsPos.y);
+  var d = UI.toolsDock || (pos ? 'free' : 'left');
+  return d === 'right' || (d === 'free' && pos) ? d : 'left';
 }
 function toolsApply() {
   var p = $('toolsPanel'), dock = toolsDock();
@@ -4719,12 +4815,14 @@ function toolsFollow() {
   // under a tall inspector the panel scrolls rather than running off the window
   p.style.maxHeight = Math.max(80, $('app').clientHeight - slot.y - 14) + 'px';
 }
-function toolsPlace(x, y) {
+// only a drag moves the kept spot; a smaller window squeezes the panel on screen for
+// now, and a bigger one later puts it back where you left it
+function toolsPlace(x, y, dragged) {
   var p = $('toolsPanel'), app = $('app');
   var maxX = app.clientWidth - p.offsetWidth - 6, maxY = app.clientHeight - 30;
   x = Math.max(6, Math.min(maxX, x)); y = Math.max(6, Math.min(maxY, y));
   p.style.left = x + 'px'; p.style.top = y + 'px';
-  UI.toolsPos = { x: x, y: y };
+  if (dragged) UI.toolsPos = { x: x, y: y };
 }
 function toolsSetDock(dock) {
   UI.toolsDock = dock;
@@ -4754,7 +4852,7 @@ $('toolsHead').addEventListener('pointerdown', function (e) {
       toolsApply();
     }
     var x = ev.clientX - ar.left - offX, y = ev.clientY - ar.top - offY;
-    toolsPlace(x, y);
+    toolsPlace(x, y, true);
     // near a slot, show the ghost of where it will land
     snap = null;
     toolsSlots().forEach(function (sl) {
@@ -4768,14 +4866,16 @@ $('toolsHead').addEventListener('pointerdown', function (e) {
   };
   var up = function () {
     head.removeEventListener('pointermove', mv);
+    head.removeEventListener('pointerup', up);
+    head.removeEventListener('pointercancel', up);
     hint.className = '';
     if (!moved) return;
     if (snap) { toolsSetDock(snap.id); say(snap.id === 'right' ? 'Tools sit under the inspector now' : 'Tools are back in the column', 'good'); }
     else saveUI();
   };
   head.addEventListener('pointermove', mv);
-  head.addEventListener('pointerup', up, { once: true });
-  head.addEventListener('pointercancel', up, { once: true });
+  head.addEventListener('pointerup', up);
+  head.addEventListener('pointercancel', up);
 });
 window.addEventListener('resize', function () { var d = toolsDock(); if (d === 'free') toolsPlace(UI.toolsPos.x, UI.toolsPos.y); else if (d === 'right') toolsFollow(); });
 toolsApply();
@@ -4883,11 +4983,7 @@ $('fileFrame').onchange = function (e) {
   e.target.value = '';
   if (!s || !files.length) return;
   Promise.all(files.map(function (f) {
-    return decode(f).then(function (img) {
-      var d = toPixels(img);
-      if (d.w > MAX_SIDE || d.h > MAX_SIDE) throw new Error('too-big');
-      return d;
-    }).catch(function () { return { failed: f.name }; });
+    return readPixels(f).catch(function () { return { failed: f.name }; });
   })).then(function (all) {
     var wrong = [], unread = [];
     all.forEach(function (d) {
@@ -4906,7 +5002,11 @@ $('fileFrame').onchange = function (e) {
 $('bNew').onclick = function () {
   closeAddMenu();
   var n = Math.max(4, Math.min(1024, parseInt($('newSize').value, 10) || 16));
-  var name = 'sprite' + (S.sprites.length + 1);
+  // the next free spriteN: after a close, the count alone can land on a name in use
+  var taken = {}; S.sprites.forEach(function (x) { taken[x.key] = 1; });
+  var nn = S.sprites.length + 1;
+  while (taken['sprite' + nn]) nn++;
+  var name = 'sprite' + nn;
   var made = makeSprite(name, n, n, [blank(n, n)], cleanName($('family').value));
   defaultDest(made);
   S.sprites.push(made);
@@ -4914,26 +5014,8 @@ $('bNew').onclick = function () {
   scheduleSave();
   say('New blank sprite, ' + n + ' by ' + n + (made.dest ? '. Save puts it in ' + made.dest.label : ''));
 };
-var closeArmed = false, closeTimer = null;
-$('bClose').onclick = function () {
-  if (S.si < 0) return;
-  if (!closeArmed) {
-    closeArmed = true;
-    this.textContent = 'Close and lose it?';
-    this.className = 'danger';
-    var self = this;
-    closeTimer = setTimeout(function () { closeArmed = false; self.textContent = 'Close'; self.className = ''; }, 4000);
-    return;
-  }
-  if (closeTimer) clearTimeout(closeTimer);
-  closeArmed = false;
-  this.textContent = 'Close'; this.className = '';
-  var gone = S.sprites[S.si].key;
-  S.sprites.splice(S.si, 1);
-  selectSprite(Math.min(S.si, S.sprites.length - 1));
-  scheduleSave();
-  say('Closed ' + gone + '. It is not kept any more.', 'good');
-};
+// the old Close button, kept as a shell: it asks twice through the list's own cross
+$('bClose').onclick = function () { if (S.si >= 0) closeSprite(S.si); };
 $('bExport').onclick = function () { exportAll(false, false); };
 $('bExport1').onclick = function () { exportAll(true, false); };
 $('bForce').onclick = function () { exportAll(false, true); };
@@ -4957,9 +5039,13 @@ $('bSave').onclick = function () {
 $('key').oninput = function () { drawPathBar(); };
 $('key').onchange = function () {
   var s = spr(); if (!s) { drawPathBar(); return; }
+  var was = s.key;
   s.key = cleanName($('key').value) || 'sprite';
   $('key').value = s.key; $('key').title = s.key;
   touched(s); scheduleSave(); redraw();
+  // two sprites of one name write the same files, and the second save quietly wins
+  var twin = S.sprites.some(function (x) { return x !== s && x.key === s.key; });
+  if (twin && s.key !== was) say('Another open sprite is called ' + s.key + ' too. Saving either writes the same files, so rename one of them.', 'bad');
 };
 $('family').oninput = function () { drawPathBar(); };
 $('family').onchange = function () {
@@ -4975,6 +5061,7 @@ $('pbPath').onclick = function () {
     return askWrite(dh).then(function (ok) {
       if (!ok) { say('The browser was not allowed to write in that folder. Nothing changed.', 'bad'); return; }
       s.dest = { handle: dh, label: dh.dir || dh.name };
+      s.destWrote = null;   // nothing of this sprite is in the new folder yet
       rememberPlace(dh, dh, s.dest.label);
       drawPathBar(); redraw();
       say('Saving goes to ' + s.dest.label + ' now, and new sprites go there too.', 'good');
@@ -5099,10 +5186,8 @@ $('refFile').onchange = function (e) {
   var files = Array.prototype.slice.call(e.target.files);
   e.target.value = '';
   files.forEach(function (f) {
-    decode(f).then(function (img) {
-      var c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
-      c.getContext('2d').drawImage(img, 0, 0);
-      addRefPng(baseName(f.name).replace(/-\d+$/, ''), c.toDataURL('image/png'));
+    readPixels(f).then(function (d) {
+      addRefPng(baseName(f.name).replace(/-\d+$/, ''), rawCanvas({ w: d.w, h: d.h, frames: [d.px] }, 0).toDataURL('image/png'));
     }).catch(function () { say('Could not read ' + f.name, 'bad'); });
   });
 };
@@ -5196,8 +5281,12 @@ var PL_URL = 'https://api.pixellab.ai/v1';
 var PL_KEY_KEY = 'myrling-pixellab-key';
 var PL_HIST_KEY = 'myrling-pixellab-history-v1';
 var plHist = (function () {
-  try { return JSON.parse(window.localStorage.getItem(PL_HIST_KEY) || '[]') || []; }
-  catch (e) { return []; }
+  // only records with a picture are worth anything; one without must not break the dialog
+  try {
+    var kept = JSON.parse(window.localStorage.getItem(PL_HIST_KEY) || '[]');
+    return (Array.isArray(kept) ? kept : []).filter(function (r) { return r && typeof r.png === 'string'; })
+      .map(function (r) { r.prompt = String(r.prompt || ''); return r; });
+  } catch (e) { return []; }
 })();
 var plHistWhy = '';
 function plSaveHist() {
@@ -5240,7 +5329,7 @@ function plOpen(rec) {
   var im = new Image();
   im.onload = function () {
     var d = toPixels(im);
-    var slug = cleanName(rec.prompt.split(/\s+/).slice(0, 2).join('')) || 'generated';
+    var slug = freeKey(rec.prompt.split(/\s+/).slice(0, 2).join(''), 'generated');
     var sp = makeSprite(slug, d.w, d.h, [d.px], cleanName($('family').value));
     defaultDest(sp);
     S.sprites.push(sp);
@@ -5280,12 +5369,12 @@ function plGenerate() {
       var uri = r && r.image && r.image.base64 ? String(r.image.base64) : null;
       if (!uri) throw new Error('no image came back');
       if (uri.indexOf('data:') !== 0) uri = 'data:image/png;base64,' + uri;
-      if (r.usage && r.usage.usd) spent += r.usage.usd;
+      if (r.usage && +r.usage.usd) spent += +r.usage.usd;   // a string here would glue, not add
       var rec = { at: Date.now(), prompt: prompt, w: size, h: size, png: uri };
       plHist.unshift(rec);
       $('plOut').appendChild(plThumb(rec));
       return rec;
-    }, function (e) { failed.push(String(e && e.message || e)); return null; }));
+    }).catch(function (e) { failed.push(String(e && e.message || e)); return null; }));   // a junk answer lands here too
   }
   Promise.all(jobs).then(function (made) {
     $('bGenGo').disabled = false; $('bGenGo').textContent = 'Generate';
@@ -5294,6 +5383,11 @@ function plGenerate() {
     var msg = ok ? 'Made ' + ok + (ok > 1 ? ' images' : ' image') + (spent ? ' for about $' + spent.toFixed(2) : '') + '. Click one to open it as a sprite.' : '';
     if (failed.length) msg += (msg ? ' ' : '') + failed.length + ' failed: ' + failed[0];
     say(msg, failed.length ? 'bad' : 'good');
+  }).catch(function (e) {
+    // whatever went wrong, the button must not stay stuck on Generating
+    $('bGenGo').disabled = false; $('bGenGo').textContent = 'Generate';
+    plSaveHist();
+    say('Something in that answer could not be read: ' + (e && e.message || e), 'bad');
   });
 }
 function plSaveAll() {
@@ -5303,16 +5397,20 @@ function plSaveAll() {
     return askWrite(dh).then(function (ok) {
       if (!ok) { say('The browser was not allowed to write there. Nothing was saved.', 'bad'); return; }
       rememberPlace(dh, dh, dh.dir || dh.name);
-      var chain = Promise.resolve(), wrote = 0;
+      var chain = Promise.resolve(), wrote = 0, used = {};
       plHist.forEach(function (rec) {
         chain = chain.then(function () {
-          var name = 'pixellab-' + rec.at + '-' + (cleanName(rec.prompt.split(/\s+/).slice(0, 3).join('-')) || 'image') + '.png';
+          var name = 'pixellab-' + rec.at + '-' + (cleanName(rec.prompt.split(/\s+/).slice(0, 3).join('-')) || 'image');
+          // two of one batch can land in the same millisecond; neither may write over the other
+          var n = 2, base = name;
+          while (used[name]) name = base + '-' + n++;
+          used[name] = 1; name += '.png';
           var bin = atob(rec.png.split(',')[1]);
           var arr = new Uint8Array(bin.length);
           for (var j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
           return dh.getFileHandle(name, { create: true }).then(function (h) {
             return h.createWritable().then(function (w) {
-              return w.write(new Blob([arr], { type: 'image/png' })).then(function () { return w.close(); });
+              return w.write(new Blob([arr], { type: 'image/png' })).then(function () { return w.close(); }, function (err) { letGo(w); throw err; });
             });
           }).then(function () { wrote++; });
         });
@@ -5337,6 +5435,13 @@ $('bGen').onclick = openGen;
 $('bGenClose').onclick = closeGen;
 $('gen').onclick = function (e) { if (e.target === this) closeGen(); };
 $('bGenGo').onclick = plGenerate;
+// emptying the box is the way to take the key back out of this browser; before, the
+// dialog refilled it from the kept copy every time it opened and nothing could remove it
+$('plKey').onchange = function () {
+  if (this.value.trim()) return;
+  try { window.localStorage.removeItem(PL_KEY_KEY); } catch (e) { /* nothing was kept */ }
+  say('The PixelLab key is no longer kept in this browser', 'good');
+};
 $('bPlSaveAll').onclick = plSaveAll;
 $('settings').onclick = function (e) { if (e.target === this) closeSettings(); };
 $('bKeysReset').onclick = function () {
@@ -5389,6 +5494,9 @@ var dragDepth = 0;
 window.addEventListener('dragenter', function (e) {
   e.preventDefault();
   if (frameDrag !== null || spriteDrag !== null) return;   // a panel item on the move is not files arriving
+  // nor is a bit of text dragged out of a box: only a drag carrying files asks for the drop
+  var types = e.dataTransfer && e.dataTransfer.types;
+  if (types && Array.prototype.indexOf.call(types, 'Files') < 0) return;
   dragDepth++; $('drop').className = 'show';
 });
 window.addEventListener('dragover', function (e) { e.preventDefault(); });
@@ -5525,6 +5633,21 @@ window.addEventListener('keydown', function (e) {
     case 'ArrowDown': e.preventDefault(); nudge(0, 1); break;
     case ' ': e.preventDefault(); if (!e.repeat) setPlaying(!S.playing); break;
   }
+});
+// Escape shuts the open dialog from inside one of its boxes too. The handler above lets
+// every press in a text box through untouched, which left the PixelLab prompt (focused
+// the moment the dialog opens) with no way out but the mouse.
+window.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape' || keyWait) return;
+  var t = e.target.tagName;
+  if (t !== 'INPUT' && t !== 'TEXTAREA') return;
+  var shut = [[genOpen, closeGen], [settingsOpen, closeSettings], [sizeOpen, closeSizeModal],
+    [sheetModalOpen, closeSheetModal], [splitModalOpen, closeSplitModal],
+    [newSheetModalOpen, closeNewSheetModal], [addSheetModalOpen, closeAddToSheetModal]];
+  for (var i = 0; i < shut.length; i++) {
+    if (shut[i][0]()) { e.preventDefault(); e.target.blur(); shut[i][1](); return; }
+  }
+  if ($('addMenu').className === 'show' && $('addMenu').contains(e.target)) { e.target.blur(); closeAddMenu(); }
 });
 window.addEventListener('keyup', function (e) {
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') commit();
