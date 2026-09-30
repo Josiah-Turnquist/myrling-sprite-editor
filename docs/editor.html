@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="myrling-version" content="2026.09.22.9">
+<meta name="myrling-version" content="2026.09.30.1">
 <title>Myrling</title>
 <script>
 // If the page froze last time, open with #forget on the URL (or add it now) and
@@ -75,8 +75,10 @@ if (location.hash === '#forget') {
     position:absolute; inset:0; z-index:0; display:block;
     image-rendering:pixelated; touch-action:none;
   }
+  /* touch-action here, not only on #cv: the wrap is what the pen and the finger land on,
+     and without it the browser takes the stroke for a scroll and cancels it */
   #canvasWrap{
-    position:absolute; inset:0; z-index:1; overflow:auto; display:flex; cursor:crosshair;
+    position:absolute; inset:0; z-index:1; overflow:auto; display:flex; cursor:crosshair; touch-action:none;
     padding:70px calc(var(--sideW) + 30px) 88px calc(var(--leftW) + 28px);   /* the gap between the floating panels */
   }
   #canvasSizer{margin:auto; flex:0 0 auto; pointer-events:none; box-shadow:0 0 0 1px var(--line)}
@@ -325,7 +327,7 @@ if (location.hash === '#forget') {
   .seg button.on{background:var(--sel); color:var(--selText)}
   #preview{display:block; width:100%; border-radius:6px; background:#0d0f13}
   /* the whole sheet, small, so you can say which cell you mean without leaving the panel */
-  #cellMap{display:block; border-radius:4px; background:#0d0f13; border:1px solid var(--line); cursor:pointer; image-rendering:pixelated}
+  #cellMap{display:block; flex:none; border-radius:4px; background:#0d0f13; border:1px solid var(--line); cursor:pointer; image-rendering:pixelated}
   .bgs{display:flex; gap:5px}
   .bgs b{width:18px; height:18px; border-radius:4px; cursor:pointer; display:block; box-shadow:0 0 0 2px var(--line)}
   .bgs b.on{box-shadow:0 0 0 2px var(--hot)}
@@ -596,7 +598,7 @@ if (location.hash === '#forget') {
         <button id="bTileOffset" title="Shift the field half a tile, so the joins land in the middle where you can see them">Offset</button>
         <button id="bRowVariants" style="display:none" title="Scatter every painted cell of this row the way the game scatters variants">Row variants</button>
         <button id="bSeams" title="Mark the joins where two tiles do not line up">Seams</button>
-        <div id="cellPick" style="display:none; align-items:center; gap:8px; flex:1 0 100%">
+        <div id="cellPick" style="display:none; align-items:center; gap:8px; flex:1 0 100%; flex-wrap:wrap">
           <canvas id="cellMap" title="Click a cell to work on it"></canvas>
           <span class="hint mono" id="cellNote" style="font-size:10px"></span>
         </div>
@@ -670,6 +672,7 @@ if (location.hash === '#forget') {
   <div id="keptPop" class="panel">
     <div id="keptText"></div>
     <div class="row" style="margin-top:8px"><button id="bForget" style="width:100%">Forget all</button></div>
+    <div class="row" id="keepMineRow" style="display:none"><button id="bKeepMine" style="width:100%" title="Write what is open now over the copy this version cannot read. That copy is gone after this.">Keep mine instead</button></div>
   </div>
   <div id="sizeNote" title="Where the pointer is, in pixels"><span id="posLabel">&mdash;</span></div>
   <div id="status"></div>
@@ -691,7 +694,7 @@ if (location.hash === '#forget') {
       <div class="mono" style="margin-top:8px">
         Cmd or Ctrl + Z undo &nbsp; Shift + Z redo<br>
         Cmd+C copy &nbsp; Cmd+X cut &nbsp; Cmd+V paste &nbsp; Cmd+S save<br>
-        - and + zoom, or the wheel &nbsp; Space play<br>
+        - and + zoom, or the wheel &nbsp; Shift + wheel or middle drag moves about &nbsp; Space play<br>
         [ and ] step to the cell before or after, on a tilesheet &nbsp; Shift with either selects it
       </div>
       <div style="margin-top:8px">Square: Shift squares the box off, Alt flips outline and filled
@@ -915,7 +918,8 @@ var REFS_KEY = 'myrling-refs-v1';
 var REF_LIST = (function () {
   try {
     var kept = JSON.parse(window.localStorage.getItem(REFS_KEY) || 'null');
-    if (Array.isArray(kept)) return kept;
+    // an entry with no picture cannot be drawn, and one bad entry must not stop the page
+    if (Array.isArray(kept)) return kept.filter(function (r) { return r && r.id && typeof r.png === 'string'; });
   } catch (e) { /* unreadable is the same as unset */ }
   return REFS.map(function (r) { return { id: r.id, label: r.label, upp: r.upp, png: 'data:image/png;base64,' + r.png, builtin: true }; });
 })();
@@ -931,7 +935,7 @@ function loadRefImages() {
 }
 loadRefImages();
 function saveRefs() {
-  try { window.localStorage.setItem(REFS_KEY, JSON.stringify(REF_LIST)); } catch (e) { /* nowhere to keep it */ }
+  try { window.localStorage.setItem(REFS_KEY, JSON.stringify(REF_LIST)); return true; } catch (e) { return false; }
 }
 
 // how many screen pixels one drawn pixel is. The game runs at 2, 3 and 4; games that
@@ -950,7 +954,7 @@ var S = {
   ground: GROUNDS[0],
   scale: 3,
   fps: 6, playing: false, playFrame: 0,
-  store: { on: false, why: '', at: 0, bytes: 0 }
+  store: { on: false, why: '', at: 0, bytes: 0, stuck: false }   // stuck: a kept copy we cannot read, not to be written over
 };
 
 var cv = $('cv'), ctx = cv.getContext('2d');
@@ -1025,7 +1029,7 @@ function makeSprite(key, w, h, frames, family) {
 }
 // ---------- tilesheets ----------
 // A sheet is one image holding many tiles in a grid: s.sheet says how it is ruled.
-//   cw, ch   a cell's size in pixels (a terrain tile is 33 by 33)
+//   cw, ch   a cell's size in pixels (the game's terrain is 16 by 16)
 //   gap      empty pixels between cells, 0 when they touch
 //   ox, oy   the margin before the first cell
 // s.sheetCur is the cell the user last worked in, {cx, cy}, or null. The game never sees
@@ -1061,12 +1065,47 @@ function cellEmpty(s, f, cx, cy) {
   for (var y = 0; y < r.h; y++) for (var x = 0; x < r.w; x++) if (f[((r.y + y) * s.w + r.x + x) * 4 + 3]) return false;
   return true;
 }
-function snapshot(s) {
-  return { w: s.w, h: s.h, cur: s.cur, frames: s.frames.map(function (f) { return f.slice(); }) };
+// A sheet's grid is ruled on its pixels, so a step of history holds the grid as well: a
+// turn or a trim moves the grid with the picture, and undoing it has to move it back.
+// Ruling the grid by hand is a step of its own, the same as a stroke. That is the only
+// way it can stay put: were the grid kept outside the history, undoing a stroke made
+// after a re-rule would bring back whatever grid the step before it held. As a step,
+// undoing the stroke leaves the new grid alone, and only undoing the ruling itself (the
+// status line says so) takes the grid back.
+// The cell you are on and the squares of the board are where you are, not what you
+// made, so they are not steps: they are held beside each step only to come back when
+// an undo crosses a turn, a flip, a trim or a re-rule and the old numbers mean another
+// tile. gridGen marks each such change, so an undo can tell whether it crossed one.
+var GRID_GEN = 0;
+function copyGrid(g) { return g ? { cw: g.cw, ch: g.ch, gap: g.gap, ox: g.ox, oy: g.oy } : null; }
+function sameGrid(a, b) {
+  if (!a || !b) return !a && !b;
+  return a.cw === b.cw && a.ch === b.ch && a.gap === b.gap && a.ox === b.ox && a.oy === b.oy;
 }
+function copyCells(cells) { return (cells || []).map(function (c) { return c ? { cx: c.cx, cy: c.cy } : null; }); }
+function snapshot(s) {
+  return {
+    w: s.w, h: s.h, cur: s.cur, frames: s.frames.map(function (f) { return f.slice(); }),
+    sheet: copyGrid(sheetOf(s)), gen: s.gridGen || 0,
+    sheetCur: s.sheetCur ? { cx: s.sheetCur.cx, cy: s.sheetCur.cy } : null,
+    board: s.board && s.board.cols > 0 ? { cols: s.board.cols, rows: s.board.rows, cells: copyCells(s.board.cells) } : null
+  };
+}
+// the step on screen learns where you are now, so an undo that crosses back over a
+// turn and a redo that crosses forward again land on the cell you left
+function noteWhere(s) {
+  var h = s && s.hist[s.hi];
+  if (!h || h.gen !== (s.gridGen || 0)) return;
+  h.sheetCur = s.sheetCur ? { cx: s.sheetCur.cx, cy: s.sheetCur.cy } : null;
+  h.board = s.board && s.board.cols > 0 ? { cols: s.board.cols, rows: s.board.rows, cells: copyCells(s.board.cells) } : null;
+}
+// a sprite that arrives ruled (opened, brought back, made as a sheet) starts its history
+// ruled: the grid it came with is where undo stops, not a step undo takes away
+function freshHistory(s) { s.hist = [snapshot(s)]; s.hi = 0; }
 function sameAsHead(s) {
   var a = s.hist[s.hi];
   if (!a || a.w !== s.w || a.h !== s.h || a.frames.length !== s.frames.length) return false;
+  if (!sameGrid(a.sheet, sheetOf(s))) return false;
   for (var i = 0; i < s.frames.length; i++) {
     var x = s.frames[i], y = a.frames[i];
     if (x.length !== y.length) return false;
@@ -1078,8 +1117,9 @@ function sameAsHead(s) {
 // frames would otherwise hold half a gigabyte of undo. Two copies is the floor so the
 // last stroke can still be undone; forcing eight would keep 512 MB for a 4k frame.
 var HIST_STEPS = 200, HIST_BYTES = 40 * 1024 * 1024;
-function commit() {
-  var s = spr(); if (!s) return;
+// the sprite can be named, for a stroke that has to land on the sprite it began on
+function commit(s) {
+  s = s || spr(); if (!s) return;
   if (sameAsHead(s)) return;
   s.hist.length = s.hi + 1;
   s.hist.push(snapshot(s));
@@ -1092,22 +1132,48 @@ function commit() {
   scheduleSave();
   redraw();
 }
+// puts a step back, and says whether that step was a ruling of the grid (a new grid on
+// the same picture), which the status line names so an undo of it is never a surprise
 function restore(snap) {
   var s = spr();
+  var regrid = !sameGrid(sheetOf(s), snap.sheet) && snap.w === s.w && snap.h === s.h;
   s.w = snap.w; s.h = snap.h; s.cur = Math.min(snap.cur, snap.frames.length - 1);
   s.frames = snap.frames.map(function (f) { return f.slice(); });
+  s.sheet = copyGrid(snap.sheet);
+  // across a turn, a flip, a trim or a re-rule the cell numbers mean other tiles, so the
+  // cell and the board come back as they were beside that step. Within one ruling they
+  // are left where you put them
+  if ((snap.gen || 0) !== (s.gridGen || 0)) {
+    s.sheetCur = snap.sheetCur ? { cx: snap.sheetCur.cx, cy: snap.sheetCur.cy } : null;
+    if (snap.board) s.board = { cols: snap.board.cols, rows: snap.board.rows, cells: copyCells(snap.board.cells) };
+    s.gridGen = snap.gen || 0;
+    clipCell = null;
+  }
   s.bytes = [];
   touched(s);
+  return regrid;
 }
 function undo() {
-  var s = spr(); if (!s || s.hi <= 0) return;
+  if (drag) endDrag();   // the toolbar and the Mac menu call in here without a key
+  var s = spr(); if (!s || !s.hist[s.hi]) return;
+  // a change not in the history yet (a paste still floating, pixels nudged before the
+  // key came up) is the step to take back; stepping past it lost two steps at once
+  var loose = !sameAsHead(s);
+  if (!loose && s.hi <= 0) return;
   dropSelection(true);
-  s.hi--; restore(s.hist[s.hi]); scheduleSave(); redraw(); say('Undone');
+  noteWhere(s);
+  if (!loose) s.hi--;
+  var regrid = restore(s.hist[s.hi]); scheduleSave(); redraw();
+  say(regrid ? 'Undone. The grid is back to how it was ruled before.' : 'Undone');
 }
 function redo() {
+  if (drag) endDrag();
   var s = spr(); if (!s || s.hi >= s.hist.length - 1) return;
   dropSelection(true);
-  s.hi++; restore(s.hist[s.hi]); scheduleSave(); redraw(); say('Redone');
+  noteWhere(s);
+  s.hi++;
+  var regrid = restore(s.hist[s.hi]); scheduleSave(); redraw();
+  say(regrid ? 'Redone. The grid is ruled the new way again.' : 'Redone');
 }
 
 // ---------- pixel ops ----------
@@ -1171,8 +1237,9 @@ function line(x0, y0, x1, y1, erase) {
 // a handful of pixels thrown into a disc under the cursor, like a spray can. Held
 // still it keeps building, so texture grows where you dwell, which is the whole point
 // of it for stone, dirt and rust. Size is the disc, Flow is how many pixels a puff.
-function sprayRadius() { return Math.max(1, Math.min(16, UI.sprayR || 3)); }
-function sprayFlow() { return Math.max(1, Math.min(30, UI.sprayD || 5)); }
+// + and round: a kept "5" or a kept word must read as a number or as unset, never NaN
+function sprayRadius() { return Math.max(1, Math.min(16, Math.round(+UI.sprayR) || 3)); }
+function sprayFlow() { return Math.max(1, Math.min(30, Math.round(+UI.sprayD) || 5)); }
 function spray(cx, cy, erase) {
   var r = sprayRadius(), n = sprayFlow();
   for (var i = 0; i < n; i++) {
@@ -1199,12 +1266,13 @@ function squareEnd(x0, y0, x, y, even) {
   var n = Math.max(Math.abs(x - x0), Math.abs(y - y0));
   return { x: x0 + (x < x0 ? -n : n), y: y0 + (y < y0 ? -n : n) };
 }
-function fill(x, y) {
+// erase floods the patch back to clear, for the right button
+function fill(x, y, erase) {
   var s = spr(), f = frm();
   if (!inside(s, x, y)) return;
   var t = get(f, s.w, x, y);
   var want = [S.color[0], S.color[1], S.color[2], 255];
-  if (S.alpha >= 100 && t[3] === want[3] && t[0] === want[0] && t[1] === want[1] && t[2] === want[2]) return;
+  if (erase ? t[3] === 0 : (S.alpha >= 100 && t[3] === want[3] && t[0] === want[0] && t[1] === want[1] && t[2] === want[2])) return;
   var lo = S.sel ? S.sel : { x: 0, y: 0, w: s.w, h: s.h };
   // the flood writes its own pixels rather than going through paint, so the cell has to
   // bound it here as well, or one bucket would run the colour across the whole sheet
@@ -1224,7 +1292,8 @@ function fill(x, y) {
     var i4 = idx * 4;
     if (f[i4 + 3] !== t3) continue;
     if (t3 !== 0 && (f[i4] !== t0 || f[i4 + 1] !== t1 || f[i4 + 2] !== t2)) continue;
-    if (S.alpha >= 100) set(f, w, px, py, want[0], want[1], want[2], 255);
+    if (erase) set(f, w, px, py, 0, 0, 0, 0);
+    else if (S.alpha >= 100) set(f, w, px, py, want[0], want[1], want[2], 255);
     else blendPx(f, w, px, py, S.color, S.alpha / 100);
     if (px + 1 < w && !seen[idx + 1]) { seen[idx + 1] = 1; st[sp++] = idx + 1; }
     if (px > 0 && !seen[idx - 1]) { seen[idx - 1] = 1; st[sp++] = idx - 1; }
@@ -1251,12 +1320,15 @@ function flipFrame() {
     out[di] = f[si]; out[di + 1] = f[si + 1]; out[di + 2] = f[si + 2]; out[di + 3] = f[si + 3];
   }
   s.frames[s.cur] = out;
+  // a one-frame sheet is mirrored whole, so its grid is too; with more frames the others
+  // stay as they were, and the grid stays with them
+  if (s.frames.length === 1) carryGrid(s, { flipX: true });
   commit(); redraw();
   say('Frame ' + s.cur + ' mirrored');
 }
 
 // ---------- selection ----------
-var lift = null; // { buf, w, h, base }
+var lift = null; // { buf, w, h, base, s }: s is the sprite the pixels float over
 function ptInSel(x, y) {
   var s = S.sel;
   return s && x >= s.x && y >= s.y && x < s.x + s.w && y < s.y + s.h;
@@ -1264,16 +1336,16 @@ function ptInSel(x, y) {
 function beginLift() {
   var s = spr(), f = frm(), b = S.sel;
   var buf = new Uint8ClampedArray(b.w * b.h * 4);
+  var base = f.slice();
+  // a box nudged part way off the edge only holds the pixels still on the picture;
+  // reading past the edge would pick up the far end of the row above
   for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
+    if (!inside(s, b.x + x, b.y + y)) continue;
     var si = ((b.y + y) * s.w + (b.x + x)) * 4, di = (y * b.w + x) * 4;
     buf[di] = f[si]; buf[di + 1] = f[si + 1]; buf[di + 2] = f[si + 2]; buf[di + 3] = f[si + 3];
+    base[si] = 0; base[si + 1] = 0; base[si + 2] = 0; base[si + 3] = 0;
   }
-  var base = f.slice();
-  for (var y2 = 0; y2 < b.h; y2++) for (var x2 = 0; x2 < b.w; x2++) {
-    var i = ((b.y + y2) * s.w + (b.x + x2)) * 4;
-    base[i] = 0; base[i + 1] = 0; base[i + 2] = 0; base[i + 3] = 0;
-  }
-  lift = { buf: buf, w: b.w, h: b.h, base: base };
+  lift = { buf: buf, w: b.w, h: b.h, base: base, s: s };
 }
 function stampLift(nx, ny) {
   var s = spr();
@@ -1289,18 +1361,31 @@ function stampLift(nx, ny) {
   }
   S.sel.x = nx; S.sel.y = ny;
 }
+// quiet: the caller is about to put the pixels back itself (undo, redo) or commit them
+// with its own change (a resize), so the floating pixels are not made a step of their own
 function dropSelection(quiet) {
-  if (lift) { lift = null; if (!quiet) commit(); }
+  // committed into the sprite they float over, which is not always the one on screen by
+  // now: a close or a reorder can move the list under a paste
+  if (lift) { var on = lift.s; lift = null; if (!quiet) commit(on); }
   S.sel = null;
   $('selHint').style.display = 'none';
 }
 function clearSelection() {
-  var s = spr(), f = frm(), b = S.sel; if (!b) return;
-  for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
-    var i = ((b.y + y) * s.w + (b.x + x)) * 4;
-    f[i] = 0; f[i + 1] = 0; f[i + 2] = 0; f[i + 3] = 0;
+  var s = spr(), f = frm(), b = S.sel; if (!s || !b) return;
+  if (lift) {
+    // pixels on the move are what the box holds: putting back what lay under them takes
+    // them away, and leaves the picture they were floating over alone. Clearing the box
+    // and keeping the lift brought them back on the next nudge.
+    f.set(lift.base);
+    lift = null;
+  } else {
+    for (var y = Math.max(0, b.y); y < Math.min(s.h, b.y + b.h); y++) {
+      for (var x = Math.max(0, b.x); x < Math.min(s.w, b.x + b.w); x++) {
+        var i = (y * s.w + x) * 4;
+        f[i] = 0; f[i + 1] = 0; f[i + 2] = 0; f[i + 3] = 0;
+      }
+    }
   }
-  if (lift) lift.base = f.slice();
   commit(); redraw();
 }
 // Arrows move the pixels inside the box, or the whole picture when there is no box.
@@ -1351,9 +1436,47 @@ function resampleFrame(f, w, h, nw, nh) {
   return out;
 }
 function clampSide(n) { return Math.max(1, Math.min(MAX_SIDE, Math.round(n))); }
-function applyFrames(s, nw, nh, fn) {
+// A sheet's grid is ruled on the pixels, so whatever moves the pixels has to move the grid
+// with them, or a trim or a turn leaves every cell straddling two tiles. One axis at a
+// time: o is the margin, c the cell, f a scale, d a shift, and flip the old length when
+// the axis is mirrored. A margin pushed off the picture comes back inside the first cell,
+// and map turns an old cell number into the new number of the same tile.
+function carryAxis(o, c, gap, f, d, flip) {
+  var nc = Math.max(1, Math.round(c * f)), ng = Math.max(0, Math.round(gap * f)), p = nc + ng;
+  var raw = flip ? flip - o - c : Math.round(o * f) + d;
+  var no = flip || raw < 0 ? ((raw % p) + p) % p : raw;
+  var k0 = (raw - no) / p;
+  return { o: no, c: nc, gap: ng, map: function (k) { return flip ? k0 - k : k0 + k; } };
+}
+// t is { fx, fy, dx, dy } for a scale and a shift, { flipX } or { flipY } for a mirror,
+// { turn } for a quarter turn clockwise. It runs before s.w and s.h change. The cell you
+// were on and the squares of the board go with their tiles.
+function carryGrid(s, t) {
+  var g = sheetOf(s); if (!g) return;
+  noteWhere(s);               // the step being left keeps the cell you were on
+  s.gridGen = ++GRID_GEN;     // and from here the cell numbers mean other tiles
+  var ax, ay;
+  if (t.turn) {
+    // the new x runs up the old y from the bottom, the new y along the old x
+    ax = carryAxis(g.oy, g.ch, g.gap, 1, 0, s.h);
+    ay = carryAxis(g.ox, g.cw, g.gap, 1, 0, 0);
+  } else {
+    ax = carryAxis(g.ox, g.cw, g.gap, t.fx || 1, t.dx || 0, t.flipX ? s.w : 0);
+    ay = carryAxis(g.oy, g.ch, g.gap, t.fy || 1, t.dy || 0, t.flipY ? s.h : 0);
+  }
+  s.sheet = { cw: ax.c, ch: ay.c, gap: ax.gap, ox: ax.o, oy: ay.o };
+  var move = function (c) {
+    if (!c) return null;
+    var n = t.turn ? { cx: ax.map(c.cy), cy: ay.map(c.cx) } : { cx: ax.map(c.cx), cy: ay.map(c.cy) };
+    return n.cx >= 0 && n.cy >= 0 ? n : null;
+  };
+  s.sheetCur = move(s.sheetCur);
+  if (s.board && Array.isArray(s.board.cells)) s.board.cells = s.board.cells.map(move);
+}
+function applyFrames(s, nw, nh, fn, carry) {
   dropSelection(true);
   s.frames = s.frames.map(function (f) { return fn(f, s.w, s.h); });
+  if (carry) carryGrid(s, carry);
   s.w = nw; s.h = nh;
   s.cur = Math.min(s.cur, s.frames.length - 1);
   s.bytes = [];
@@ -1364,7 +1487,7 @@ function applyFrames(s, nw, nh, fn) {
 function resizeByEdges(top, bottom, left, right) {
   var s = spr(); if (!s) return;
   var nw = clampSide(s.w + left + right), nh = clampSide(s.h + top + bottom);
-  applyFrames(s, nw, nh, function (f, w, h) { return padFrame(f, w, h, nw, nh, left, top); });
+  applyFrames(s, nw, nh, function (f, w, h) { return padFrame(f, w, h, nw, nh, left, top); }, { dx: left, dy: top });
   say('Canvas is ' + nw + ' by ' + nh + ' now', 'good');
 }
 // grow or shrink to a size; the anchor (0, .5, 1 on each axis) says which part stays put
@@ -1372,13 +1495,13 @@ function resizeCanvas(nw, nh, ax, ay) {
   var s = spr(); if (!s) return;
   nw = clampSide(nw); nh = clampSide(nh);
   var ox = Math.round((nw - s.w) * ax), oy = Math.round((nh - s.h) * ay);
-  applyFrames(s, nw, nh, function (f, w, h) { return padFrame(f, w, h, nw, nh, ox, oy); });
+  applyFrames(s, nw, nh, function (f, w, h) { return padFrame(f, w, h, nw, nh, ox, oy); }, { dx: ox, dy: oy });
   say('Canvas is ' + nw + ' by ' + nh + ' now', 'good');
 }
 function scaleSprite(nw, nh) {
   var s = spr(); if (!s) return;
   nw = clampSide(nw); nh = clampSide(nh);
-  applyFrames(s, nw, nh, function (f, w, h) { return resampleFrame(f, w, h, nw, nh); });
+  applyFrames(s, nw, nh, function (f, w, h) { return resampleFrame(f, w, h, nw, nh); }, { fx: nw / s.w, fy: nh / s.h });
   say('Scaled to ' + nw + ' by ' + nh + ', nearest neighbour', 'good');
 }
 // scale the picture but keep the canvas: the resampled picture is set back into a
@@ -1387,12 +1510,13 @@ function scaleImageOnly(factor, ax, ay) {
   var s = spr(); if (!s) return;
   var iw = clampSide(s.w * factor), ih = clampSide(s.h * factor), W = s.w, H = s.h;
   var ox = Math.round((W - iw) * ax), oy = Math.round((H - ih) * ay);
-  applyFrames(s, W, H, function (f, w, h) { return padFrame(resampleFrame(f, w, h, iw, ih), iw, ih, W, H, ox, oy); });
+  applyFrames(s, W, H, function (f, w, h) { return padFrame(resampleFrame(f, w, h, iw, ih), iw, ih, W, H, ox, oy); },
+    { fx: iw / W, fy: ih / H, dx: ox, dy: oy });
   say('Picture scaled to ' + iw + ' by ' + ih + ' inside the same ' + W + ' by ' + H + ' canvas', 'good');
 }
 function cropTo(x, y, w, h) {
   var s = spr(); if (!s) return;
-  applyFrames(s, w, h, function (f, fw, fh) { return padFrame(f, fw, fh, w, h, -x, -y); });
+  applyFrames(s, w, h, function (f, fw, fh) { return padFrame(f, fw, fh, w, h, -x, -y); }, { dx: -x, dy: -y });
 }
 function cropToSelection() {
   var s = spr(); if (!s) return;
@@ -1411,9 +1535,17 @@ function trimSprite() {
     }
   });
   if (x1 < 0) { say('Nothing painted, nothing to trim to', 'bad'); return; }
+  // a sheet trims to whole cells: cutting to the ink would slice through the tiles at the
+  // edges and leave a grid with no whole cell in it
+  var box = sheetOf(s) ? cellSpan(s, x0, y0, x1, y1) : null;
+  if (box) {
+    x0 = Math.min(x0, box.x); y0 = Math.min(y0, box.y);
+    x1 = Math.max(x1, box.x + box.w - 1); y1 = Math.max(y1, box.y + box.h - 1);
+  }
   if (x0 === 0 && y0 === 0 && x1 === s.w - 1 && y1 === s.h - 1) { say('The picture already fills the canvas', 'good'); return; }
   cropTo(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
-  say('Trimmed to the painted pixels, ' + (x1 - x0 + 1) + ' by ' + (y1 - y0 + 1) + '. The bottom row is the feet now.', 'good');
+  say(box ? 'Trimmed to the painted cells, ' + (x1 - x0 + 1) + ' by ' + (y1 - y0 + 1) + '.'
+    : 'Trimmed to the painted pixels, ' + (x1 - x0 + 1) + ' by ' + (y1 - y0 + 1) + '. The bottom row is the feet now.', 'good');
 }
 function flipVertical() {
   var s = spr(); if (!s) return;
@@ -1421,7 +1553,7 @@ function flipVertical() {
     var out = new Uint8ClampedArray(f.length);
     for (var y = 0; y < h; y++) out.set(f.subarray(y * w * 4, (y + 1) * w * 4), (h - 1 - y) * w * 4);
     return out;
-  });
+  }, { flipY: true });
   say('Flipped top to bottom. Mind the feet: the game plants the bottom row.', 'good');
 }
 function rotateSprite() {
@@ -1434,7 +1566,7 @@ function rotateSprite() {
       out[di] = f[si]; out[di + 1] = f[si + 1]; out[di + 2] = f[si + 2]; out[di + 3] = f[si + 3];
     }
     return out;
-  });
+  }, { turn: true });
   say('Rotated a quarter turn clockwise', 'good');
 }
 
@@ -1530,7 +1662,11 @@ function copySel(cut) {
   var s = spr(), f = frm(), b = S.sel;
   if (!s || !b) { say('Nothing selected. Drag a box with the Select tool first.', 'bad'); return; }
   var buf = new Uint8ClampedArray(b.w * b.h * 4);
-  for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
+  // pixels on the move are copied as they float, whole even where the box hangs off the
+  // edge; a box at rest is read from the picture, and never past its edge
+  if (lift && lift.w === b.w && lift.h === b.h) buf.set(lift.buf);
+  else for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
+    if (!inside(s, b.x + x, b.y + y)) continue;
     var si = ((b.y + y) * s.w + (b.x + x)) * 4, di = (y * b.w + x) * 4;
     buf[di] = f[si]; buf[di + 1] = f[si + 1]; buf[di + 2] = f[si + 2]; buf[di + 3] = f[si + 3];
   }
@@ -1557,7 +1693,7 @@ function pasteClip() {
   setTool('select');
   var px = Math.floor((s.w - w) / 2), py = Math.floor((s.h - h) / 2);
   S.sel = { x: px, y: py, w: w, h: h };
-  lift = { buf: buf, w: w, h: h, base: frm().slice() };
+  lift = { buf: buf, w: w, h: h, base: frm().slice(), s: s };
   stampLift(px, py);
   $('selHint').style.display = 'flex';
   redraw();
@@ -1572,12 +1708,16 @@ function pasteClip() {
 
 // a first guess at how an image is ruled. 16 comes first rather than the biggest that
 // fits, because the game's terrain is 16 px and a 128 by 64 sheet is nearly always
-// eight tiles by four, not four by two.
+// eight tiles by four, not four by two. A sheet of one terrain type is one row, so a
+// 16 or bigger cell only needs two cells in all; 8 needs two each way, or every 16 by 16
+// tile would read as four 8 px cells.
 function guessCell(w, h) {
-  var tries = [16, 32, 33, 24, 48, 64, 8], i, n;
+  var tries = [16, 32, 33, 24, 48, 64, 8], i, n, c, r;
   for (i = 0; i < tries.length; i++) {
     n = tries[i];
-    if (w % n === 0 && h % n === 0 && w / n >= 2 && h / n >= 2) return n;
+    if (w % n || h % n) continue;
+    c = w / n; r = h / n;
+    if (n >= 16 ? c * r >= 2 : (c >= 2 && r >= 2)) return n;
   }
   return 16;
 }
@@ -1586,20 +1726,37 @@ function boxAnd(a, b) {
   var r = Math.min(a.x + a.w, b.x + b.w), t = Math.min(a.y + a.h, b.y + b.h);
   return { x: x, y: y, w: Math.max(0, r - x), h: Math.max(0, t - y) };
 }
-function setSheet(s, cw, ch, gap, ox, oy) {
+// ruling is a step of history (see snapshot). later: the caller commits, so a ruling and
+// the growing that goes with it are one step, not two
+function setSheet(s, cw, ch, gap, ox, oy, later) {
   s = s || spr(); if (!s) return;
   var whole = function (v, lo) { v = Math.round(parseFloat(v) || 0); return v < lo ? lo : v; };
-  s.sheet = { cw: whole(cw, 1), ch: whole(ch, 1), gap: whole(gap, 0), ox: whole(ox, 0), oy: whole(oy, 0) };
-  s.sheetCur = null;   // the old cell means nothing under new rules
+  var was = sheetOf(s);
+  var now = { cw: whole(cw, 1), ch: whole(ch, 1), gap: whole(gap, 0), ox: whole(ox, 0), oy: whole(oy, 0) };
+  // the old cell means nothing under new rules, but Grow to fit keeps the rules and
+  // only adds cells, so there the cell you were on is still the same tile
+  var changed = !sameGrid(was, now);
+  if (changed) {
+    dropSelection();   // a paste still floating lands as its own step, under the old rule
+    noteWhere(s);
+    s.gridGen = ++GRID_GEN;
+    s.sheetCur = null;
+  }
+  s.sheet = now;
+  touched(s);   // the checks read the grid
+  if (changed && !later) commit(s);
   scheduleSave();
 }
 function clearSheet(s) {
   s = s || spr(); if (!s) return;
   if (!sheetOf(s)) { say('There is no grid on this one', 'bad'); return; }
+  dropSelection();
+  noteWhere(s);
+  s.gridGen = ++GRID_GEN;
   s.sheet = null; s.sheetCur = null;
   clipCell = null;
-  scheduleSave(); redraw();
-  say('Grid cleared. This is one plain picture again.', 'good');
+  touched(s); commit(s); scheduleSave(); redraw();
+  say('Grid cleared. This is one plain picture again. Undo rules it again.', 'good');
 }
 // the cell last worked in. Kept on the sprite so the other panels can read it, and
 // clamped back into the grid whenever the rules change under it.
@@ -1806,8 +1963,8 @@ function growSheet() {
   if (nw > MAX_SIDE || nh > MAX_SIDE) { say('That would pass ' + MAX_SIDE + ' a side', 'bad'); return; }
   var ow = s.w, oh = s.h;
   closeSheetModal();
-  setSheet(s, v.cw, v.ch, v.gap, v.ox, v.oy);
-  if (nw === ow && nh === oh) { redraw(); say('Already ' + cols + ' × ' + rows + ' cells', 'good'); return; }
+  setSheet(s, v.cw, v.ch, v.gap, v.ox, v.oy, true);   // the resize below commits both at once
+  if (nw === ow && nh === oh) { commit(s); redraw(); say('Already ' + cols + ' × ' + rows + ' cells', 'good'); return; }
   resizeCanvas(nw, nh, 0, 0);
   say('Ruled ' + cols + ' × ' + rows + ' cells of ' + v.cw + ' by ' + v.ch + ' on a ' + nw + ' by ' + nh + ' canvas' +
     (nw < ow || nh < oh ? '. Some of the picture was cut away; undo takes it back.' : ''), 'good');
@@ -1818,10 +1975,14 @@ function growSheet() {
 // a reading of the file, not a change to it, and the dialog undoes it in one click.
 function autoRule(s) {
   if (!s || sheetOf(s)) return null;
+  // frames are a tile's variants, so a file that arrives as several frames (the game's own
+  // four 32 px mountains) is one tile, and a split would only ever cut up the first
+  if (s.frames.length > 1) return null;
   var terrain = s.family === 'terrain';
   if (!terrain && (s.w <= 64 || s.h <= 64)) return null;   // a small PNG is one sprite, not a sheet
   var n = guessCell(s.w, s.h);
-  if (s.w % n || s.h % n) return null;
+  // 8 is only ever a guess for the dialog: a 16 by 16 tile opened is one tile, not four
+  if (n < 16 || s.w % n || s.h % n) return null;
   var cols = s.w / n, rows = s.h / n;
   if (cols * rows < 2) return null;                        // one cell is not a sheet
   // off terrain the bar is higher: a clean multiple of 16, at least two cells each way,
@@ -1829,6 +1990,7 @@ function autoRule(s) {
   if (!terrain && (n % 16 || cols < 2 || rows < 2)) return null;
   s.sheet = { cw: n, ch: n, gap: 0, ox: 0, oy: 0 };
   s.sheetCur = null;
+  if (s.hist.length <= 1) freshHistory(s); else commit(s);   // arrives ruled, see freshHistory
   return { cols: cols, rows: rows, n: n };
 }
 
@@ -1851,19 +2013,20 @@ function splitSheet(s, how) {
     taken[out] = 1;
     return out;
   };
-  var made = [], cx, cy;
+  // the tiles go in the sheet's own folder, so they take its family with its folder
+  var made = [], cx, cy, fam = s.family || 'terrain';
   if (how === 'cells') {
     var seq = 0;
     for (cy = 0; cy < rows; cy++) for (cx = 0; cx < cols; cx++) {
       if (cellEmpty(s, f, cx, cy)) continue;
-      made.push(makeSprite(uniq(base + '-c' + seq++), g.cw, g.ch, [cellPixels(s, f, cx, cy)], 'terrain'));
+      made.push(makeSprite(uniq(base + '-c' + seq++), g.cw, g.ch, [cellPixels(s, f, cx, cy)], fam));
     }
   } else {
     for (cy = 0; cy < rows; cy++) {
       var fr = [];
       for (cx = 0; cx < cols; cx++) if (!cellEmpty(s, f, cx, cy)) fr.push(cellPixels(s, f, cx, cy));
       if (!fr.length) continue;
-      made.push(makeSprite(uniq(base + '-r' + cy), g.cw, g.ch, fr, 'terrain'));
+      made.push(makeSprite(uniq(base + '-r' + cy), g.cw, g.ch, fr, fam));
     }
   }
   if (!made.length) { say('Every cell is empty, so there was nothing to cut out', 'bad'); return; }
@@ -1872,6 +2035,7 @@ function splitSheet(s, how) {
     frames += c.frames.length;
     c.dest = s.dest || null;   // the tiles belong where the sheet belongs
     if (!c.dest) defaultDest(c);
+    if (s.cellPitch) c.tilePitch = cellPitch(s);   // a pitch you set on the sheet goes with its tiles
   });
   var at = S.sprites.indexOf(s);
   var where = at < 0 ? S.sprites.length : at + 1;
@@ -1894,7 +2058,9 @@ function openSplitModal() {
   $('spNow').textContent = s.key + ' is ruled ' + cols + ' × ' + rows + ', and ' + full +
     (full === 1 ? ' cell has' : ' cells have') + ' something in ' + (full === 1 ? 'it' : 'them') + '.';
   $('spNote').textContent = 'A sprite a row makes ' + fullRows + (fullRows === 1 ? ' sprite' : ' sprites') +
-    '; a sprite a cell makes ' + full + '.';
+    '; a sprite a cell makes ' + full + '.' +
+    (s.frames.length > 1 ? ' Only frame ' + s.cur + ', the one on the canvas, is cut up; the other ' +
+      (s.frames.length - 1) + (s.frames.length === 2 ? ' is' : ' are') + ' left out.' : '');
   $('splitModal').className = 'show';
 }
 function closeSplitModal() { $('splitModal').className = ''; }
@@ -1914,6 +2080,7 @@ function newSheet(cw, cols, rows, key) {
   }
   var s = makeSprite(freeKey(key, 'sheet'), w, h, [blank(w, h)], 'terrain');
   s.sheet = { cw: cw, ch: cw, gap: 0, ox: 0, oy: 0 };
+  freshHistory(s);
   defaultDest(s);
   S.sprites.push(s);
   selectSprite(S.sprites.length - 1);
@@ -1983,16 +2150,28 @@ function addToSheet(sprites, target) {
     say('That sheet would be ' + nw + ' by ' + nh + ', past the ' + MAX_SIDE + ' this editor holds', 'bad');
     return;
   }
-  var t = target;
+  var t = target, grew = false;
   if (!t) {
-    t = makeSprite(freeKey('sheet', 'sheet'), nw, nh, [blank(nw, nh)], 'terrain');
+    t = makeSprite(freeKey('sheet', 'sheet'), nw, nh, [blank(nw, nh)], sprites[0].family || 'terrain');
     t.sheet = { cw: g.cw, ch: g.ch, gap: 0, ox: 0, oy: 0 };
+    if (sprites[0].tilePitch) t.cellPitch = tilePitch(sprites[0]);   // the tiles' own pitch comes with them
   } else {
     var at = S.sprites.indexOf(t);
     if (at < 0) { say('That sheet is not open any more', 'bad'); return; }
     if (S.si !== at) selectSprite(at);
-    // the canvas grows down and to the right, so nothing already in it moves cell
-    if (nw !== t.w || nh !== t.h) resizeCanvas(nw, nh, 0, 0);
+    // a paste still floating over this sheet is set down first, as its own step: left
+    // floating, its saved picture from before would be stamped back over the new tiles
+    // on the next nudge
+    if (lift && lift.s === t) dropSelection();
+    // the canvas grows down and to the right, so nothing already in it moves cell. It is
+    // padded here rather than through resizeCanvas so the growing and the tiles landing
+    // are one undo step, not two
+    if (nw !== t.w || nh !== t.h) {
+      dropSelection(true);
+      t.frames = t.frames.map(function (fr) { return padFrame(fr, t.w, t.h, nw, nh, 0, 0); });
+      t.w = nw; t.h = nh;
+      grew = true;
+    }
   }
   var f = t.frames[t.cur];
   sprites.forEach(function (x, k) {
@@ -2014,10 +2193,12 @@ function addToSheet(sprites, target) {
     scheduleSave();
   } else {
     commit();
+    if (grew) fitZoom();
   }
   checkAlpha(); redraw();
-  var rowTxt = sprites.length === 1 ? 'row ' + (row0 + 1)
-    : 'rows ' + (row0 + 1) + '\u2013' + (row0 + sprites.length);
+  // counted from 0, the way the cells, the preview and the split names count them
+  var rowTxt = sprites.length === 1 ? 'row ' + row0
+    : 'rows ' + row0 + '\u2013' + (row0 + sprites.length - 1);
   say('Added ' + sprites.length + (sprites.length === 1 ? ' sprite' : ' sprites') + ' to ' + t.key +
     ' as ' + rowTxt + ', ' + w + ' by ' + h + ' a cell' +
     (target ? '' : '. Split it again when you are done') + '.', 'good');
@@ -2125,7 +2306,7 @@ function drawAddSheetNote() {
     var nw = Math.max(t.w, g.ox + wantC * (g.cw + g.gap) - g.gap);
     var nh = Math.max(t.h, g.oy + (row0 + picked.length) * (g.ch + g.gap) - g.gap);
     txt += ' They go into ' + t.key + ' as ' +
-      (picked.length === 1 ? 'row ' + (row0 + 1) : 'rows ' + (row0 + 1) + '\u2013' + (row0 + picked.length)) +
+      (picked.length === 1 ? 'row ' + row0 : 'rows ' + row0 + '\u2013' + (row0 + picked.length - 1)) +
       (nw !== t.w || nh !== t.h ? ', growing it to ' + nw + ' by ' + nh + '.' : '.');
   }
   $('asNote').textContent = txt;
@@ -2157,8 +2338,10 @@ function blit(f, w, h) {
   blitF = f;
   if (off.width !== w) off.width = w;
   if (off.height !== h) off.height = h;
-  var id = octx.createImageData(w, h);
-  id.data.set(f);
+  // wrap the frame's own bytes rather than copying them into a fresh ImageData: on a
+  // 1000 by 2000 picture that was 8 MB of garbage a repaint, twice with onion on
+  var id;
+  try { id = new ImageData(f, w, h); } catch (e) { id = octx.createImageData(w, h); id.data.set(f); }
   octx.putImageData(id, 0, 0);
   return off;
 }
@@ -2167,7 +2350,32 @@ function thumb(f, w, h, size) {
   c.width = size; c.height = size;
   var cc = c.getContext('2d');
   cc.imageSmoothingEnabled = false;
-  cc.drawImage(blit(f, w, h), 0, 0, size, size);
+  // fitted, not stretched: a tall sprite should look tall in the list
+  var k = size / Math.max(w, h), tw = Math.max(1, Math.round(w * k)), th = Math.max(1, Math.round(h * k));
+  cc.drawImage(blit(f, w, h), Math.floor((size - tw) / 2), Math.floor((size - th) / 2), tw, th);
+  return c;
+}
+// The sprite list and the frames row redrew every thumbnail on every redraw, which on
+// big pictures was most of a redraw. A thumbnail is kept against the frame it was drawn
+// from, keyed on that frame object, the sprite's size, its _rev and anything else the
+// picture depends on. Why that cannot go stale: a frame's pixels change in place without
+// commit() (and so without touched() moving _rev) only while a stroke is held or pixels
+// float over it, and those belong to one sprite, drag.s or lift.s. While either is open
+// every thumbnail of that sprite is drawn fresh, and the frame on the canvas always is;
+// once they close, commit has moved _rev. Every other write either makes new frame
+// objects (undo, resize, flip, a nudge of the whole picture) or ends in commit.
+// The page gets a copy, since one canvas cannot sit in two rows.
+var THUMBS = new WeakMap();
+function keptThumb(kind, s, f, key, draw) {
+  var live = (s === spr() && f === s.frames[s.cur]) || (drag && drag.s === s) || (lift && lift.s === s);
+  var box = THUMBS.get(f);
+  if (live) { if (box) delete box[kind]; return draw(); }
+  var k = key + '|' + s.w + 'x' + s.h + '|' + (s._rev || 0);
+  if (!box) { box = {}; THUMBS.set(f, box); }
+  if (!box[kind] || box[kind].k !== k) box[kind] = { k: k, c: draw() };
+  var src = box[kind].c, c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  c.getContext('2d').drawImage(src, 0, 0);
   return c;
 }
 // what sits behind the sprite on the canvas. The checkerboard is the honest default
@@ -2422,7 +2630,7 @@ function redraw() {
   if (!s) { drawStrip(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept(); return; }
 
   paintCanvas();
-  $('bUndo').disabled = s.hi <= 0;
+  $('bUndo').disabled = s.hi <= 0 && !lift;   // a floating paste can be taken back too
   $('bRedo').disabled = s.hi >= s.hist.length - 1;
   drawStrip(); drawFrames(); drawPathBar(); drawKept();
   if (heavy && !deepCheck) {
@@ -2469,7 +2677,7 @@ function drawStrip() {
   S.sprites.forEach(function (s, i) {
     var d = document.createElement('div');
     d.className = 'item' + (i === S.si ? ' on' : '');
-    var c = thumb(s.frames[0], s.w, s.h, 20);
+    var c = keptThumb('strip', s, s.frames[0], '', function () { return thumb(s.frames[0], s.w, s.h, 20); });
     var t = document.createElement('div');
     t.className = 't';
     t.innerHTML = '<b></b><span></span>';
@@ -2483,20 +2691,23 @@ function drawStrip() {
       d.appendChild(flag);
     }
     var x = document.createElement('span');
-    x.className = 'x' + (closeArmedAt === i ? ' armed' : '');
+    x.className = 'x' + (closeArmed === s ? ' armed' : '');
     x.textContent = '\u00d7';
-    x.title = closeArmedAt === i ? 'Press again to close ' + s.key + ' and lose it' : 'Close this sprite';
+    x.title = closeArmed === s ? 'Press again to close ' + s.key + ' and lose it' : 'Close this sprite';
     x.onclick = function (e) { e.stopPropagation(); closeSprite(i); };
     d.appendChild(x);
     d.onclick = function () { selectSprite(i); };
     d.oncontextmenu = function (e) {
-      var items = [{ label: 'Duplicate sprite', act: function () { duplicateSprite(i); } }];
+      // the list can change under an open menu (kept work arriving, a close), so each
+      // item finds its sprite when it is chosen rather than trusting the row number
+      var on = function (fn) { return function () { var at = S.sprites.indexOf(s); if (at >= 0) fn(at); }; };
+      var items = [{ label: 'Duplicate sprite', act: on(duplicateSprite) }];
       // splitting is for the ones ruled as sheets, adding for the ones that are not:
       // a sheet does not go into another sheet
-      if (sheetOf(s)) items.push({ label: 'Split sheet into sprites\u2026', act: function () { selectSprite(i); openSplitModal(); } });
-      else items.push({ label: 'Add to a sheet\u2026', act: function () { selectSprite(i); openAddToSheetModal(s); } });
+      if (sheetOf(s)) items.push({ label: 'Split sheet into sprites\u2026', act: on(function (at) { selectSprite(at); openSplitModal(); }) });
+      else items.push({ label: 'Add to a sheet\u2026', act: on(function (at) { selectSprite(at); openAddToSheetModal(s); }) });
       items.push('-');
-      items.push({ label: closeArmedAt === i ? 'Close and lose it' : 'Close sprite\u2026', act: function () { closeSprite(i); }, danger: true });
+      items.push({ label: closeArmed === s ? 'Close and lose it' : 'Close sprite\u2026', act: on(closeSprite), danger: true });
       openCtx(e, items);
     };
     // sprites rearrange by dragging; the green edge says which side it will land on
@@ -2530,19 +2741,22 @@ function drawStrip() {
   var dl = $('openSprites');
   if (dl) { dl.innerHTML = ''; S.sprites.forEach(function (s) { var o = document.createElement('option'); o.value = s.key; dl.appendChild(o); }); }
 }
-// closing asks twice, the way Close always has: the first press arms the row's cross
-var closeArmedAt = -1, closeArmTimer = null;
+// closing asks twice, the way Close always has: the first press arms the row's cross.
+// The sprite is armed, not the row number, so a reorder in between cannot pass the
+// arming on to whichever sprite slid into that row.
+var closeArmed = null, closeArmTimer = null;
 function closeSprite(i) {
-  if (closeArmedAt !== i) {
-    closeArmedAt = i;
+  if (!S.sprites[i]) return;
+  if (closeArmed !== S.sprites[i]) {
+    closeArmed = S.sprites[i];
     if (closeArmTimer) clearTimeout(closeArmTimer);
-    closeArmTimer = setTimeout(function () { closeArmedAt = -1; drawStrip(); }, 4000);
+    closeArmTimer = setTimeout(function () { closeArmed = null; drawStrip(); }, 4000);
     drawStrip();
     say('Press \u00d7 again to close ' + S.sprites[i].key + ' and lose it', 'bad');
     return;
   }
   if (closeArmTimer) clearTimeout(closeArmTimer);
-  closeArmedAt = -1;
+  closeArmed = null;
   var gone = S.sprites[i].key;
   S.sprites.splice(i, 1);
   selectSprite(Math.min(S.si >= i ? S.si - (S.si === i ? 0 : 1) : S.si, S.sprites.length - 1));
@@ -2562,12 +2776,15 @@ function drawFrames() {
   s.frames.forEach(function (f, i) {
     var d = document.createElement('div');
     d.className = 'fr' + (i === s.cur ? ' on' : '');
-    var c = document.createElement('canvas');
-    c.width = 36; c.height = 36;
-    var cc = c.getContext('2d');
-    cc.imageSmoothingEnabled = false;
-    cc.fillStyle = S.ground.tiles[0]; cc.fillRect(0, 0, 36, 36);
-    cc.drawImage(blit(f, s.w, s.h), 0, 0, 36, 36);
+    var c = keptThumb('frame', s, f, S.ground.tiles[0], function () {
+      var c1 = document.createElement('canvas');
+      c1.width = 36; c1.height = 36;
+      var cc = c1.getContext('2d');
+      cc.imageSmoothingEnabled = false;
+      cc.fillStyle = S.ground.tiles[0]; cc.fillRect(0, 0, 36, 36);
+      cc.drawImage(blit(f, s.w, s.h), 0, 0, 36, 36);
+      return c1;
+    });
     var lab = document.createElement('div');
     lab.textContent = i;
     d.appendChild(c); d.appendChild(lab);
@@ -2679,17 +2896,22 @@ function duplicateSprite(i) {
   c.dest = src.dest || null;   // a copy saves beside its original, under its own name
   c.tilePitch = src.tilePitch;
   if (sheetOf(src)) c.sheet = { cw: src.sheet.cw, ch: src.sheet.ch, gap: src.sheet.gap, ox: src.sheet.ox, oy: src.sheet.oy };
+  // the rest of what is kept with a sprite comes along too, so the copy is the same thing
+  if (src.cellPitch) c.cellPitch = src.cellPitch;
+  if (src.board && src.board.cols) c.board = { cols: src.board.cols, rows: src.board.rows, cells: (src.board.cells || []).map(function (x) { return x ? { cx: x.cx, cy: x.cy } : null; }) };
+  freshHistory(c);
   S.sprites.splice(i + 1, 0, c);
   selectSprite(i + 1);
   scheduleSave();
   say('Duplicated ' + src.key + ' as ' + key + '. Rename it before saving.', 'good');
 }
 var frameDrag = null;   // the frame being dragged along the row, by index
-var FRAME_CLIP = null;  // one copied frame, for pasting here or into another sprite
+var FRAME_CLIP = null;  // one copied frame, for pasting here or into another sprite; `after`
+                        // is the box CLIP of the moment, so Cmd+V can tell which came last
 var frameFocus = false; // a frame tile was clicked last, so copy and paste keys mean frames
 function copyFrame() {
   var s = spr(); if (!s) return;
-  FRAME_CLIP = { w: s.w, h: s.h, px: s.frames[s.cur].slice(), from: s.key, n: s.cur };
+  FRAME_CLIP = { w: s.w, h: s.h, px: s.frames[s.cur].slice(), from: s.key, n: s.cur, after: CLIP };
   drawFrames();
   say('Copied frame ' + s.cur + '. Paste puts it after the current frame, here or in another sprite of the same size.', 'good');
 }
@@ -2713,7 +2935,7 @@ function deleteFrame() {
 function cutFrame() {
   var s = spr(); if (!s) return;
   if (s.frames.length < 2) { say('A sprite needs at least one frame. Copied it instead.', 'bad'); copyFrame(); return; }
-  FRAME_CLIP = { w: s.w, h: s.h, px: s.frames[s.cur].slice(), from: s.key, n: s.cur };
+  FRAME_CLIP = { w: s.w, h: s.h, px: s.frames[s.cur].slice(), from: s.key, n: s.cur, after: CLIP };
   var was = s.cur;
   dropSelection(); s.frames.splice(s.cur, 1); s.cur = Math.min(s.cur, s.frames.length - 1); commit(); checkAlpha(); redraw();
   say('Cut frame ' + was + '. Paste puts it back after the current frame, here or in another sprite.', 'good');
@@ -2730,6 +2952,8 @@ function moveFrame(from, to) {
   say('Frame moved to spot ' + to + '. The numbers follow the new order.', 'good');
 }
 
+// the list handed back is the cache itself, shared by the checks and the palette until
+// the sprite changes: read it, count it, copy it, never change it
 function colourList(s, which) {
   if (isHeavy(s) && !deepCheck) return [];
   var rev = s._rev || 0;
@@ -2753,7 +2977,9 @@ function colourList(s, which) {
 function drawPalette() {
   var p = $('palette'), s = spr();
   p.innerHTML = '';
-  var cols = s ? colourList(s, 'all') : [];
+  // a copy: the current colour goes on the front of this one, and putting it on the
+  // cached list counted every colour you ever picked as one the sprite uses
+  var cols = s ? colourList(s, 'all').slice() : [];
   var cur = rgb2hex(S.color);
   var seen = {};
   cols.forEach(function (c) { seen[rgb2hex(c)] = 1; });
@@ -2810,8 +3036,13 @@ var RULE_DEFS = [
   { id: 'palette', name: 'Later frames stick to frame 0\u2019s colours' },
   { id: 'bytes', name: 'Opened files under 64 KB' },
   { id: 'tile', name: 'Tile edges meet where they lap', off: true },
-  { id: 'edges', label: 'Sheet edges', name: 'Sheet edges line up' }
+  { id: 'edges', name: 'Sheet edges line up' }
 ];
+// the packer's own family lists (FAMILY_VARIANT_FRAMES and FAMILY_TILE_ANCHORED in
+// pack-art.mjs). Where frames are variants it does not ask for two or hold later frames to
+// frame 0's colours; where the art sits in its tile's square it does not warn of hovering.
+var VARIANT_FAMILIES = { terrain: 1, flora: 1, npcs: 1, town: 1, decor: 1, home: 1 };
+var TILE_ANCHORED = { flora: 1, town: 1, decor: 1, home: 1 };
 function ruleOn(id) { return !(UI.ruleOff && UI.ruleOff[id]) && !(UI.ruleGone && UI.ruleGone[id]); }
 function customRules() { return Array.isArray(UI.customRules) ? UI.customRules : []; }
 function rulesChanged() {
@@ -2903,7 +3134,7 @@ function checkSprite(s) {
 
   // the packer measures EVERY file, so a hovering frame 1 has to show up while you are
   // looking at frame 0
-  if (ruleOn('feet') && !sheetOf(s)) {
+  if (ruleOn('feet') && !sheetOf(s) && !TILE_ANCHORED[s.family]) {
     var hover = [];
     s.frames.forEach(function (f, i) { if (anyInk(f) && !bottomRowPainted(s, f)) hover.push(i); });
     if (hover.length) warn.push('<b>Nothing on the bottom row</b> of frame ' + hover.join(' and ') + '. The game plants that row at the feet, so this creature hovers. Move it down and keep the empty rows at the top.');
@@ -2952,16 +3183,19 @@ function checkSprite(s) {
         lonelyR.forEach(function (cx) { warn.push(namey(cx) + '’s right edge lines up with nothing in its row.'); });
         lonelyD.forEach(function (cx) { warn.push(namey(cx) + '’s bottom edge lines up with nothing in its row.'); });
         if (!lonelyR.length && !lonelyD.length) ok.push('Every painted cell in row ' + ec.cy + ' lines up with something in its row.');
-        // ink outside the cells is lost the moment a sheet is split into one file a tile
-        if (eg.gap > 0 || eg.ox > 0 || eg.oy > 0) {
-          var stray = strayCells(s, ef);
-          if (stray.length) {
-            warn.push('There is ink outside the cells, around ' +
-              stray.slice(0, 3).map(function (c) { return 'cell ' + c; }).join(' and ') +
-              (stray.length > 3 ? ' and ' + (stray.length - 3) + ' more' : '') +
-              '. Splitting the sheet would drop it.');
-          } else ok.push('Nothing is painted in the gutters between cells.');
-        }
+      }
+      // ink outside the cells is lost the moment a sheet is split into one file a tile.
+      // That is the whole sheet's business, not the current row's, and the strip left over
+      // at the right or the bottom of a picture that is not a whole number of cells counts
+      var ecr = cellRect(s, ecols - 1, sheetRows(s) - 1);
+      if (eg.gap > 0 || eg.ox > 0 || eg.oy > 0 || ecr.x + ecr.w < s.w || ecr.y + ecr.h < s.h) {
+        var stray = strayCells(s, ef);
+        if (stray.length) {
+          warn.push('There is ink outside the cells, around ' +
+            stray.slice(0, 3).map(function (c) { return 'cell ' + c; }).join(' and ') +
+            (stray.length > 3 ? ' and ' + (stray.length - 3) + ' more' : '') +
+            '. Splitting the sheet would drop it.');
+        } else ok.push('Nothing is painted outside the cells.');
       }
     }
   }
@@ -2972,10 +3206,11 @@ function checkSprite(s) {
     if (baked.length) warn.push('No clear pixels in frame ' + baked.join(' and ') + '. The background looks painted in, and it has to be see-through.');
   }
 
-  // a sheet's variants are its columns, not its frames
-  if (ruleOn('frames') && s.frames.length < 2 && !sheetOf(s)) warn.push('Only one frame. The game wants two, a standing one and a stepping one.');
+  // a sheet's variants are its columns, not its frames, and in a variant family the
+  // frames are variants too: the packer asks for two only where they are a walk
+  if (ruleOn('frames') && s.frames.length < 2 && !sheetOf(s) && !VARIANT_FAMILIES[s.family]) warn.push('Only one frame. The game wants two, a standing one and a stepping one.');
 
-  if (ruleOn('palette') && s.frames.length > 1) {
+  if (ruleOn('palette') && s.frames.length > 1 && !VARIANT_FAMILIES[s.family]) {
     var base = {}, extra = 0;
     colourList({ frames: [s.frames[0]], cur: 0 }, 'all').forEach(function (c) { base[rgb2hex(c)] = 1; });
     for (var k = 1; k < s.frames.length; k++) {
@@ -3092,19 +3327,19 @@ function drawPathBar() {
   PB_REAL = here;
   var folder = here ? here.replace(/\/$/, '') + '/' : 'art-live/' + fam + '/';
   $('pbPath').textContent = '\u2192 ' + folder + (names.length ? names.join(', ') : '');
-  $('pbPath').title = here
-    ? 'Saving writes here. Click to pick a different folder.'
+  var tip = here
+    ? 'Saving writes here, then run npm run pack-art. Click to pick a different folder.'
     : (UI.placeLabel
       ? 'Last time this was ' + UI.placeLabel + ', but a browser cannot hold a folder across visits. Click to open it again.'
-      : 'Where saving will write. Click to pick a folder.');
+      : 'Where saving will write, then run npm run pack-art. Click to pick a folder.');
   var w = '';
   if (s) {
     var typed = String($('key').value || '');
-    if (typed && cleanName(typed) !== typed.trim()) w = 'Saved as ' + cleanName(typed) + ', the packer only takes lowercase letters, digits, - and _. ';
+    if (typed && cleanName(typed) !== typed.trim()) w += 'Saved as ' + (cleanName(typed) || 'sprite') + ', the packer only takes lowercase letters, digits, - and _. ';
     var famTyped = String($('family').value || '');
-    if (famTyped && cleanName(famTyped) !== famTyped.trim()) w = 'Folder saved as ' + cleanName(famTyped) + ', same rule. ';
+    if (famTyped && cleanName(famTyped) !== famTyped.trim()) w += 'Folder saved as ' + (cleanName(famTyped) || 'creatures') + ', same rule. ';
   }
-  $('pbPath').title = w + 'Where saving writes' + (here ? '' : ', then run npm run pack-art') + '. Click to pick a different folder.';
+  $('pbPath').title = w + tip;
 }
 function copyText(t, what) {
   var done = function () { say('Copied ' + what, 'good'); };
@@ -3171,13 +3406,17 @@ function paintShadow(cx, base, w) {
   pctx.beginPath(); pctx.ellipse(cx, base + u, Math.max(1, w / 2 - 2 * u), 3.4 * u, 0, 0, 6.2832); pctx.fill();
 }
 // ---------- the preview, tiled ----------
-// The game draws ground tiles at a pitch of TILE with art one pixel wider, so each tile
-// laps a pixel over the next. Repeating the art at its own width instead would look
-// seamless here and show a seam in the game, so the pitch is a number you can see.
+// The game lays ground at a pitch of 32 units and stretches every tile's picture over 33,
+// so the last unit laps onto the next tile. Only art drawn a pixel a unit, 33 wide (or
+// 66 at two), laps whole pixels: it repeats every 32 of them. Art at any other size, the
+// 16 px terrain above all, laps a fraction of a pixel, so it repeats at its own width.
+// Repeating at the wrong one would look seamless here and show a seam in the game, so
+// the pitch is a number you can see.
+function lapPitch(w) { return w > 0 && w % 33 === 0 ? w / 33 * 32 : w; }
 function tilePitch(s) {
   if (!s) return 1;
   if (s.tilePitch) return Math.max(1, Math.min(s.w, s.tilePitch));
-  return s.family === 'terrain' && s.w > 1 ? s.w - 1 : s.w;
+  return s.family === 'terrain' ? lapPitch(s.w) : s.w;
 }
 // the cell being worked: the one last clicked, clamped to the grid, or the first one
 // before anything has been clicked, so a sheet always has a current cell
@@ -3187,12 +3426,12 @@ function curCell(s) {
   var c = s.sheetCur, cx = c ? c.cx : 0, cy = c ? c.cy : 0;
   return { cx: Math.max(0, Math.min(cols - 1, cx | 0)), cy: Math.max(0, Math.min(rows - 1, cy | 0)) };
 }
-// On a sheet the tile is one cell, not the whole picture, so the pitch is the cell's.
-// 16 px art laid at a 16 px pitch is the ordinary case; the lap convention is the older
-// 33-px-art one, and a sheet is free of it unless you ask for it.
+// On a sheet the tile is one cell, not the whole picture, so the pitch is the cell's, by
+// the same rule: 16 px cells repeat at 16, and a sheet of 33 px terrain laps like the
+// tiles it will be split into.
 function cellPitch(s) {
   var g = sheetOf(s); if (!g) return tilePitch(s);
-  return Math.max(1, Math.min(g.cw, s.cellPitch || g.cw));
+  return Math.max(1, Math.min(g.cw, s.cellPitch || (s.family === 'terrain' ? lapPitch(g.cw) : g.cw)));
 }
 // the pitch that actually governs the preview, cell or whole picture
 function pitchOf(s) { return sheetOf(s) ? cellPitch(s) : tilePitch(s); }
@@ -3409,6 +3648,7 @@ function drawBoard(s, W, H) {
   BOARD_GEO = null;
   var g = sheetOf(s), b = boardOf(s);
   if (!g || !b) { $('boardNote').textContent = 'This sprite is not ruled as a sheet.'; return; }
+  if (!curCell(s)) { $('boardNote').textContent = 'The sheet has no whole cells to lay down.'; return; }
   var scale = S.scale, f = s.frames[s.cur];
   var pitch = cellPitch(s), lap = g.cw - pitch;
   var stepX = pitch * scale, stepY = Math.max(1, g.ch - lap) * scale;
@@ -3422,10 +3662,13 @@ function drawBoard(s, W, H) {
   for (var gy = 0; gy <= b.rows; gy++) { var ly = y0 + gy * stepY + 0.25; pctx.beginPath(); pctx.moveTo(x0, ly); pctx.lineTo(x0 + b.cols * stepX, ly); pctx.stroke(); }
 
   var art = [], img = [], seen = {}, idx = new Array(b.cols * b.rows), i, x, y;
+  var gcols = sheetCols(s), grows = sheetRows(s);
   for (i = 0; i < b.cols * b.rows; i++) {
     var cell = b.cells[i] || null;
     idx[i] = -1;
-    if (!cell) continue;
+    // a square laid from a cell the grid no longer has (the sheet was cut down or ruled
+    // afresh) is left out rather than drawn as a blank tile, and comes back if the cell does
+    if (!cell || cell.cx >= gcols || cell.cy >= grows) continue;
     var key = cell.cx + ',' + cell.cy;
     if (!(key in seen)) {
       seen[key] = art.length;
@@ -3487,15 +3730,16 @@ function setSheetCell(cx, cy) {
   redraw();
 }
 // the whole sheet, small enough to sit in the panel, with the cell you are on ringed
-var CELL_MAP_Z = 1;
 function drawCellMap(s) {
   var g = sheetOf(s), cv2 = $('cellMap');
   if (!g) return;
   var avail = Math.max(40, ($('tileRow').clientWidth || 280) - 24);
-  var z = Math.max(1, Math.min(Math.floor(avail / s.w), Math.floor(64 / s.h)));
-  CELL_MAP_Z = z;
+  // whole steps while the sheet fits, and smaller than a pixel a pixel only when a wide
+  // sheet would otherwise run out of the panel
+  var z = Math.min(avail / s.w, Math.max(1, Math.min(Math.floor(avail / s.w), Math.floor(64 / s.h))));
   var dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-  cv2.style.width = (s.w * z) + 'px'; cv2.style.height = (s.h * z) + 'px';
+  // the box is sized border and all, so the picture inside it is exactly s.w * z wide
+  cv2.style.width = (s.w * z + 2) + 'px'; cv2.style.height = (s.h * z + 2) + 'px';
   cv2.width = Math.round(s.w * z * dpr); cv2.height = Math.round(s.h * z * dpr);
   var c2 = cv2.getContext('2d');
   c2.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -3550,7 +3794,7 @@ function drawPreview() {
   var W = pv.clientWidth || 296;
   var scale = S.scale;
   var mine = 16 * scale;                    // a creature is this big whatever grid it uses
-  var tallest = REF_LIST.reduce(function (a, r) { return Math.max(a, r.upp || HERO_UPP); }, HERO_UPP);
+  var tallest = REF_LIST.reduce(function (a, r) { return Math.max(a, +r.upp || HERO_UPP); }, HERO_UPP);
   var mode = previewMode();
   // the board sets its own height, so a whole little map fits rather than being cropped
   var H = mode === 'board' && s ? Math.round(boardHeight(s)) : Math.round(Math.max(120, Math.min(320, 16 * scale * tallest + 40)));
@@ -3579,7 +3823,7 @@ function drawPreview() {
   var base = H - 20;   // the line every creature's feet stand on
 
   // who is on the strip: your references, with yours in the middle
-  var cast = REF_LIST.map(function (r) { return { ref: r, w: Math.round(mine * (r.upp || HERO_UPP) / HERO_UPP) }; });
+  var cast = REF_LIST.map(function (r) { return { ref: r, w: Math.round(mine * (+r.upp || HERO_UPP) / HERO_UPP) }; });
   cast.splice(Math.floor(cast.length / 2), 0, { ref: null, w: mine, label: 'yours' });
   var gap = 8;
   var width = function (list) { return list.reduce(function (a, c) { return a + c.w; }, 0) + gap * (list.length - 1); };
@@ -3657,8 +3901,9 @@ function addRefSprite(name) {
 function addRefPng(label, png) {
   var id = 'u' + Date.now() + Math.random().toString(36).slice(2, 6);
   REF_LIST.push({ id: id, label: cleanName(label) || 'ref', upp: HERO_UPP, png: png });
-  saveRefs(); loadRefImages(); drawRefs(); drawPreview();
-  say(label + ' stands next to yours now', 'good');
+  var kept = saveRefs(); loadRefImages(); drawRefs(); drawPreview();
+  if (kept) say(label + ' stands next to yours now', 'good');
+  else say(label + ' stands next to yours for now, but the browser has no room to keep it for next time', 'bad');
 }
 var playTimer = null;
 function setPlaying(on) {
@@ -3671,7 +3916,16 @@ function setPlaying(on) {
   if (playTimer) { clearInterval(playTimer); playTimer = null; }
   if (S.playing) {
     S.playFrame = 0;
-    playTimer = setInterval(function () { S.playFrame++; drawPreview(); }, 1000 / S.fps);
+    playTimer = setInterval(function () {
+      // deleting or undoing down to one frame leaves nothing to run; stop rather than
+      // redraw the same frame at speed behind a button that still says Stop
+      var cur = spr();
+      if (!cur || cur.frames.length < 2) { setPlaying(false); return; }
+      S.playFrame++;
+      // only the creature strip moves with the frames: tiles and the board show variants,
+      // and redrawing a whole field of them a dozen times a second changes nothing
+      if (previewMode() === 'cast') drawPreview();
+    }, 1000 / S.fps);
   }
   drawPreview();
 }
@@ -3712,31 +3966,70 @@ function rawCanvas(s, i) {
 function frameDataURI(s, i) { return rawCanvas(s, i).toDataURL('image/png'); }
 var saveTimer = null;
 function scheduleSave() {
-  if (!S.store.on) return;
+  if (!S.store.on || S.store.stuck) return;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(saveStore, 500);
 }
 var KEEP_PX = 1 << 20;   // about a 1024 by 1024 frame; past this the browser store cannot hold it
+// Every change writes the whole store, but a stroke only changes one frame. Encoding a
+// PNG is the slow part, so each frame's last encoding is held against a hash of its
+// pixels and reused while they are the same. Keyed on the pixels, not on any counter,
+// so nothing that forgets to say it changed a frame can make a stale copy get kept.
+function frameHash(s, f) {
+  if (f.byteOffset & 3) return null;
+  var u = new Uint32Array(f.buffer, f.byteOffset, f.length >> 2), a = 2166136261, b = 5381, v;
+  for (var i = 0; i < u.length; i++) { v = u[i]; a = Math.imul(a ^ v, 16777619); b = (Math.imul(b, 33) + v) | 0; }
+  return s.w + 'x' + s.h + ':' + a + ':' + b;
+}
+function keptURI(s, i) {
+  var c = s._kept || (s._kept = []), k = frameHash(s, s.frames[i]);
+  if (k && c[i] && c[i].k === k) return c[i].u;
+  c[i] = { k: k, u: frameDataURI(s, i) };
+  return c[i].u;
+}
+var restoring = false;   // while kept work is coming back, writing now would drop it
 function saveStore() {
   if (!S.store.on) return;
+  // a kept copy this version cannot read stays as it is until Forget all or Keep mine
+  // instead says otherwise; writing over it at the next stroke was losing it unasked
+  if (S.store.stuck) { saveTimer = null; drawKept(); return; }
+  if (restoring) { saveTimer = setTimeout(saveStore, 500); return; }
   saveTimer = null;
   var kept = [], skipped = [];
   S.sprites.forEach(function (s) { (s.w * s.h > KEEP_PX ? skipped : kept).push(s); });
   var payload = {
-    v: 1, at: Date.now(), si: Math.min(S.si, kept.length - 1),
+    v: 1, at: Date.now(), si: Math.max(0, kept.indexOf(spr())),
     sprites: kept.map(function (s) {
+      var frames = s.frames.map(function (_, i) { return keptURI(s, i); });
+      s._kept.length = frames.length;   // a deleted frame's copy goes with it
       return {
         key: s.key, family: s.family, w: s.w, h: s.h, bytes: s.bytes || [],
         tilePitch: s.tilePitch || 0, sheet: sheetOf(s) || null,
-        cellPitch: s.cellPitch || 0,
+        cellPitch: s.cellPitch || 0, cur: s.cur || 0,
+        sheetCur: s.sheetCur ? { cx: s.sheetCur.cx, cy: s.sheetCur.cy } : null,
         board: s.board && s.board.cols ? { cols: s.board.cols, rows: s.board.rows, cells: (s.board.cells || []).map(function (c) { return c ? { cx: c.cx, cy: c.cy } : null; }) } : null,
-        frames: s.frames.map(function (_, i) { return frameDataURI(s, i); })
+        frames: frames
       };
     })
   };
   var text = JSON.stringify(payload);
   try {
-    window.localStorage.setItem(STORE_KEY, text);
+    // the sprites come first. When the browser is full, see whether they fit with the
+    // PixelLab history out of the way altogether: if not (one sprite is simply too big),
+    // the history goes back untouched rather than being thrown away for nothing. If they
+    // do, the history takes back whatever room is left, oldest images out first.
+    try { window.localStorage.setItem(STORE_KEY, text); }
+    catch (full) {
+      var hist = null;
+      try { hist = window.localStorage.getItem(PL_HIST_KEY); } catch (e) { /* none to move */ }
+      if (!hist) throw full;
+      try { window.localStorage.removeItem(PL_HIST_KEY); window.localStorage.setItem(STORE_KEY, text); }
+      catch (still) {
+        try { window.localStorage.setItem(PL_HIST_KEY, hist); } catch (e) { /* it fitted a moment ago */ }
+        throw still;
+      }
+      plSaveHist();
+    }
     S.store.at = payload.at; S.store.bytes = text.length;
     S.store.why = skipped.length
       ? skipped.map(function (s) { return s.key; }).join(', ') + ' ' + (skipped.length > 1 ? 'are' : 'is') +
@@ -3764,48 +4057,65 @@ function loadStore() {
   var data = null;
   try { data = JSON.parse(text); } catch (e) { data = null; }
   if (!data || data.v !== 1 || !Array.isArray(data.sprites)) {
-    // do not throw away something that cannot be read: say so and let it be cleared by hand
-    S.store.why = 'What is kept here was written by a different version and cannot be read. Press Forget all to clear it.';
+    // do not throw away something that cannot be read: say so, keep nothing over it,
+    // and let it be cleared by hand
+    S.store.stuck = true;
+    S.store.why = 'What is kept here was written by a different version and cannot be read, so nothing you open or draw is being kept meanwhile. Export what matters. Forget all clears the old copy (and closes what is open); Keep mine instead writes what is open now over it.';
     drawKept();
     return;
   }
   S.store.at = data.at || 0;
   S.store.bytes = text.length;
   say('Bringing back saved work…', 'good');
-  var made = [], idx = 0, wantSi = typeof data.si === 'number' && data.si >= 0 ? data.si : 0;
+  var made = [], idx = 0, wantSi = typeof data.si === 'number' && data.si >= 0 ? data.si : 0, madeSi = 0;
   function step() {
     if (idx >= data.sprites.length) {
+      restoring = false;
       if (!made.length) { drawKept(); return; }
+      // anything opened while this came back stays the one you are on
+      var was = spr();
       S.sprites = made.concat(S.sprites);
-      selectSprite(Math.min(wantSi, made.length - 1));
-      say('Brought back ' + made.length + (made.length === 1 ? ' sprite' : ' sprites') + ' saved ' + when(S.store.at) + '.', 'good');
+      selectSprite(was ? S.sprites.indexOf(was) : Math.min(madeSi, made.length - 1));
+      var lost = data.sprites.length - made.length;
+      say('Brought back ' + made.length + (made.length === 1 ? ' sprite' : ' sprites') + ' saved ' + when(S.store.at) + '.' +
+        (lost ? ' ' + lost + ' more could not be read back and ' + (lost > 1 ? 'are' : 'is') + ' gone.' : ''), lost ? 'bad' : 'good');
       drawKept();
       return;
     }
-    var rec = data.sprites[idx++];
-    Promise.all(rec.frames.map(function (u) {
+    // one record that cannot be read is skipped; it must never stop the rest coming back
+    var rec = data.sprites[idx++] || {};
+    Promise.all((Array.isArray(rec.frames) ? rec.frames : []).map(function (u) {
       return new Promise(function (res) {
         var im = new Image();
-        im.onload = function () { res(toPixels(im).px); };
+        im.onload = function () { try { res(toPixels(im)); } catch (e) { res(null); } };
         im.onerror = function () { res(null); };
         im.src = u;
       });
-    })).then(function (frames) {
-      frames = frames.filter(Boolean);
+    })).then(function (all) {
+      // the pictures say how big the sprite is; a frame of another size cannot join it
+      var first = all.filter(Boolean)[0], w = first ? first.w : 0, h = first ? first.h : 0;
+      var frames = all.filter(function (d) { return d && d.w === w && d.h === h; }).map(function (d) { return d.px; });
       if (frames.length) {
-        var s = makeSprite(rec.key || 'sprite', rec.w, rec.h, frames, rec.family);
+        var s = makeSprite(cleanName(rec.key) || 'sprite', w, h, frames, cleanName(rec.family) || 'creatures');
         s.bytes = Array.isArray(rec.bytes) ? rec.bytes : [];
         if (rec.tilePitch) s.tilePitch = rec.tilePitch;
         if (rec.sheet && rec.sheet.cw > 0) s.sheet = { cw: rec.sheet.cw, ch: rec.sheet.ch, gap: rec.sheet.gap || 0, ox: rec.sheet.ox || 0, oy: rec.sheet.oy || 0 };
         if (rec.cellPitch) s.cellPitch = rec.cellPitch;
+        // the frame and the cell you were on come back too, clamped in case they no longer fit
+        if (rec.cur > 0) s.cur = Math.min(frames.length - 1, Math.floor(rec.cur));
+        if (sheetOf(s) && rec.sheetCur && rec.sheetCur.cx >= 0 && rec.sheetCur.cy >= 0) setCur(s, rec.sheetCur.cx, rec.sheetCur.cy);
         if (rec.board && rec.board.cols > 0 && rec.board.rows > 0) {
-          s.board = { cols: rec.board.cols, rows: rec.board.rows, cells: (rec.board.cells || []).map(function (c) { return c && c.cx >= 0 ? { cx: c.cx, cy: c.cy } : null; }) };
+          s.board = { cols: rec.board.cols, rows: rec.board.rows, cells: (Array.isArray(rec.board.cells) ? rec.board.cells : []).map(function (c) { return c && c.cx >= 0 ? { cx: c.cx, cy: c.cy } : null; }) };
         }
+        freshHistory(s);
+        if (idx - 1 === wantSi) madeSi = made.length;   // the one you were on, wherever it lands
         made.push(s);
       }
+    }).catch(function () { /* that one is skipped, the rest still come back */ }).then(function () {
       setTimeout(step, 0);
     });
   }
+  restoring = true;
   setTimeout(step, 0);
 }
 function when(ms) {
@@ -3830,9 +4140,16 @@ function drawKept() {
   }
   b.style.display = '';
   n.style.color = '';
-  if (S.store.why) {
+  $('keepMineRow').style.display = S.store.stuck ? '' : 'none';
+  if (S.store.stuck) {
+    n.textContent = 'nothing is being kept';
+    n.style.color = 'var(--warn)';
+    t.innerHTML = '<span style="color:var(--warn)"></span>';
+    t.firstChild.textContent = S.store.why;
+  } else if (S.store.why) {
     n.textContent = 'kept in this browser, mostly';
-    t.innerHTML = '<span style="color:var(--warn)">' + S.store.why + '</span>';
+    t.innerHTML = '<span style="color:var(--warn)"></span>';
+    t.firstChild.textContent = S.store.why;   // it names sprites, so it goes in as text
   } else if (!S.sprites.length) {
     n.textContent = 'kept in this browser \u00b7 nothing yet';
     t.textContent = 'Nothing kept yet. Whatever you open or draw is kept here and comes back next time.';
@@ -3855,7 +4172,8 @@ function forgetAll() {
   if (forgetTimer) clearTimeout(forgetTimer);
   forgetArmed = false;
   try { window.localStorage.removeItem(STORE_KEY); } catch (e) { /* nothing to do */ }
-  S.sprites = []; S.si = -1; S.store.at = 0; S.store.bytes = 0; S.store.why = '';
+  S.sprites = []; S.si = -1; S.store.at = 0; S.store.bytes = 0; S.store.why = ''; S.store.stuck = false;
+  lift = null;   // whatever was floating went with its sprite
   setPlaying(false);
   selectSprite(-1);
   say('Forgotten. Nothing is open and nothing is kept.', 'good');
@@ -3953,6 +4271,8 @@ function assignKey(raw) {
     else say('Kept as it was');
     return;
   }
+  // 0 is Fit, a key of its own that is not in this list: taking it would bury Fit
+  if (k === '0') { drawKeys(); say('0 fits the picture to the window. Pick another key.', 'bad'); return; }
   var label = '', swapped = null;
   KEY_ACTIONS.forEach(function (a) { if (a[0] === act) label = a[1]; });
   // a key already doing another job swaps, so no two things ever answer to one key
@@ -3989,8 +4309,9 @@ function setTool(t) {
   buildTools();
   drawShapeRow();
   $('selHint').style.display = t === 'select' ? 'flex' : 'none';
-  $('canvasWrap').style.cursor = t === 'pick' ? 'copy' : (t === 'select' ? 'cell' : 'crosshair');
+  $('canvasWrap').style.cursor = toolCursor();
 }
+function toolCursor() { return S.tool === 'pick' ? 'copy' : (S.tool === 'select' ? 'cell' : 'crosshair'); }
 function setColor(c) {
   S.color = c.slice();
   var h = rgb2hex(c);
@@ -4000,6 +4321,7 @@ function setColor(c) {
 
 // ---------- pointer ----------
 var drag = null;
+var dragPid = null;   // the pointer that started the stroke; another cannot steer or end it
 function pxAt(e) {
   var r = $('canvasSizer').getBoundingClientRect();
   return {
@@ -4010,6 +4332,20 @@ function pxAt(e) {
 var stage = $('canvasWrap');
 stage.addEventListener('pointerdown', function (e) {
   var s = spr(); if (!s) return;
+  if (e.button === 1) {
+    e.preventDefault();
+    pan = { x: e.clientX, y: e.clientY, sl: stage.scrollLeft, st: stage.scrollTop };
+    stage.style.cursor = 'grabbing';
+    try { stage.setPointerCapture(e.pointerId); } catch (err) { /* the moves still land while over the stage */ }
+    return;
+  }
+  // the left button draws and the right rubs out; the side buttons have no job here,
+  // and used to paint as if they were the left
+  if (e.button !== 0 && e.button !== 2) return;
+  // a second press while one is held (another finger, a pen beside the mouse) settles
+  // the first stroke rather than orphaning it, and its spray timer with it
+  if (drag) endDrag();
+  dragPid = e.pointerId;
   if (frameFocus) { frameFocus = false; $('frames').className = ''; }
   var p = pxAt(e);
   // the press marks the cell it lands in, whatever the tool, and with In cell on it
@@ -4022,16 +4358,18 @@ stage.addEventListener('pointerdown', function (e) {
   }
   // on a sheet the right button belongs to the cell menu, so it must not also rub out
   if (e.button === 2 && sheetOf(s)) return;
-  stage.setPointerCapture(e.pointerId);
+  // a pointer already gone by the time this runs cannot be captured, and throwing here
+  // would leave the press drawing nothing at all
+  try { stage.setPointerCapture(e.pointerId); } catch (err) { /* the moves still land while over the stage */ }
   if (S.tool === 'pick') { clipCell = null; eyedrop(p.x, p.y); return; }
-  if (S.tool === 'fill') { fill(p.x, p.y); clipCell = null; commit(); redraw(); return; }
+  if (S.tool === 'fill') { fill(p.x, p.y, e.button === 2); clipCell = null; commit(); redraw(); return; }
   if (S.tool === 'select') {
     if (S.sel && ptInSel(p.x, p.y)) {
       if (!lift) beginLift();
-      drag = { mode: 'move', gx: p.x - S.sel.x, gy: p.y - S.sel.y };
+      drag = { s: s, f: frm(), mode: 'move', gx: p.x - S.sel.x, gy: p.y - S.sel.y };
     } else {
       dropSelection();
-      drag = { mode: 'box', x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y)) };
+      drag = { s: s, f: frm(), mode: 'box', x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y)) };
       S.sel = { x: drag.x0, y: drag.y0, w: 1, h: 1 };
       if (e.altKey && sheetOf(s)) {   // Alt from the first pixel: whole cells at once
         var g0 = cellSpan(s, drag.x0, drag.y0, drag.x0, drag.y0);
@@ -4045,11 +4383,12 @@ stage.addEventListener('pointerdown', function (e) {
   if (S.tool === 'spray') {
     // no strokeSeen: a spray is meant to land on the same pixel twice and build up
     strokeSeen = null;
-    drag = { mode: 'spray', erase: e.button === 2, x: p.x, y: p.y };
+    drag = { s: s, f: frm(), mode: 'spray', erase: e.button === 2, x: p.x, y: p.y };
     spray(p.x, p.y, drag.erase);
     requestCanvas();
     sprayTimer = setInterval(function () {
       if (!drag || drag.mode !== 'spray') return;
+      if (strayDrag()) { endDrag(); return; }
       spray(drag.x, drag.y, drag.erase);
       requestCanvas();
     }, 70);
@@ -4057,7 +4396,7 @@ stage.addEventListener('pointerdown', function (e) {
   }
   if (S.tool === 'square') {
     drag = {
-      mode: 'square', erase: e.button === 2, base: frm().slice(),
+      s: s, f: frm(), mode: 'square', erase: e.button === 2, base: frm().slice(),
       x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y))
     };
     strokeSeen = new Uint8Array(s.w * s.h);
@@ -4068,7 +4407,7 @@ stage.addEventListener('pointerdown', function (e) {
   if (S.tool === 'line') {
     // anchor the line and keep a clean copy of the frame to redraw it against
     drag = {
-      mode: 'line', erase: e.button === 2, base: frm().slice(),
+      s: s, f: frm(), mode: 'line', erase: e.button === 2, base: frm().slice(),
       x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y))
     };
     strokeSeen = new Uint8Array(s.w * s.h);
@@ -4077,7 +4416,7 @@ stage.addEventListener('pointerdown', function (e) {
     return;
   }
   strokeSeen = new Uint8Array(s.w * s.h);
-  drag = { mode: 'draw', erase: S.tool === 'eraser' || e.button === 2, lx: p.x, ly: p.y };
+  drag = { s: s, f: frm(), mode: 'draw', erase: S.tool === 'eraser' || e.button === 2, lx: p.x, ly: p.y };
   paint(p.x, p.y, drag.erase);
   requestCanvas();
 });
@@ -4092,6 +4431,12 @@ function snapEnd(x0, y0, x, y) {
 }
 stage.addEventListener('pointermove', function (e) {
   var s = spr(); if (!s) return;
+  if (pan) {
+    stage.scrollLeft = pan.sl - (e.clientX - pan.x);
+    stage.scrollTop = pan.st - (e.clientY - pan.y);
+    return;
+  }
+  if (drag && e.pointerId !== dragPid) return;
   var p = pxAt(e);
   // the readout names the cell as well as the pixel, because on a sheet the cell is
   // what you are thinking in
@@ -4099,6 +4444,7 @@ stage.addEventListener('pointermove', function (e) {
   var hc = onIt && sheetOf(s) ? cellAt(s, p.x, p.y) : null;
   $('posLabel').textContent = onIt ? (p.x + ', ' + p.y + (hc ? '  cell ' + hc.cx + ',' + hc.cy : '')) : '\u2014';
   if (!drag) return;
+  if (strayDrag()) { endDrag(); return; }
   if (drag.mode === 'draw') {
     line(drag.lx, drag.ly, p.x, p.y, drag.erase);
     drag.lx = p.x; drag.ly = p.y;
@@ -4130,21 +4476,34 @@ stage.addEventListener('pointermove', function (e) {
       if (gs) { S.sel = gs; setCur(s, nearCell(s, x1, y1).cx, nearCell(s, x1, y1).cy); }
     }
   } else if (drag.mode === 'move') {
-    stampLift(p.x - drag.gx, p.y - drag.gy);
+    if (lift && S.sel) stampLift(p.x - drag.gx, p.y - drag.gy);
   }
   requestCanvas();
 });
-function endDrag() {
+// a stroke belongs to the sprite and the frame it began on. When either is swapped out
+// under a held button (a file landing, a generation arriving), the stroke ends there
+// rather than laying its saved frame over some other picture.
+function strayDrag() {
+  var s = spr();
+  return !!drag && (drag.s !== s || !s || drag.f !== s.frames[s.cur]);
+}
+function endDrag(e) {
+  // a pointer lifting that is not the one drawing leaves the stroke alone; called with
+  // no event (a key, a sprite switch, undo) it always ends
+  if (drag && e && e.pointerId != null && e.pointerId !== dragPid) return;
   if (!drag) { clipCell = null; return; }
   if (sprayTimer) { clearInterval(sprayTimer); sprayTimer = null; }
   strokeSeen = null;
   clipCell = null;
-  var was = drag.mode; drag = null;
-  if (was === 'draw' || was === 'move' || was === 'line' || was === 'square' || was === 'spray') commit();
+  var was = drag.mode, on = drag.s; drag = null;
+  if (was === 'draw' || was === 'move' || was === 'line' || was === 'square' || was === 'spray') commit(on);
   redraw();
 }
 stage.addEventListener('pointerup', endDrag);
 stage.addEventListener('pointercancel', endDrag);
+// capture can go without a pointerup (the stage hidden under the press, the window
+// losing the pointer); a stroke left open there kept its spray timer puffing
+stage.addEventListener('lostpointercapture', endDrag);
 // a double click with the Select tool takes exactly the cell under it, which is the
 // move you want a hundred times a sheet
 stage.addEventListener('dblclick', function (e) {
@@ -4192,18 +4551,29 @@ function zoomAt(nz, cx, cy) {
   var r2 = sizer.getBoundingClientRect();
   wrap.scrollLeft += (r2.left + px * nz) - cx;
   wrap.scrollTop += (r2.top + py * nz) - cy;
-  redraw();
+  // only the canvas and its zoom label change with the zoom. A whole redraw ran the
+  // checks, the preview and every thumbnail on each notch of the wheel
+  if (canvasRaf) { cancelAnimationFrame(canvasRaf); canvasRaf = 0; }
+  paintCanvas();
 }
 
 // a mouse wheel sends one notch of about 100 per click, a trackpad sends a stream of
 // tiny ones. Stepping on every event made a light two-finger drag jump ten levels, so
 // gather the distance up and only step once a notch's worth has built.
+// Plain scroll zooms at the cursor, on purpose. Shift and scroll moves the picture
+// instead, both ways at once from a trackpad; a pinch arrives as a scroll with Ctrl held
+// and always zooms, Shift or not.
 var wheelAcc = 0, wheelAt = 0;
 stage.addEventListener('wheel', function (e) {
   if (!spr()) return;
   e.preventDefault();
-  var d = e.deltaY;
-  if (e.deltaMode === 1) d *= 33; else if (e.deltaMode === 2) d *= 100;   // lines and pages to pixels
+  var unit = e.deltaMode === 1 ? 33 : (e.deltaMode === 2 ? 100 : 1);   // lines and pages to pixels
+  if (e.shiftKey && !e.ctrlKey) {
+    stage.scrollLeft += e.deltaX * unit;
+    stage.scrollTop += e.deltaY * unit;
+    return;
+  }
+  var d = e.deltaY * unit;
   if (e.timeStamp - wheelAt > 250 || d * wheelAcc < 0) wheelAcc = 0;      // new gesture or turned around
   wheelAt = e.timeStamp;
   wheelAcc += d;
@@ -4213,6 +4583,18 @@ stage.addEventListener('wheel', function (e) {
   if (nz !== S.zoom) zoomAt(nz, e.clientX, e.clientY);
 }, { passive: false });
 stage.addEventListener('scroll', function () { if (spr()) requestCanvas(); }, { passive: true });
+// the middle button drags the picture about, the way it does in most drawing programs.
+// Its mousedown is refused too, or Windows and Linux start their own autoscroll
+var pan = null;
+function endPan() {
+  if (!pan) return;
+  pan = null;
+  stage.style.cursor = toolCursor();
+}
+stage.addEventListener('mousedown', function (e) { if (e.button === 1) e.preventDefault(); });
+stage.addEventListener('pointerup', endPan);
+stage.addEventListener('pointercancel', endPan);
+stage.addEventListener('lostpointercapture', endPan);
 
 // ---------- loading files ----------
 function baseName(n) { return n.replace(/\.[^.]+$/, ''); }
@@ -4225,9 +4607,31 @@ function decode(file) {
 function viaImg(file) {
   return new Promise(function (res, rej) {
     var u = URL.createObjectURL(file), im = new Image();
-    im.onload = function () { res(im); };
-    im.onerror = function () { rej(new Error(file.name)); };
+    im.onload = function () { URL.revokeObjectURL(u); res(im); };
+    im.onerror = function () { URL.revokeObjectURL(u); rej(new Error(file.name)); };
     im.src = u;
+  });
+}
+// A PNG says how big it is in its first 24 bytes, so one past MAX_SIDE is refused
+// before anything decodes it: decoding a 20 000 px picture only to refuse it is the
+// very thing that eats the RAM. Anything that is not a PNG inside goes to the decoder.
+function readPixels(file) {
+  var head = file.slice && window.Blob && Blob.prototype.arrayBuffer
+    ? file.slice(0, 24).arrayBuffer() : Promise.resolve(null);
+  return head.then(function (ab) {
+    var b = ab && ab.byteLength >= 24 ? new DataView(ab) : null;
+    if (b && b.getUint32(0) === 0x89504e47 && b.getUint32(12) === 0x49484452) {
+      var hw = b.getUint32(16), hh = b.getUint32(20);
+      if (hw > MAX_SIDE || hh > MAX_SIDE) throw new Error('too-big:' + hw + 'x' + hh);
+    }
+    return decode(file);
+  }).then(function (img) {
+    try {
+      if (img.width > MAX_SIDE || img.height > MAX_SIDE) throw new Error('too-big:' + img.width + 'x' + img.height);
+      return toPixels(img);
+    } finally {
+      if (img.close) img.close();   // a decoded bitmap holds its pixels until closed
+    }
   });
 }
 function toPixels(img) {
@@ -4251,11 +4655,7 @@ function openFiles(files) {
   if (!list.length) { say('No PNG files in that drop', 'bad'); return; }
   // One unreadable file must never lose the rest of the drop.
   Promise.all(list.map(function (f) {
-    return decode(f).then(function (img) {
-      var d = toPixels(img);
-      if (d.w > MAX_SIDE || d.h > MAX_SIDE) {
-        throw new Error('too-big:' + d.w + 'x' + d.h);
-      }
+    return readPixels(f).then(function (d) {
       d.name = baseName(f.name); d.size = f.size; d.handle = f.handle || null; return d;
     }).catch(function (err) {
       var msg = f.name;
@@ -4268,17 +4668,20 @@ function openFiles(files) {
     var good = all.filter(function (d) { return !d.failed; });
     if (!good.length) { say('Could not read ' + bad.join(', '), 'bad'); return; }
 
-    // name-0.png and name-1.png become one sprite with two frames
-    var groups = new Map();
+    // name-0.png and name-1.png become one sprite with two frames. Grouped by the name
+    // the sprite will carry, so Grass-0.png and grass-1.png do not open as two grasses
+    var groups = new Map(), already = {};
+    S.sprites.forEach(function (x) { already[x.key] = 1; });
     good.forEach(function (d) {
       var m = /^(.*[^-])-(\d+)$/.exec(d.name);
-      var key = m ? m[1] : d.name, idx = m ? parseInt(m[2], 10) : 0;
+      var key = cleanName(m ? m[1] : d.name) || 'sprite', idx = m ? parseInt(m[2], 10) : 0;
       var g = groups.get(key);
       if (!g) { g = []; groups.set(key, g); }
       g.push({ idx: idx, d: d });
     });
-    var made = 0, split = 0, renumbered = [], ruled = [];
+    var made = 0, split = 0, renumbered = [], ruled = [], again = [];
     groups.forEach(function (g, key) {
+      if (already[key]) again.push(key);
       g.sort(function (a, b) { return a.idx - b.idx; });
       var w = g[0].d.w, h = g[0].d.h;
       var same = g.filter(function (e) { return e.d.w === w && e.d.h === h; });
@@ -4309,9 +4712,11 @@ function openFiles(files) {
     } else if (ruled.length) {
       msg += '. ' + ruled.length + ' of them were ruled as sheets; change that under Tilesheet grid.';
     }
+    // two sprites of one name save into the same files, so the second must not be a surprise
+    if (again.length) msg += '. ' + again.join(', ') + (again.length > 1 ? ' were' : ' was') + ' already open, so there are two now and saving either writes the same files';
     if (bad.length) msg += '. Could not read ' + bad.join(', ');
     if (skipped) msg += '. ' + skipped + ' file(s) were not PNGs';
-    say(msg, bad.length ? 'bad' : 'good');
+    say(msg, bad.length || again.length ? 'bad' : 'good');
     checkAlpha();
     scheduleSave();
   });
@@ -4348,12 +4753,14 @@ function selectSprite(i) {
     var next = S.sprites[i];
     if (next) UI.pvMode = next.family === 'terrain' ? 'tile' : 'cast';
   }
-  dropSelection(true);
+  // a paste or a move still floating is set down in the sprite being left, as a step of
+  // its own; dropping it quietly left it in the pixels but out of the history
+  dropSelection();
   S.si = (i >= 0 && i < S.sprites.length) ? i : (S.sprites.length ? Math.max(0, Math.min(i, S.sprites.length - 1)) : -1);
   var s = spr();
   if (s) { $('key').value = s.key; $('key').title = s.key; $('family').value = s.family; s.softDismissed = false; }
-  if (s && sheetOf(s)) lastSheet = s;
   else $('key').value = '';   // no sprite, no name: the path bar should not name a ghost
+  if (s && sheetOf(s)) lastSheet = s;
   setPlaying(false);
   checkAlpha();
   // show the stage first so Fit can measure it, and pick zoom BEFORE the first
@@ -4405,8 +4812,9 @@ function frameCanvas(s, i) {
   return c;
 }
 function saveFrame(s, i, name) {
-  return new Promise(function (res) {
+  return new Promise(function (res, rej) {
     frameCanvas(s, i).toBlob(function (b) {
+      if (!b) { rej(new Error(name)); return; }   // the browser could not make the PNG
       var a = document.createElement('a');
       a.href = URL.createObjectURL(b);
       a.download = name;
@@ -4445,6 +4853,8 @@ function exportAll(oneOnly, force) {
       (soft ? '. ' + soft + ' part see-through pixels were snapped on the way out' : ''), 'good');
     scheduleSave();
     redraw();
+  }, function (err) {
+    say('Could not make ' + (err && err.message || 'the PNG') + '. The browser would not encode it.', 'bad');
   });
 }
 
@@ -4475,12 +4885,16 @@ function askWrite(h) {
     return h.requestPermission(opt).then(function (q) { return q === 'granted'; });
   });
 }
+// a writable left open keeps a swap file beside the real one, so a failed write lets go
+function letGo(w) {
+  try { if (w && w.abort) Promise.resolve(w.abort()).catch(function () { /* already gone */ }); } catch (e) { /* already gone */ }
+}
 function writeFrame(s, i, h) {
   return new Promise(function (res, rej) {
     frameCanvas(s, i).toBlob(function (b) {
       if (!b) { rej(new Error('could not encode the PNG')); return; }
       h.createWritable().then(function (w) {
-        return w.write(b).then(function () { return w.close(); });
+        return w.write(b).then(function () { return w.close(); }, function (err) { letGo(w); throw err; });
       }).then(res, rej);
     }, 'image/png');
   });
@@ -4516,13 +4930,19 @@ function saveOver(force) {
       });
       dchain.then(function () {
         s.bytes = [];
+        // a rename or a deleted frame leaves last save's files behind; say so, as Save over does
+        var left = (s.destWrote || []).filter(function (n) { return names.indexOf(n) < 0; });
+        s.destWrote = names.slice();
         say('Saved ' + names.join(', ') + ' into ' + s.dest.label +
           (dsoft ? '. ' + dsoft + ' part see-through pixels were snapped on the way out' : '') +
+          (left.length ? '. ' + left.join(', ') + ' from the last save ' + (left.length > 1 ? 'are' : 'is') + ' still in there; delete ' + (left.length > 1 ? 'them yourself if they' : 'it yourself if it') + ' should go' : '') +
           '. Run npm run pack-art', 'good');
         scheduleSave(); redraw();
       }, function () {
         say('Could not write into ' + s.dest.label + '. The folder may have moved. Export frames still works.', 'bad');
       });
+    }, function () {
+      say('The browser would not ask for leave to write in ' + s.dest.label + '. Nothing was touched. Press Save again.', 'bad');
     });
     return false;
   }
@@ -4550,7 +4970,9 @@ function saveOver(force) {
     });
   });
   // a frame added since opening has no file yet, so it goes to downloads as before
-  fresh.forEach(function (p) { chain = chain.then(function () { return saveFrame(s, p.i, p.name); }); });
+  fresh.forEach(function (p) {
+    chain = chain.then(function () { return saveFrame(s, p.i, p.name).catch(function () { failed.push(p.name); }); });
+  });
   chain.then(function () {
     if (wrote.length) s.bytes = [];   // what is on disk now is exactly what this editor writes
     var list = function (a) { return a.join(', '); };
@@ -4561,7 +4983,7 @@ function saveOver(force) {
     if (blocked.length) bits.push('The browser held back ' + list(blocked) + '. It asks once per file: press Save over again');
     if (failed.length) bits.push('Could not write ' + list(failed) + '. The file may have moved. Export frames still works');
     var stale = (s.handles || []).filter(function (h) { return h && names.indexOf(h.name) < 0; }).map(function (h) { return h.name; });
-    if (wrote.length && stale.length) bits.push(list(stale) + ' on disk ' + (stale.length > 1 ? 'are' : 'is') + ' not a frame of this sprite any more. Delete ' + (stale.length > 1 ? 'them' : 'it') + ' yourself if it should go');
+    if (wrote.length && stale.length) bits.push(list(stale) + ' on disk ' + (stale.length > 1 ? 'are' : 'is') + ' not a frame of this sprite any more. Delete ' + (stale.length > 1 ? 'them yourself if they' : 'it yourself if it') + ' should go');
     if (wrote.length && !blocked.length && !failed.length) {
       bits.push('Run npm run pack-art' + (soft ? '. ' + soft + ' part see-through pixels were snapped on the way out' : ''));
     }
@@ -4577,16 +4999,20 @@ function saveOver(force) {
 // so Forget all spares them too
 var UI_KEY = 'eldermyr-sprite-editor-ui-v1';
 var UI = (function () {
-  try { return JSON.parse(window.localStorage.getItem(UI_KEY) || '{}') || {}; }
-  catch (e) { return {}; }
+  // anything but a plain object is as good as unset: a number or a list here would
+  // throw on the first choice written into it, or quietly never be kept
+  try {
+    var u = JSON.parse(window.localStorage.getItem(UI_KEY) || '{}');
+    return u && typeof u === 'object' && !Array.isArray(u) ? u : {};
+  } catch (e) { return {}; }
 })();
 function saveUI() {
   try { window.localStorage.setItem(UI_KEY, JSON.stringify(UI)); } catch (e) { /* nowhere to keep it */ }
 }
 // the panels resize at their inner edges; widths are kept with the other UI choices
 function applyPanels() {
-  var l = Math.max(140, Math.min(340, UI.leftW || 172));
-  var r = Math.max(260, Math.min(560, UI.sideW || 320));
+  var l = Math.max(140, Math.min(340, +UI.leftW || 172));   // + so a kept word reads as unset, not NaNpx
+  var r = Math.max(260, Math.min(560, +UI.sideW || 320));
   $('app').style.setProperty('--leftW', l + 'px');
   $('app').style.setProperty('--sideW', r + 'px');
   toolsFollow();
@@ -4608,14 +5034,16 @@ function wireGrip(id, which) {
     };
     var up = function () {
       h.removeEventListener('pointermove', mv);
+      h.removeEventListener('pointerup', up);
+      h.removeEventListener('pointercancel', up);
       h.className = 'grip';
       saveUI();
       if (spr()) paintCanvas();
       drawPreview();
     };
     h.addEventListener('pointermove', mv);
-    h.addEventListener('pointerup', up, { once: true });
-    h.addEventListener('pointercancel', up, { once: true });
+    h.addEventListener('pointerup', up);
+    h.addEventListener('pointercancel', up);
   });
   h.addEventListener('dblclick', function () {
     delete UI[which];
@@ -4632,7 +5060,10 @@ applyPanels();
 // it leaves the column to float on its own; double click the title to dock it again.
 // Where it sits and whether it is folded are kept with the other UI choices.
 function toolsDock() {
-  return UI.toolsDock || (UI.toolsPos ? 'free' : 'left');
+  // floating needs a place to float at; a kept choice without one goes back in the column
+  var pos = UI.toolsPos && typeof UI.toolsPos === 'object' && isFinite(parseFloat(UI.toolsPos.x)) && isFinite(parseFloat(UI.toolsPos.y));
+  var d = UI.toolsDock || (pos ? 'free' : 'left');
+  return d === 'right' || (d === 'free' && pos) ? d : 'left';
 }
 function toolsApply() {
   var p = $('toolsPanel'), dock = toolsDock();
@@ -4667,12 +5098,14 @@ function toolsFollow() {
   // under a tall inspector the panel scrolls rather than running off the window
   p.style.maxHeight = Math.max(80, $('app').clientHeight - slot.y - 14) + 'px';
 }
-function toolsPlace(x, y) {
+// only a drag moves the kept spot; a smaller window squeezes the panel on screen for
+// now, and a bigger one later puts it back where you left it
+function toolsPlace(x, y, dragged) {
   var p = $('toolsPanel'), app = $('app');
   var maxX = app.clientWidth - p.offsetWidth - 6, maxY = app.clientHeight - 30;
-  x = Math.max(6, Math.min(maxX, x)); y = Math.max(6, Math.min(maxY, y));
+  x = Math.max(6, Math.min(maxX, +x || 0)); y = Math.max(6, Math.min(maxY, +y || 0));
   p.style.left = x + 'px'; p.style.top = y + 'px';
-  UI.toolsPos = { x: x, y: y };
+  if (dragged) UI.toolsPos = { x: x, y: y };
 }
 function toolsSetDock(dock) {
   UI.toolsDock = dock;
@@ -4702,7 +5135,7 @@ $('toolsHead').addEventListener('pointerdown', function (e) {
       toolsApply();
     }
     var x = ev.clientX - ar.left - offX, y = ev.clientY - ar.top - offY;
-    toolsPlace(x, y);
+    toolsPlace(x, y, true);
     // near a slot, show the ghost of where it will land
     snap = null;
     toolsSlots().forEach(function (sl) {
@@ -4716,14 +5149,16 @@ $('toolsHead').addEventListener('pointerdown', function (e) {
   };
   var up = function () {
     head.removeEventListener('pointermove', mv);
+    head.removeEventListener('pointerup', up);
+    head.removeEventListener('pointercancel', up);
     hint.className = '';
     if (!moved) return;
     if (snap) { toolsSetDock(snap.id); say(snap.id === 'right' ? 'Tools sit under the inspector now' : 'Tools are back in the column', 'good'); }
     else saveUI();
   };
   head.addEventListener('pointermove', mv);
-  head.addEventListener('pointerup', up, { once: true });
-  head.addEventListener('pointercancel', up, { once: true });
+  head.addEventListener('pointerup', up);
+  head.addEventListener('pointercancel', up);
 });
 window.addEventListener('resize', function () { var d = toolsDock(); if (d === 'free') toolsPlace(UI.toolsPos.x, UI.toolsPos.y); else if (d === 'right') toolsFollow(); });
 toolsApply();
@@ -4778,7 +5213,7 @@ SCALES.forEach(function (n) {
   };
   $('scales').appendChild(b);
 });
-if (SCALES.indexOf(UI.scale) >= 0) { S.scale = UI.scale; Array.prototype.forEach.call($('scales').children, function (c, i) { c.className = SCALES[i] === S.scale ? 'on' : ''; }); }
+if (SCALES.indexOf(+UI.scale) >= 0) { S.scale = +UI.scale; Array.prototype.forEach.call($('scales').children, function (c, i) { c.className = SCALES[i] === S.scale ? 'on' : ''; }); }
 
 // the picker is what hands back writable handles, which is what makes Save over work.
 // A browser without it, or one that refuses it here, gets the plain input as before.
@@ -4831,20 +5266,25 @@ $('fileFrame').onchange = function (e) {
   e.target.value = '';
   if (!s || !files.length) return;
   Promise.all(files.map(function (f) {
-    return decode(f).then(function (img) {
-      var d = toPixels(img);
-      if (d.w > MAX_SIDE || d.h > MAX_SIDE) throw new Error('too-big');
-      return d;
-    }).catch(function () { return { failed: f.name }; });
+    return readPixels(f).catch(function () { return { failed: f.name }; });
   })).then(function (all) {
-    var wrong = [], unread = [];
+    // the files take a moment; the sprite they were asked for may be closed by now, or
+    // not the one on screen, and they go to it either way or nowhere
+    if (S.sprites.indexOf(s) < 0) { say('That sprite was closed before the file came in', 'bad'); return; }
+    var wrong = [], unread = [], was = s.frames.length;
+    // a paste or a move still floating over the sprite is set down first, as its own step
+    if (drag && drag.s === s) endDrag();
+    if (lift && lift.s === s) dropSelection();
     all.forEach(function (d) {
       if (d.failed) { unread.push(d.failed); return; }
       if (d.w !== s.w || d.h !== s.h) { wrong.push(d.w + 'x' + d.h); return; }
       s.frames.push(d.px);
     });
-    s.cur = s.frames.length - 1;
-    commit(); checkAlpha(); redraw();
+    if (s.frames.length > was) {
+      if (s === spr()) dropSelection();   // the box was drawn on the frame being left
+      s.cur = s.frames.length - 1;
+    }
+    commit(s); checkAlpha(); redraw();
     var msg = 'Added ' + (all.length - wrong.length - unread.length) + ' frame(s)';
     if (wrong.length) msg += '. ' + wrong.length + ' were a different size (' + wrong.join(', ') + ') and were skipped';
     if (unread.length) msg += '. Could not read ' + unread.join(', ');
@@ -4854,7 +5294,11 @@ $('fileFrame').onchange = function (e) {
 $('bNew').onclick = function () {
   closeAddMenu();
   var n = Math.max(4, Math.min(1024, parseInt($('newSize').value, 10) || 16));
-  var name = 'sprite' + (S.sprites.length + 1);
+  // the next free spriteN: after a close, the count alone can land on a name in use
+  var taken = {}; S.sprites.forEach(function (x) { taken[x.key] = 1; });
+  var nn = S.sprites.length + 1;
+  while (taken['sprite' + nn]) nn++;
+  var name = 'sprite' + nn;
   var made = makeSprite(name, n, n, [blank(n, n)], cleanName($('family').value));
   defaultDest(made);
   S.sprites.push(made);
@@ -4862,26 +5306,8 @@ $('bNew').onclick = function () {
   scheduleSave();
   say('New blank sprite, ' + n + ' by ' + n + (made.dest ? '. Save puts it in ' + made.dest.label : ''));
 };
-var closeArmed = false, closeTimer = null;
-$('bClose').onclick = function () {
-  if (S.si < 0) return;
-  if (!closeArmed) {
-    closeArmed = true;
-    this.textContent = 'Close and lose it?';
-    this.className = 'danger';
-    var self = this;
-    closeTimer = setTimeout(function () { closeArmed = false; self.textContent = 'Close'; self.className = ''; }, 4000);
-    return;
-  }
-  if (closeTimer) clearTimeout(closeTimer);
-  closeArmed = false;
-  this.textContent = 'Close'; this.className = '';
-  var gone = S.sprites[S.si].key;
-  S.sprites.splice(S.si, 1);
-  selectSprite(Math.min(S.si, S.sprites.length - 1));
-  scheduleSave();
-  say('Closed ' + gone + '. It is not kept any more.', 'good');
-};
+// the old Close button, kept as a shell: it asks twice through the list's own cross
+$('bClose').onclick = function () { if (S.si >= 0) closeSprite(S.si); };
 $('bExport').onclick = function () { exportAll(false, false); };
 $('bExport1').onclick = function () { exportAll(true, false); };
 $('bForce').onclick = function () { exportAll(false, true); };
@@ -4905,9 +5331,13 @@ $('bSave').onclick = function () {
 $('key').oninput = function () { drawPathBar(); };
 $('key').onchange = function () {
   var s = spr(); if (!s) { drawPathBar(); return; }
+  var was = s.key;
   s.key = cleanName($('key').value) || 'sprite';
   $('key').value = s.key; $('key').title = s.key;
   touched(s); scheduleSave(); redraw();
+  // two sprites of one name write the same files, and the second save quietly wins
+  var twin = S.sprites.some(function (x) { return x !== s && x.key === s.key; });
+  if (twin && s.key !== was) say('Another open sprite is called ' + s.key + ' too. Saving either writes the same files, so rename one of them.', 'bad');
 };
 $('family').oninput = function () { drawPathBar(); };
 $('family').onchange = function () {
@@ -4923,6 +5353,7 @@ $('pbPath').onclick = function () {
     return askWrite(dh).then(function (ok) {
       if (!ok) { say('The browser was not allowed to write in that folder. Nothing changed.', 'bad'); return; }
       s.dest = { handle: dh, label: dh.dir || dh.name };
+      s.destWrote = null;   // nothing of this sprite is in the new folder yet
       rememberPlace(dh, dh, s.dest.label);
       drawPathBar(); redraw();
       say('Saving goes to ' + s.dest.label + ' now, and new sprites go there too.', 'good');
@@ -4962,7 +5393,7 @@ $('tilePitch').oninput = function () {
   var g = sheetOf(s);
   if (g) s.cellPitch = Math.min(g.cw, v); else s.tilePitch = Math.min(s.w, v);
   scheduleSave();
-  drawPreview();
+  redraw();   // the lap is what the tile and edge checks measure, so they follow it too
 };
 $('bRowVariants').onclick = function () {
   UI.rowVariants = UI.rowVariants === false; saveUI();
@@ -4976,8 +5407,11 @@ $('bSeams').onclick = toggleSeams;
 $('bBoardSeams').onclick = toggleSeams;
 $('cellMap').onclick = function (e) {
   var s = spr(); if (!sheetOf(s)) return;
+  // measured off the picture as it is laid out, inside its border, so a map the panel has
+  // squeezed still hands back the cell that was clicked
   var r = this.getBoundingClientRect();
-  var c = cellAt(s, Math.floor((e.clientX - r.left) / CELL_MAP_Z), Math.floor((e.clientY - r.top) / CELL_MAP_Z));
+  var c = cellAt(s, Math.floor((e.clientX - r.left - this.clientLeft) * s.w / Math.max(1, this.clientWidth)),
+    Math.floor((e.clientY - r.top - this.clientTop) * s.h / Math.max(1, this.clientHeight)));
   if (c) setSheetCell(c.cx, c.cy);
 };
 $('bBoardClear').onclick = clearBoard;
@@ -4985,7 +5419,7 @@ $('bBoardFill').onclick = fillBoard;
 $('boardSize').onclick = cycleBoardSize;
 // laying cells on the board: drag to paint with the current cell, right button or Alt to
 // lift, Shift to pick up whatever is under the cursor and work on that instead
-var boardDrag = 0;
+var boardDrag = 0, boardLast = -1;
 function boardPointer(e, down) {
   if (previewMode() !== 'board') return;
   var s = spr(); if (!sheetOf(s)) return;
@@ -4999,8 +5433,17 @@ function boardPointer(e, down) {
     return;
   }
   var lift = e.button === 2 || (e.buttons & 2) || e.altKey;
-  if (down) { boardDrag = lift ? 2 : 1; try { pv.setPointerCapture(e.pointerId); } catch (err) { /* no capture, the move still lands */ } }
-  paintBoard(i, boardDrag === 2 || lift ? null : curCell(s));
+  if (down) { boardDrag = lift ? 2 : 1; boardLast = -1; try { pv.setPointerCapture(e.pointerId); } catch (err) { /* no capture, the move still lands */ } }
+  var what = boardDrag === 2 || lift ? null : curCell(s), cols = BOARD_GEO.cols;
+  // a quick drag skips squares between one move and the next, so walk the squares between
+  // the last one and this one, the way a pencil stroke joins its points
+  if (boardLast >= 0 && boardLast !== i) {
+    var x0 = boardLast % cols, y0 = (boardLast - x0) / cols, x1 = i % cols, y1 = (i - x1) / cols;
+    var n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
+    for (var k = 1; k < n; k++) paintBoard(Math.round(y0 + (y1 - y0) * k / n) * cols + Math.round(x0 + (x1 - x0) * k / n), what);
+  }
+  boardLast = i;
+  paintBoard(i, what);
 }
 pv.addEventListener('pointerdown', function (e) { boardPointer(e, true); });
 pv.addEventListener('pointermove', function (e) { if (boardDrag) boardPointer(e, false); });
@@ -5047,10 +5490,8 @@ $('refFile').onchange = function (e) {
   var files = Array.prototype.slice.call(e.target.files);
   e.target.value = '';
   files.forEach(function (f) {
-    decode(f).then(function (img) {
-      var c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
-      c.getContext('2d').drawImage(img, 0, 0);
-      addRefPng(baseName(f.name).replace(/-\d+$/, ''), c.toDataURL('image/png'));
+    readPixels(f).then(function (d) {
+      addRefPng(baseName(f.name).replace(/-\d+$/, ''), rawCanvas({ w: d.w, h: d.h, frames: [d.px] }, 0).toDataURL('image/png'));
     }).catch(function () { say('Could not read ' + f.name, 'bad'); });
   });
 };
@@ -5063,9 +5504,12 @@ $('bAddRule').onclick = function () {
 };
 $('ruleDraft').onkeydown = function (e) { if (e.key === 'Enter') $('bAddRule').click(); };
 $('bRulesReset').onclick = function () {
-  delete UI.ruleOff; delete UI.ruleGone; delete UI.customRules;
+  delete UI.ruleGone; delete UI.customRules;
+  // as they came, which is not all of them on: a rule marked off starts off again
+  UI.ruleOff = {};
+  RULE_DEFS.forEach(function (r) { if (r.off) UI.ruleOff[r.id] = true; });
   rulesChanged();
-  say('Back to Eldermyr\u2019s rules, every one of them', 'good');
+  say('Back to Eldermyr\u2019s rules, as they came', 'good');
 };
 if (UI.tab === 'Colour' || UI.tab === 'Checks') showTab(UI.tab);
 $('bgCustom').oninput = function () { setBg(this.value); };
@@ -5144,13 +5588,46 @@ var PL_URL = 'https://api.pixellab.ai/v1';
 var PL_KEY_KEY = 'myrling-pixellab-key';
 var PL_HIST_KEY = 'myrling-pixellab-history-v1';
 var plHist = (function () {
-  try { return JSON.parse(window.localStorage.getItem(PL_HIST_KEY) || '[]') || []; }
-  catch (e) { return []; }
+  // only records with a picture are worth anything; one without must not break the dialog
+  try {
+    var kept = JSON.parse(window.localStorage.getItem(PL_HIST_KEY) || '[]');
+    return (Array.isArray(kept) ? kept : []).filter(function (r) { return r && typeof r.png === 'string'; })
+      .map(function (r) { r.prompt = String(r.prompt || ''); return r; });
+  } catch (e) { return []; }
 })();
 var plHistWhy = '';
+// The history shares the browser's few megabytes with the kept sprites, and the sprites
+// come first. So only the newest images are kept for next time: at most PL_KEEP_N and
+// about PL_KEEP_CHARS of text between them, and fewer when the sprites need the room
+// (saveStore moves the history aside, keeps the sprites, then lets it refill what room is
+// left). The older ones last until the tab closes, and Save all
+// writes every one of them to a folder.
+var PL_KEEP_N = 60, PL_KEEP_CHARS = 1500000;
+var plKeepN = PL_KEEP_N;              // at most this many; plSaveHist keeps fewer when the room is not there
+var plHistKept = plHist.length;       // how many of the newest are in the browser now
 function plSaveHist() {
-  try { window.localStorage.setItem(PL_HIST_KEY, JSON.stringify(plHist)); plHistWhy = ''; }
-  catch (e) { plHistWhy = 'The browser is out of room, so new generations only last until this tab closes. Save the history to a folder below.'; }
+  var keep = [], chars = 0;
+  for (var i = 0; i < plHist.length && keep.length < plKeepN; i++) {
+    chars += plHist[i].png.length + plHist[i].prompt.length + 80;
+    if (chars > PL_KEEP_CHARS && keep.length) break;
+    keep.push(plHist[i]);
+  }
+  // out of room: the oldest go first, a quarter at a time, until what is left fits
+  for (;;) {
+    try {
+      if (keep.length) window.localStorage.setItem(PL_HIST_KEY, JSON.stringify(keep));
+      else window.localStorage.removeItem(PL_HIST_KEY);
+      break;
+    } catch (e) {
+      if (!keep.length) break;
+      keep.length -= Math.max(1, Math.ceil(keep.length / 4));
+    }
+  }
+  plHistKept = keep.length;
+  plHistWhy = plHistKept < plHist.length
+    ? plHist.length + ' made. The newest ' + plHistKept + ' are kept in this browser for next time; the older ' +
+      (plHist.length - plHistKept === 1 ? 'one lasts' : 'ones last') + ' until this tab closes. Save all writes every one to a folder.'
+    : '';
   drawPlHist();
 }
 // the Mac app carries the call natively (no cross-origin wall in WebKit); a browser
@@ -5188,7 +5665,7 @@ function plOpen(rec) {
   var im = new Image();
   im.onload = function () {
     var d = toPixels(im);
-    var slug = cleanName(rec.prompt.split(/\s+/).slice(0, 2).join('')) || 'generated';
+    var slug = freeKey(rec.prompt.split(/\s+/).slice(0, 2).join(''), 'generated');
     var sp = makeSprite(slug, d.w, d.h, [d.px], cleanName($('family').value));
     defaultDest(sp);
     S.sprites.push(sp);
@@ -5205,7 +5682,7 @@ function drawPlHist() {
   box.innerHTML = '';
   plHist.forEach(function (rec) { box.appendChild(plThumb(rec)); });
   $('plHistNote').textContent = plHistWhy ||
-    (plHist.length ? plHist.length + ' kept, every one since the first. Click any to open it.' : 'Nothing yet. Everything you generate is kept here.');
+    (plHist.length ? plHist.length + ' kept. Click any to open it.' : 'Nothing yet. What you generate is kept here, the newest ' + PL_KEEP_N + ' of it for next time.');
 }
 function plGenerate() {
   var key = $('plKey').value.trim();
@@ -5228,12 +5705,12 @@ function plGenerate() {
       var uri = r && r.image && r.image.base64 ? String(r.image.base64) : null;
       if (!uri) throw new Error('no image came back');
       if (uri.indexOf('data:') !== 0) uri = 'data:image/png;base64,' + uri;
-      if (r.usage && r.usage.usd) spent += r.usage.usd;
+      if (r.usage && +r.usage.usd) spent += +r.usage.usd;   // a string here would glue, not add
       var rec = { at: Date.now(), prompt: prompt, w: size, h: size, png: uri };
       plHist.unshift(rec);
       $('plOut').appendChild(plThumb(rec));
       return rec;
-    }, function (e) { failed.push(String(e && e.message || e)); return null; }));
+    }).catch(function (e) { failed.push(String(e && e.message || e)); return null; }));   // a junk answer lands here too
   }
   Promise.all(jobs).then(function (made) {
     $('bGenGo').disabled = false; $('bGenGo').textContent = 'Generate';
@@ -5242,6 +5719,11 @@ function plGenerate() {
     var msg = ok ? 'Made ' + ok + (ok > 1 ? ' images' : ' image') + (spent ? ' for about $' + spent.toFixed(2) : '') + '. Click one to open it as a sprite.' : '';
     if (failed.length) msg += (msg ? ' ' : '') + failed.length + ' failed: ' + failed[0];
     say(msg, failed.length ? 'bad' : 'good');
+  }).catch(function (e) {
+    // whatever went wrong, the button must not stay stuck on Generating
+    $('bGenGo').disabled = false; $('bGenGo').textContent = 'Generate';
+    plSaveHist();
+    say('Something in that answer could not be read: ' + (e && e.message || e), 'bad');
   });
 }
 function plSaveAll() {
@@ -5251,16 +5733,20 @@ function plSaveAll() {
     return askWrite(dh).then(function (ok) {
       if (!ok) { say('The browser was not allowed to write there. Nothing was saved.', 'bad'); return; }
       rememberPlace(dh, dh, dh.dir || dh.name);
-      var chain = Promise.resolve(), wrote = 0;
+      var chain = Promise.resolve(), wrote = 0, used = {};
       plHist.forEach(function (rec) {
         chain = chain.then(function () {
-          var name = 'pixellab-' + rec.at + '-' + (cleanName(rec.prompt.split(/\s+/).slice(0, 3).join('-')) || 'image') + '.png';
+          var name = 'pixellab-' + rec.at + '-' + (cleanName(rec.prompt.split(/\s+/).slice(0, 3).join('-')) || 'image');
+          // two of one batch can land in the same millisecond; neither may write over the other
+          var n = 2, base = name;
+          while (used[name]) name = base + '-' + n++;
+          used[name] = 1; name += '.png';
           var bin = atob(rec.png.split(',')[1]);
           var arr = new Uint8Array(bin.length);
           for (var j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
           return dh.getFileHandle(name, { create: true }).then(function (h) {
             return h.createWritable().then(function (w) {
-              return w.write(new Blob([arr], { type: 'image/png' })).then(function () { return w.close(); });
+              return w.write(new Blob([arr], { type: 'image/png' })).then(function () { return w.close(); }, function (err) { letGo(w); throw err; });
             });
           }).then(function () { wrote++; });
         });
@@ -5285,6 +5771,13 @@ $('bGen').onclick = openGen;
 $('bGenClose').onclick = closeGen;
 $('gen').onclick = function (e) { if (e.target === this) closeGen(); };
 $('bGenGo').onclick = plGenerate;
+// emptying the box is the way to take the key back out of this browser; before, the
+// dialog refilled it from the kept copy every time it opened and nothing could remove it
+$('plKey').onchange = function () {
+  if (this.value.trim()) return;
+  try { window.localStorage.removeItem(PL_KEY_KEY); } catch (e) { /* nothing was kept */ }
+  say('The PixelLab key is no longer kept in this browser', 'good');
+};
 $('bPlSaveAll').onclick = plSaveAll;
 $('settings').onclick = function (e) { if (e.target === this) closeSettings(); };
 $('bKeysReset').onclick = function () {
@@ -5300,6 +5793,13 @@ $('bUndo').onclick = undo;
 $('bRedo').onclick = redo;
 $('bFlip').onclick = flipFrame;
 $('bForget').onclick = forgetAll;
+// the other way out of an unreadable kept copy: what is open now takes its place
+$('bKeepMine').onclick = function () {
+  if (!S.store.stuck) return;
+  S.store.stuck = false; S.store.why = '';
+  saveStore();
+  if (!S.store.why) say('What is open is kept now, in place of the copy that could not be read', 'good');
+};
 $('zIn').onclick = function () { zoomAt(S.zoom + (S.zoom < 8 ? 1 : 4)); };
 $('zOut').onclick = function () { zoomAt(S.zoom - (S.zoom <= 8 ? 1 : 4)); };
 $('zoomLabel').onclick = function () { fitZoom(); redraw(); };
@@ -5314,7 +5814,7 @@ $('fps').oninput = function () {
   UI.fps = S.fps; saveUI();
   if (S.playing) setPlaying(true);
 };
-if (UI.fps >= 1 && UI.fps <= 20) { $('fps').value = UI.fps; $('fps').oninput.call($('fps')); }
+if (+UI.fps >= 1 && +UI.fps <= 20) { $('fps').value = Math.round(+UI.fps); $('fps').oninput.call($('fps')); }
 $('fpsChip').onclick = function (e) { e.stopPropagation(); $('speedPop').className = $('speedPop').className === 'panel show' ? 'panel' : 'panel show'; };
 $('speedPop').onclick = function (e) { e.stopPropagation(); };
 $('pick').oninput = function () { setColor(hex2rgb(this.value)); };
@@ -5337,6 +5837,9 @@ var dragDepth = 0;
 window.addEventListener('dragenter', function (e) {
   e.preventDefault();
   if (frameDrag !== null || spriteDrag !== null) return;   // a panel item on the move is not files arriving
+  // nor is a bit of text dragged out of a box: only a drag carrying files asks for the drop
+  var types = e.dataTransfer && e.dataTransfer.types;
+  if (types && Array.prototype.indexOf.call(types, 'Files') < 0) return;
   dragDepth++; $('drop').className = 'show';
 });
 window.addEventListener('dragover', function (e) { e.preventDefault(); });
@@ -5368,12 +5871,60 @@ window.addEventListener('drop', function (e) {
 });
 
 // keys
+// Cmd+S saves from anywhere, a text box included. With the name box focused it used to
+// fall through to the browser's own Save Page. The box is let go of first, so a name
+// typed and not yet entered is the name the files are written under.
+function saveKey() {
+  if ($('bSave').style.display !== 'none' && !$('bSave').disabled) $('bSave').click(); else exportAll(false, false);
+}
 window.addEventListener('keydown', function (e) {
-  var t = e.target.tagName;
-  if (t === 'INPUT' || t === 'TEXTAREA') return;
+  var el = e.target, t = el.tagName;
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && String(e.key).toLowerCase() === 's') {
+    e.preventDefault();
+    if (keyWait) { keyWait = null; drawKeys(); }
+    if (drag) endDrag();
+    if ((t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') && el.blur) el.blur();   // fires its change first
+    // and should the change not have fired (a value put in by autofill or a script), the
+    // name and the folder are taken from their boxes all the same
+    var s = spr();
+    if (s && $('key').value !== s.key) $('key').onchange();
+    if (s && $('family').value !== s.family) $('family').onchange();
+    saveKey();
+    return;
+  }
+  // Cmd with =, - or 0 zooms the canvas from anywhere, a text box included, and is taken
+  // here: let past, the browser zoomed the whole page as well, and the Mac app's View
+  // menu, which carries the same shortcuts, zoomed a second step
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && /^[-+=_0]$/.test(e.key) && spr()) {
+    e.preventDefault();
+    if (keyWait) { keyWait = null; drawKeys(); }
+    if (e.key === '0') $('zoomLabel').click();
+    else if (e.key === '-' || e.key === '_') $('zOut').click();
+    else $('zIn').click();
+    return;
+  }
+  if (t === 'TEXTAREA' || t === 'SELECT' || el.isContentEditable) return;
+  // a text box keeps every key. A slider, a tick box or a colour well only wants its
+  // own arrows, space and Enter: blocking everything there left Cmd+Z and the tool keys
+  // dead until the canvas was clicked
+  if (t === 'INPUT') {
+    if (!/^(range|checkbox|radio|color|button)$/.test(el.type)) return;
+    if (/^(Arrow|Page|Home$|End$|Enter$| $)/.test(e.key)) return;
+  }
   var meta = e.metaKey || e.ctrlKey;
-  // a keycap in Settings is waiting: this press is the new binding, nothing else
-  if (keyWait) { if (!meta) { e.preventDefault(); assignKey(e.key); return; } keyWait = null; drawKeys(); }
+  var bare = /^(Shift|Alt|Meta|Control|CapsLock|Fn|OS|Dead|Process|Unidentified)$/.test(e.key);
+  // a keycap in Settings is waiting: this press is the new binding, nothing else. Shift
+  // or Alt on their own are a hand on its way to a key, not the key
+  if (keyWait) {
+    if (bare) return;
+    if (!meta) { e.preventDefault(); assignKey(e.key); return; }
+    keyWait = null; drawKeys();
+  }
+  // a key that does something mid-stroke (undo, Esc, a tool, an arrow) lands after the
+  // stroke is set down. Acting under it restored the stroke's saved frame over an undo,
+  // and Esc or a tool key in the middle of moving a box threw on the next move. Zoom and
+  // play only change the view, so a stroke carries on through them
+  if (drag && !bare && (meta || !/^[-+=_0 ]$/.test(e.key))) endDrag();
   if (settingsOpen()) {
     if (e.key === 'Escape' || (meta && e.key === ',')) { e.preventDefault(); closeSettings(); }
     return;
@@ -5404,9 +5955,11 @@ window.addEventListener('keydown', function (e) {
     return;
   }
   // [ and ] walk the sheet a cell at a time; with Shift they select as they go
-  if ((e.key === '[' || e.key === ']') && !meta && sheetOf(spr())) {
+  // with Shift held most layouts send { and } rather than [ and ]
+  var cellStep = e.key === '[' || e.key === '{' ? -1 : e.key === ']' || e.key === '}' ? 1 : 0;
+  if (cellStep && !meta && sheetOf(spr())) {
     e.preventDefault();
-    stepCell(e.key === ']' ? 1 : -1, e.shiftKey);
+    stepCell(cellStep, e.shiftKey);
     return;
   }
   if (e.key === 'Escape' && $('ctxMenu').className === 'panel show') { closeCtx(); return; }
@@ -5420,19 +5973,17 @@ window.addEventListener('keydown', function (e) {
   if (meta && e.key.toLowerCase() === 'x') { e.preventDefault(); if (frameFocus || !S.sel) cutFrame(); else copySel(true); return; }
   if (meta && e.key.toLowerCase() === 'v') {
     e.preventDefault();
-    if (frameFocus || (!S.sel && !CLIP && FRAME_CLIP)) pasteFrame(); else pasteClip();
+    // with no box and no frame clicked, whichever was copied last is what comes back:
+    // a frame copied after a box used to lose to the older box
+    if (frameFocus || (!S.sel && FRAME_CLIP && (!CLIP || FRAME_CLIP.after === CLIP))) pasteFrame(); else pasteClip();
     return;
   }
   if (meta && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
-  if (meta && e.key.toLowerCase() === 's') {
-    e.preventDefault();
-    if ($('bSave').style.display !== 'none' && !$('bSave').disabled) $('bSave').click(); else exportAll(false, false);
-    return;
-  }
   if (!meta && !e.altKey && !e.shiftKey) {
     var k = e.key.toLowerCase();
     for (var i = 0; i < KEY_ACTIONS.length; i++) {
-      if (KEYS[KEY_ACTIONS[i][0]] === k) { e.preventDefault(); KEY_ACTIONS[i][2](); return; }
+      // a held key repeats; for onion and grid that flickered them on and off
+      if (KEYS[KEY_ACTIONS[i][0]] === k) { e.preventDefault(); if (!e.repeat) KEY_ACTIONS[i][2](); return; }
     }
   }
   switch (e.key) {
@@ -5450,8 +6001,23 @@ window.addEventListener('keydown', function (e) {
     case 'ArrowRight': e.preventDefault(); nudge(1, 0); break;
     case 'ArrowUp': e.preventDefault(); nudge(0, -1); break;
     case 'ArrowDown': e.preventDefault(); nudge(0, 1); break;
-    case ' ': e.preventDefault(); setPlaying(!S.playing); break;
+    case ' ': e.preventDefault(); if (!e.repeat) setPlaying(!S.playing); break;
   }
+});
+// Escape shuts the open dialog from inside one of its boxes too. The handler above lets
+// every press in a text box through untouched, which left the PixelLab prompt (focused
+// the moment the dialog opens) with no way out but the mouse.
+window.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape' || keyWait) return;
+  var t = e.target.tagName;
+  if (t !== 'INPUT' && t !== 'TEXTAREA') return;
+  var shut = [[genOpen, closeGen], [settingsOpen, closeSettings], [sizeOpen, closeSizeModal],
+    [sheetModalOpen, closeSheetModal], [splitModalOpen, closeSplitModal],
+    [newSheetModalOpen, closeNewSheetModal], [addSheetModalOpen, closeAddToSheetModal]];
+  for (var i = 0; i < shut.length; i++) {
+    if (shut[i][0]()) { e.preventDefault(); e.target.blur(); shut[i][1](); return; }
+  }
+  if ($('addMenu').className === 'show' && $('addMenu').contains(e.target)) { e.target.blur(); closeAddMenu(); }
 });
 window.addEventListener('keyup', function (e) {
   if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') commit();
