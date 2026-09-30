@@ -1062,12 +1062,47 @@ function cellEmpty(s, f, cx, cy) {
   for (var y = 0; y < r.h; y++) for (var x = 0; x < r.w; x++) if (f[((r.y + y) * s.w + r.x + x) * 4 + 3]) return false;
   return true;
 }
-function snapshot(s) {
-  return { w: s.w, h: s.h, cur: s.cur, frames: s.frames.map(function (f) { return f.slice(); }) };
+// A sheet's grid is ruled on its pixels, so a step of history holds the grid as well: a
+// turn or a trim moves the grid with the picture, and undoing it has to move it back.
+// Ruling the grid by hand is a step of its own, the same as a stroke. That is the only
+// way it can stay put: were the grid kept outside the history, undoing a stroke made
+// after a re-rule would bring back whatever grid the step before it held. As a step,
+// undoing the stroke leaves the new grid alone, and only undoing the ruling itself (the
+// status line says so) takes the grid back.
+// The cell you are on and the squares of the board are where you are, not what you
+// made, so they are not steps: they are held beside each step only to come back when
+// an undo crosses a turn, a flip, a trim or a re-rule and the old numbers mean another
+// tile. gridGen marks each such change, so an undo can tell whether it crossed one.
+var GRID_GEN = 0;
+function copyGrid(g) { return g ? { cw: g.cw, ch: g.ch, gap: g.gap, ox: g.ox, oy: g.oy } : null; }
+function sameGrid(a, b) {
+  if (!a || !b) return !a && !b;
+  return a.cw === b.cw && a.ch === b.ch && a.gap === b.gap && a.ox === b.ox && a.oy === b.oy;
 }
+function copyCells(cells) { return (cells || []).map(function (c) { return c ? { cx: c.cx, cy: c.cy } : null; }); }
+function snapshot(s) {
+  return {
+    w: s.w, h: s.h, cur: s.cur, frames: s.frames.map(function (f) { return f.slice(); }),
+    sheet: copyGrid(sheetOf(s)), gen: s.gridGen || 0,
+    sheetCur: s.sheetCur ? { cx: s.sheetCur.cx, cy: s.sheetCur.cy } : null,
+    board: s.board && s.board.cols > 0 ? { cols: s.board.cols, rows: s.board.rows, cells: copyCells(s.board.cells) } : null
+  };
+}
+// the step on screen learns where you are now, so an undo that crosses back over a
+// turn and a redo that crosses forward again land on the cell you left
+function noteWhere(s) {
+  var h = s && s.hist[s.hi];
+  if (!h || h.gen !== (s.gridGen || 0)) return;
+  h.sheetCur = s.sheetCur ? { cx: s.sheetCur.cx, cy: s.sheetCur.cy } : null;
+  h.board = s.board && s.board.cols > 0 ? { cols: s.board.cols, rows: s.board.rows, cells: copyCells(s.board.cells) } : null;
+}
+// a sprite that arrives ruled (opened, brought back, made as a sheet) starts its history
+// ruled: the grid it came with is where undo stops, not a step undo takes away
+function freshHistory(s) { s.hist = [snapshot(s)]; s.hi = 0; }
 function sameAsHead(s) {
   var a = s.hist[s.hi];
   if (!a || a.w !== s.w || a.h !== s.h || a.frames.length !== s.frames.length) return false;
+  if (!sameGrid(a.sheet, sheetOf(s))) return false;
   for (var i = 0; i < s.frames.length; i++) {
     var x = s.frames[i], y = a.frames[i];
     if (x.length !== y.length) return false;
@@ -1094,12 +1129,26 @@ function commit(s) {
   scheduleSave();
   redraw();
 }
+// puts a step back, and says whether that step was a ruling of the grid (a new grid on
+// the same picture), which the status line names so an undo of it is never a surprise
 function restore(snap) {
   var s = spr();
+  var regrid = !sameGrid(sheetOf(s), snap.sheet) && snap.w === s.w && snap.h === s.h;
   s.w = snap.w; s.h = snap.h; s.cur = Math.min(snap.cur, snap.frames.length - 1);
   s.frames = snap.frames.map(function (f) { return f.slice(); });
+  s.sheet = copyGrid(snap.sheet);
+  // across a turn, a flip, a trim or a re-rule the cell numbers mean other tiles, so the
+  // cell and the board come back as they were beside that step. Within one ruling they
+  // are left where you put them
+  if ((snap.gen || 0) !== (s.gridGen || 0)) {
+    s.sheetCur = snap.sheetCur ? { cx: snap.sheetCur.cx, cy: snap.sheetCur.cy } : null;
+    if (snap.board) s.board = { cols: snap.board.cols, rows: snap.board.rows, cells: copyCells(snap.board.cells) };
+    s.gridGen = snap.gen || 0;
+    clipCell = null;
+  }
   s.bytes = [];
   touched(s);
+  return regrid;
 }
 function undo() {
   if (drag) endDrag();   // the toolbar and the Mac menu call in here without a key
@@ -1109,14 +1158,19 @@ function undo() {
   var loose = !sameAsHead(s);
   if (!loose && s.hi <= 0) return;
   dropSelection(true);
+  noteWhere(s);
   if (!loose) s.hi--;
-  restore(s.hist[s.hi]); scheduleSave(); redraw(); say('Undone');
+  var regrid = restore(s.hist[s.hi]); scheduleSave(); redraw();
+  say(regrid ? 'Undone. The grid is back to how it was ruled before.' : 'Undone');
 }
 function redo() {
   if (drag) endDrag();
   var s = spr(); if (!s || s.hi >= s.hist.length - 1) return;
   dropSelection(true);
-  s.hi++; restore(s.hist[s.hi]); scheduleSave(); redraw(); say('Redone');
+  noteWhere(s);
+  s.hi++;
+  var regrid = restore(s.hist[s.hi]); scheduleSave(); redraw();
+  say(regrid ? 'Redone. The grid is ruled the new way again.' : 'Redone');
 }
 
 // ---------- pixel ops ----------
@@ -1270,7 +1324,7 @@ function flipFrame() {
 }
 
 // ---------- selection ----------
-var lift = null; // { buf, w, h, base }
+var lift = null; // { buf, w, h, base, s }: s is the sprite the pixels float over
 function ptInSel(x, y) {
   var s = S.sel;
   return s && x >= s.x && y >= s.y && x < s.x + s.w && y < s.y + s.h;
@@ -1287,7 +1341,7 @@ function beginLift() {
     buf[di] = f[si]; buf[di + 1] = f[si + 1]; buf[di + 2] = f[si + 2]; buf[di + 3] = f[si + 3];
     base[si] = 0; base[si + 1] = 0; base[si + 2] = 0; base[si + 3] = 0;
   }
-  lift = { buf: buf, w: b.w, h: b.h, base: base };
+  lift = { buf: buf, w: b.w, h: b.h, base: base, s: s };
 }
 function stampLift(nx, ny) {
   var s = spr();
@@ -1303,8 +1357,12 @@ function stampLift(nx, ny) {
   }
   S.sel.x = nx; S.sel.y = ny;
 }
+// quiet: the caller is about to put the pixels back itself (undo, redo) or commit them
+// with its own change (a resize), so the floating pixels are not made a step of their own
 function dropSelection(quiet) {
-  if (lift) { lift = null; if (!quiet) commit(); }
+  // committed into the sprite they float over, which is not always the one on screen by
+  // now: a close or a reorder can move the list under a paste
+  if (lift) { var on = lift.s; lift = null; if (!quiet) commit(on); }
   S.sel = null;
   $('selHint').style.display = 'none';
 }
@@ -1391,6 +1449,8 @@ function carryAxis(o, c, gap, f, d, flip) {
 // were on and the squares of the board go with their tiles.
 function carryGrid(s, t) {
   var g = sheetOf(s); if (!g) return;
+  noteWhere(s);               // the step being left keeps the cell you were on
+  s.gridGen = ++GRID_GEN;     // and from here the cell numbers mean other tiles
   var ax, ay;
   if (t.turn) {
     // the new x runs up the old y from the bottom, the new y along the old x
@@ -1629,7 +1689,7 @@ function pasteClip() {
   setTool('select');
   var px = Math.floor((s.w - w) / 2), py = Math.floor((s.h - h) / 2);
   S.sel = { x: px, y: py, w: w, h: h };
-  lift = { buf: buf, w: w, h: h, base: frm().slice() };
+  lift = { buf: buf, w: w, h: h, base: frm().slice(), s: s };
   stampLift(px, py);
   $('selHint').style.display = 'flex';
   redraw();
@@ -1662,25 +1722,37 @@ function boxAnd(a, b) {
   var r = Math.min(a.x + a.w, b.x + b.w), t = Math.min(a.y + a.h, b.y + b.h);
   return { x: x, y: y, w: Math.max(0, r - x), h: Math.max(0, t - y) };
 }
-function setSheet(s, cw, ch, gap, ox, oy) {
+// ruling is a step of history (see snapshot). later: the caller commits, so a ruling and
+// the growing that goes with it are one step, not two
+function setSheet(s, cw, ch, gap, ox, oy, later) {
   s = s || spr(); if (!s) return;
   var whole = function (v, lo) { v = Math.round(parseFloat(v) || 0); return v < lo ? lo : v; };
   var was = sheetOf(s);
-  s.sheet = { cw: whole(cw, 1), ch: whole(ch, 1), gap: whole(gap, 0), ox: whole(ox, 0), oy: whole(oy, 0) };
+  var now = { cw: whole(cw, 1), ch: whole(ch, 1), gap: whole(gap, 0), ox: whole(ox, 0), oy: whole(oy, 0) };
   // the old cell means nothing under new rules, but Grow to fit keeps the rules and
   // only adds cells, so there the cell you were on is still the same tile
-  if (!was || was.cw !== s.sheet.cw || was.ch !== s.sheet.ch || was.gap !== s.sheet.gap ||
-      was.ox !== s.sheet.ox || was.oy !== s.sheet.oy) s.sheetCur = null;
+  var changed = !sameGrid(was, now);
+  if (changed) {
+    dropSelection();   // a paste still floating lands as its own step, under the old rule
+    noteWhere(s);
+    s.gridGen = ++GRID_GEN;
+    s.sheetCur = null;
+  }
+  s.sheet = now;
   touched(s);   // the checks read the grid
+  if (changed && !later) commit(s);
   scheduleSave();
 }
 function clearSheet(s) {
   s = s || spr(); if (!s) return;
   if (!sheetOf(s)) { say('There is no grid on this one', 'bad'); return; }
+  dropSelection();
+  noteWhere(s);
+  s.gridGen = ++GRID_GEN;
   s.sheet = null; s.sheetCur = null;
   clipCell = null;
-  touched(s); scheduleSave(); redraw();
-  say('Grid cleared. This is one plain picture again.', 'good');
+  touched(s); commit(s); scheduleSave(); redraw();
+  say('Grid cleared. This is one plain picture again. Undo rules it again.', 'good');
 }
 // the cell last worked in. Kept on the sprite so the other panels can read it, and
 // clamped back into the grid whenever the rules change under it.
@@ -1887,8 +1959,8 @@ function growSheet() {
   if (nw > MAX_SIDE || nh > MAX_SIDE) { say('That would pass ' + MAX_SIDE + ' a side', 'bad'); return; }
   var ow = s.w, oh = s.h;
   closeSheetModal();
-  setSheet(s, v.cw, v.ch, v.gap, v.ox, v.oy);
-  if (nw === ow && nh === oh) { redraw(); say('Already ' + cols + ' × ' + rows + ' cells', 'good'); return; }
+  setSheet(s, v.cw, v.ch, v.gap, v.ox, v.oy, true);   // the resize below commits both at once
+  if (nw === ow && nh === oh) { commit(s); redraw(); say('Already ' + cols + ' × ' + rows + ' cells', 'good'); return; }
   resizeCanvas(nw, nh, 0, 0);
   say('Ruled ' + cols + ' × ' + rows + ' cells of ' + v.cw + ' by ' + v.ch + ' on a ' + nw + ' by ' + nh + ' canvas' +
     (nw < ow || nh < oh ? '. Some of the picture was cut away; undo takes it back.' : ''), 'good');
@@ -1914,6 +1986,7 @@ function autoRule(s) {
   if (!terrain && (n % 16 || cols < 2 || rows < 2)) return null;
   s.sheet = { cw: n, ch: n, gap: 0, ox: 0, oy: 0 };
   s.sheetCur = null;
+  if (s.hist.length <= 1) freshHistory(s); else commit(s);   // arrives ruled, see freshHistory
   return { cols: cols, rows: rows, n: n };
 }
 
@@ -2003,6 +2076,7 @@ function newSheet(cw, cols, rows, key) {
   }
   var s = makeSprite(freeKey(key, 'sheet'), w, h, [blank(w, h)], 'terrain');
   s.sheet = { cw: cw, ch: cw, gap: 0, ox: 0, oy: 0 };
+  freshHistory(s);
   defaultDest(s);
   S.sprites.push(s);
   selectSprite(S.sprites.length - 1);
@@ -2791,6 +2865,7 @@ function duplicateSprite(i) {
   // the rest of what is kept with a sprite comes along too, so the copy is the same thing
   if (src.cellPitch) c.cellPitch = src.cellPitch;
   if (src.board && src.board.cols) c.board = { cols: src.board.cols, rows: src.board.rows, cells: (src.board.cells || []).map(function (x) { return x ? { cx: x.cx, cy: x.cy } : null; }) };
+  freshHistory(c);
   S.sprites.splice(i + 1, 0, c);
   selectSprite(i + 1);
   scheduleSave();
@@ -2843,6 +2918,8 @@ function moveFrame(from, to) {
   say('Frame moved to spot ' + to + '. The numbers follow the new order.', 'good');
 }
 
+// the list handed back is the cache itself, shared by the checks and the palette until
+// the sprite changes: read it, count it, copy it, never change it
 function colourList(s, which) {
   if (isHeavy(s) && !deepCheck) return [];
   var rev = s._rev || 0;
@@ -2866,7 +2943,9 @@ function colourList(s, which) {
 function drawPalette() {
   var p = $('palette'), s = spr();
   p.innerHTML = '';
-  var cols = s ? colourList(s, 'all') : [];
+  // a copy: the current colour goes on the front of this one, and putting it on the
+  // cached list counted every colour you ever picked as one the sprite uses
+  var cols = s ? colourList(s, 'all').slice() : [];
   var cur = rgb2hex(S.color);
   var seen = {};
   cols.forEach(function (c) { seen[rgb2hex(c)] = 1; });
@@ -3974,6 +4053,7 @@ function loadStore() {
         if (rec.board && rec.board.cols > 0 && rec.board.rows > 0) {
           s.board = { cols: rec.board.cols, rows: rec.board.rows, cells: (Array.isArray(rec.board.cells) ? rec.board.cells : []).map(function (c) { return c && c.cx >= 0 ? { cx: c.cx, cy: c.cy } : null; }) };
         }
+        freshHistory(s);
         if (idx - 1 === wantSi) madeSi = made.length;   // the one you were on, wherever it lands
         made.push(s);
       }
@@ -4033,6 +4113,7 @@ function forgetAll() {
   forgetArmed = false;
   try { window.localStorage.removeItem(STORE_KEY); } catch (e) { /* nothing to do */ }
   S.sprites = []; S.si = -1; S.store.at = 0; S.store.bytes = 0; S.store.why = '';
+  lift = null;   // whatever was floating went with its sprite
   setPlaying(false);
   selectSprite(-1);
   say('Forgotten. Nothing is open and nothing is kept.', 'good');
@@ -4568,7 +4649,9 @@ function selectSprite(i) {
     var next = S.sprites[i];
     if (next) UI.pvMode = next.family === 'terrain' ? 'tile' : 'cast';
   }
-  dropSelection(true);
+  // a paste or a move still floating is set down in the sprite being left, as a step of
+  // its own; dropping it quietly left it in the pixels but out of the history
+  dropSelection();
   S.si = (i >= 0 && i < S.sprites.length) ? i : (S.sprites.length ? Math.max(0, Math.min(i, S.sprites.length - 1)) : -1);
   var s = spr();
   if (s) { $('key').value = s.key; $('key').title = s.key; $('family').value = s.family; s.softDismissed = false; }
@@ -5081,14 +5164,23 @@ $('fileFrame').onchange = function (e) {
   Promise.all(files.map(function (f) {
     return readPixels(f).catch(function () { return { failed: f.name }; });
   })).then(function (all) {
-    var wrong = [], unread = [];
+    // the files take a moment; the sprite they were asked for may be closed by now, or
+    // not the one on screen, and they go to it either way or nowhere
+    if (S.sprites.indexOf(s) < 0) { say('That sprite was closed before the file came in', 'bad'); return; }
+    var wrong = [], unread = [], was = s.frames.length;
+    // a paste or a move still floating over the sprite is set down first, as its own step
+    if (drag && drag.s === s) endDrag();
+    if (lift && lift.s === s) dropSelection();
     all.forEach(function (d) {
       if (d.failed) { unread.push(d.failed); return; }
       if (d.w !== s.w || d.h !== s.h) { wrong.push(d.w + 'x' + d.h); return; }
       s.frames.push(d.px);
     });
-    s.cur = s.frames.length - 1;
-    commit(); checkAlpha(); redraw();
+    if (s.frames.length > was) {
+      if (s === spr()) dropSelection();   // the box was drawn on the frame being left
+      s.cur = s.frames.length - 1;
+    }
+    commit(s); checkAlpha(); redraw();
     var msg = 'Added ' + (all.length - wrong.length - unread.length) + ' frame(s)';
     if (wrong.length) msg += '. ' + wrong.length + ' were a different size (' + wrong.join(', ') + ') and were skipped';
     if (unread.length) msg += '. Could not read ' + unread.join(', ');
