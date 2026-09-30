@@ -672,6 +672,7 @@ if (location.hash === '#forget') {
   <div id="keptPop" class="panel">
     <div id="keptText"></div>
     <div class="row" style="margin-top:8px"><button id="bForget" style="width:100%">Forget all</button></div>
+    <div class="row" id="keepMineRow" style="display:none"><button id="bKeepMine" style="width:100%" title="Write what is open now over the copy this version cannot read. That copy is gone after this.">Keep mine instead</button></div>
   </div>
   <div id="sizeNote" title="Where the pointer is, in pixels"><span id="posLabel">&mdash;</span></div>
   <div id="status"></div>
@@ -953,7 +954,7 @@ var S = {
   ground: GROUNDS[0],
   scale: 3,
   fps: 6, playing: false, playFrame: 0,
-  store: { on: false, why: '', at: 0, bytes: 0 }
+  store: { on: false, why: '', at: 0, bytes: 0, stuck: false }   // stuck: a kept copy we cannot read, not to be written over
 };
 
 var cv = $('cv'), ctx = cv.getContext('2d');
@@ -3934,7 +3935,7 @@ function rawCanvas(s, i) {
 function frameDataURI(s, i) { return rawCanvas(s, i).toDataURL('image/png'); }
 var saveTimer = null;
 function scheduleSave() {
-  if (!S.store.on) return;
+  if (!S.store.on || S.store.stuck) return;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(saveStore, 500);
 }
@@ -3958,6 +3959,9 @@ function keptURI(s, i) {
 var restoring = false;   // while kept work is coming back, writing now would drop it
 function saveStore() {
   if (!S.store.on) return;
+  // a kept copy this version cannot read stays as it is until Forget all or Keep mine
+  // instead says otherwise; writing over it at the next stroke was losing it unasked
+  if (S.store.stuck) { saveTimer = null; drawKept(); return; }
   if (restoring) { saveTimer = setTimeout(saveStore, 500); return; }
   saveTimer = null;
   var kept = [], skipped = [];
@@ -3979,7 +3983,12 @@ function saveStore() {
   };
   var text = JSON.stringify(payload);
   try {
-    window.localStorage.setItem(STORE_KEY, text);
+    // the sprites come first: when the browser is full, the PixelLab history gives up
+    // its oldest images until they fit, and only then are the sprites refused
+    for (;;) {
+      try { window.localStorage.setItem(STORE_KEY, text); break; }
+      catch (full) { if (!plMakeRoom()) throw full; }
+    }
     S.store.at = payload.at; S.store.bytes = text.length;
     S.store.why = skipped.length
       ? skipped.map(function (s) { return s.key; }).join(', ') + ' ' + (skipped.length > 1 ? 'are' : 'is') +
@@ -4007,8 +4016,10 @@ function loadStore() {
   var data = null;
   try { data = JSON.parse(text); } catch (e) { data = null; }
   if (!data || data.v !== 1 || !Array.isArray(data.sprites)) {
-    // do not throw away something that cannot be read: say so and let it be cleared by hand
-    S.store.why = 'What is kept here was written by a different version and cannot be read. Press Forget all to clear it.';
+    // do not throw away something that cannot be read: say so, keep nothing over it,
+    // and let it be cleared by hand
+    S.store.stuck = true;
+    S.store.why = 'What is kept here was written by a different version and cannot be read, so nothing you open or draw is being kept meanwhile. Export what matters. Forget all clears the old copy (and closes what is open); Keep mine instead writes what is open now over it.';
     drawKept();
     return;
   }
@@ -4088,7 +4099,13 @@ function drawKept() {
   }
   b.style.display = '';
   n.style.color = '';
-  if (S.store.why) {
+  $('keepMineRow').style.display = S.store.stuck ? '' : 'none';
+  if (S.store.stuck) {
+    n.textContent = 'nothing is being kept';
+    n.style.color = 'var(--warn)';
+    t.innerHTML = '<span style="color:var(--warn)"></span>';
+    t.firstChild.textContent = S.store.why;
+  } else if (S.store.why) {
     n.textContent = 'kept in this browser, mostly';
     t.innerHTML = '<span style="color:var(--warn)"></span>';
     t.firstChild.textContent = S.store.why;   // it names sprites, so it goes in as text
@@ -4114,7 +4131,7 @@ function forgetAll() {
   if (forgetTimer) clearTimeout(forgetTimer);
   forgetArmed = false;
   try { window.localStorage.removeItem(STORE_KEY); } catch (e) { /* nothing to do */ }
-  S.sprites = []; S.si = -1; S.store.at = 0; S.store.bytes = 0; S.store.why = '';
+  S.sprites = []; S.si = -1; S.store.at = 0; S.store.bytes = 0; S.store.why = ''; S.store.stuck = false;
   lift = null;   // whatever was floating went with its sprite
   setPlaying(false);
   selectSprite(-1);
@@ -5530,10 +5547,46 @@ var plHist = (function () {
   } catch (e) { return []; }
 })();
 var plHistWhy = '';
+// The history shares the browser's few megabytes with the kept sprites, and the sprites
+// come first. So only the newest images are kept for next time: at most PL_KEEP_N and
+// about PL_KEEP_CHARS of text between them, and fewer when the sprites need the room
+// (saveStore asks plMakeRoom). The older ones last until the tab closes, and Save all
+// writes every one of them to a folder.
+var PL_KEEP_N = 60, PL_KEEP_CHARS = 1500000;
+var plKeepN = PL_KEEP_N;              // lowered for good once the sprites have needed the room
+var plHistKept = plHist.length;       // how many of the newest are in the browser now
 function plSaveHist() {
-  try { window.localStorage.setItem(PL_HIST_KEY, JSON.stringify(plHist)); plHistWhy = ''; }
-  catch (e) { plHistWhy = 'The browser is out of room, so new generations only last until this tab closes. Save the history to a folder below.'; }
+  var keep = [], chars = 0;
+  for (var i = 0; i < plHist.length && keep.length < plKeepN; i++) {
+    chars += plHist[i].png.length + plHist[i].prompt.length + 80;
+    if (chars > PL_KEEP_CHARS && keep.length) break;
+    keep.push(plHist[i]);
+  }
+  // out of room: the oldest go first, a quarter at a time, until what is left fits
+  for (;;) {
+    try {
+      if (keep.length) window.localStorage.setItem(PL_HIST_KEY, JSON.stringify(keep));
+      else window.localStorage.removeItem(PL_HIST_KEY);
+      break;
+    } catch (e) {
+      if (!keep.length) break;
+      keep.length -= Math.max(1, Math.ceil(keep.length / 4));
+    }
+  }
+  plHistKept = keep.length;
+  plHistWhy = plHistKept < plHist.length
+    ? plHist.length + ' made. The newest ' + plHistKept + ' are kept in this browser for next time; the older ' +
+      (plHist.length - plHistKept === 1 ? 'one lasts' : 'ones last') + ' until this tab closes. Save all writes every one to a folder.'
+    : '';
   drawPlHist();
+}
+// the kept sprites are out of room: the history gives up half of what it holds, oldest
+// first. False when it has nothing left to give
+function plMakeRoom() {
+  if (!plHistKept) return false;
+  plKeepN = Math.floor(plHistKept / 2);
+  plSaveHist();
+  return true;
 }
 // the Mac app carries the call natively (no cross-origin wall in WebKit); a browser
 // asks PixelLab directly. Either way the key rides along and is stored nowhere else.
@@ -5587,7 +5640,7 @@ function drawPlHist() {
   box.innerHTML = '';
   plHist.forEach(function (rec) { box.appendChild(plThumb(rec)); });
   $('plHistNote').textContent = plHistWhy ||
-    (plHist.length ? plHist.length + ' kept, every one since the first. Click any to open it.' : 'Nothing yet. Everything you generate is kept here.');
+    (plHist.length ? plHist.length + ' kept. Click any to open it.' : 'Nothing yet. What you generate is kept here, the newest ' + PL_KEEP_N + ' of it for next time.');
 }
 function plGenerate() {
   var key = $('plKey').value.trim();
@@ -5698,6 +5751,13 @@ $('bUndo').onclick = undo;
 $('bRedo').onclick = redo;
 $('bFlip').onclick = flipFrame;
 $('bForget').onclick = forgetAll;
+// the other way out of an unreadable kept copy: what is open now takes its place
+$('bKeepMine').onclick = function () {
+  if (!S.store.stuck) return;
+  S.store.stuck = false; S.store.why = '';
+  saveStore();
+  if (!S.store.why) say('What is open is kept now, in place of the copy that could not be read', 'good');
+};
 $('zIn').onclick = function () { zoomAt(S.zoom + (S.zoom < 8 ? 1 : 4)); };
 $('zOut').onclick = function () { zoomAt(S.zoom - (S.zoom <= 8 ? 1 : 4)); };
 $('zoomLabel').onclick = function () { fitZoom(); redraw(); };
