@@ -1045,11 +1045,19 @@ function asButton(el, name) {
 // handed to whatever stands in the same spot after it. Only a place the keyboard put
 // there: after a click the focus is let go as it always was, so Space is still Play.
 var FOCUSABLE = 'button,input,select,[tabindex]';
+// Whether the keyboard put the focus where it is. :focus-visible cannot say: both engines
+// turn a clicked control focus-visible the moment any key is pressed after the click, so
+// Space after clicking Onion pressed Onion again instead of playing. The page notes the
+// last kind of input instead, and marks each element as the focus reaches it
+var lastInput = 'pointer', keyFocused = null;
+document.addEventListener('pointerdown', function () { lastInput = 'pointer'; }, true);
+document.addEventListener('keydown', function () { lastInput = 'key'; }, true);
+document.addEventListener('focusin', function (e) { keyFocused = lastInput === 'key' ? e.target : null; }, true);
+function byKeyboard(el) { return !!el && el === keyFocused; }
 function focusMark(box) {
-  var a = document.activeElement, kb = false;
+  var a = document.activeElement;
   if (!a || !box || box === a || !box.contains(a)) return -1;
-  try { kb = a.matches(':focus-visible'); } catch (e) { /* no way to tell, so leave it */ }
-  return kb ? Array.prototype.indexOf.call(box.querySelectorAll(FOCUSABLE), a) : -1;
+  return byKeyboard(a) ? Array.prototype.indexOf.call(box.querySelectorAll(FOCUSABLE), a) : -1;
 }
 function focusBack(box, at) {
   if (at < 0 || box.contains(document.activeElement)) return;
@@ -1300,7 +1308,10 @@ function undo() {
   var loose = !sameAsHead(s);
   // a paste that changed nothing (clear pixels, or the same ones) with nothing behind it:
   // the button says it can be taken back, so it is
-  if (!loose && s.hi <= 0) { if (lift) { dropSelection(true); redraw(); } return; }
+  // ...and so is one with steps behind it: the undo takes back the float and stops there,
+  // rather than going on to take the step before it as well
+  if (!loose && lift) { dropSelection(true); redraw(); return; }
+  if (!loose && s.hi <= 0) return;
   dropSelection(true);
   noteWhere(s);
   if (!loose) s.hi--;
@@ -4943,16 +4954,15 @@ function zoomAt(nz, cx, cy) {
 // Plain scroll zooms at the cursor, on purpose. Shift and scroll moves the picture
 // instead, both ways at once from a trackpad; a pinch arrives as a scroll with Ctrl held
 // and always zooms, Shift or not.
-var wheelAcc = 0, wheelAt = 0;
+var wheelSmooth = false, wheelAcc = 0, wheelAt = 0;
 // Safari and the Mac app hand a trackpad pinch over as gesture events rather than the
 // Control-wheel Chrome sends, so without these a pinch did nothing there. The zoom follows
 // the fingers from where the pinch began, on the same steps the wheel takes, about the
 // point between them
 var pinchFrom = 0;
-function zoomStep(z) {
-  z = Math.max(1, Math.min(MAX_ZOOM, z));
-  return z <= 8 ? Math.round(z) : Math.min(MAX_ZOOM, Math.round(z / 4) * 4);
-}
+// the wheel's own steps, one up and one down from a zoom
+function zoomUp(z) { return Math.min(MAX_ZOOM, z + (z < 8 ? 1 : 4)); }
+function zoomDown(z) { return Math.max(1, z - (z <= 8 ? 1 : 4)); }
 stage.addEventListener('gesturestart', function (e) {
   if (!spr()) return;
   e.preventDefault();
@@ -4961,7 +4971,11 @@ stage.addEventListener('gesturestart', function (e) {
 stage.addEventListener('gesturechange', function (e) {
   if (!spr() || !pinchFrom) return;
   e.preventDefault();
-  var nz = zoomStep(pinchFrom * (e.scale || 1));
+  // only as far as the fingers have gone past a whole step from where the pinch began, so
+  // the first touch of a pinch does not jump a Fit zoom of 38 to 40
+  var want = pinchFrom * (e.scale || 1), nz = pinchFrom;
+  if (want > pinchFrom) { while (zoomUp(nz) !== nz && zoomUp(nz) <= want) nz = zoomUp(nz); }
+  else { while (zoomDown(nz) !== nz && zoomDown(nz) >= want) nz = zoomDown(nz); }
   if (nz !== S.zoom) zoomAt(nz, e.clientX, e.clientY);
 });
 stage.addEventListener('gestureend', function (e) {
@@ -4984,10 +4998,16 @@ stage.addEventListener('wheel', function (e) {
   // app and in Chrome alike, so it took three notches to make a step, and notches turned
   // slowly, each one a new gesture, made none at all. Each one is a whole step. A
   // trackpad's stream of fractions never looks like that.
+  // WebKit reports a trackpad's stream the same way (wheelDeltaY three times deltaY), so a
+  // trackpad event of exactly 40 looked like a notch. A gesture that has sent anything but
+  // whole multiples of 40 is a trackpad's, and stays one until it ends
+  var fresh = e.timeStamp - wheelAt > 250;
+  if (fresh) wheelSmooth = false;
+  if (e.deltaY % 40 !== 0) wheelSmooth = true;
   var clicks = e.wheelDeltaY / 120;
-  if (!e.ctrlKey && e.deltaMode === 0 && clicks && clicks === Math.round(clicks) &&
+  if (!e.ctrlKey && !wheelSmooth && e.deltaMode === 0 && clicks && clicks === Math.round(clicks) &&
       Math.abs(e.deltaY) === Math.abs(clicks) * 40) d = -clicks * 90;
-  if (e.timeStamp - wheelAt > 250 || d * wheelAcc < 0) wheelAcc = 0;      // new gesture or turned around
+  if (fresh || d * wheelAcc < 0) wheelAcc = 0;      // new gesture or turned around
   wheelAt = e.timeStamp;
   wheelAcc += d;
   var NOTCH = 90, nz = S.zoom;
@@ -5807,6 +5827,12 @@ $('pbPath').onclick = function () {
 $('bAdd').onclick = function (e) { e.stopPropagation(); $('addMenu').className = $('addMenu').className === 'show' ? '' : 'show'; };
 $('addMenu').onclick = function (e) { e.stopPropagation(); };
 function closeAddMenu() { $('addMenu').className = ''; }
+// WebKit opens the menu for a Control-click on the press and still sends a click on the
+// release, which shut the menu the moment it opened (and selected the row under it). On a
+// Mac that click is the secondary click's, so it goes no further
+window.addEventListener('click', function (e) {
+  if (MAC && e.ctrlKey && e.button === 0) { e.stopPropagation(); e.preventDefault(); }
+}, true);
 document.addEventListener('click', function () { closeCtx(); $('addMenu').className = ''; $('keptPop').className = 'panel'; $('speedPop').className = 'panel'; $('imgMenu').className = ''; });
 $('keptNote').onclick = function (e) { e.stopPropagation(); $('keptPop').className = $('keptPop').className === 'panel show' ? 'panel' : 'panel show'; };
 $('keptPop').onclick = function (e) { e.stopPropagation(); };
@@ -6367,8 +6393,7 @@ window.addEventListener('keydown', function (e) {
   // one, presses it, and the arrows walk a row of choices. Only for focus the keyboard put
   // there: a click leaves the focus on a button too, and after a click Space is still
   // Play and the arrows still nudge, as they always were
-  var kbFocus = false;
-  try { kbFocus = el !== document.body && el.matches(':focus-visible'); } catch (err) { /* an engine without it keeps the old keys */ }
+  var kbFocus = el !== document.body && byKeyboard(el);
   if (kbFocus && !meta && (t === 'BUTTON' || el.getAttribute('role') === 'button')) {
     if (e.key === 'Enter' || e.key === ' ') {
       if (t !== 'BUTTON') { e.preventDefault(); if (!e.repeat) el.click(); }
