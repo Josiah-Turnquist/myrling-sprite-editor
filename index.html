@@ -75,8 +75,10 @@ if (location.hash === '#forget') {
     position:absolute; inset:0; z-index:0; display:block;
     image-rendering:pixelated; touch-action:none;
   }
+  /* touch-action here, not only on #cv: the wrap is what the pen and the finger land on,
+     and without it the browser takes the stroke for a scroll and cancels it */
   #canvasWrap{
-    position:absolute; inset:0; z-index:1; overflow:auto; display:flex; cursor:crosshair;
+    position:absolute; inset:0; z-index:1; overflow:auto; display:flex; cursor:crosshair; touch-action:none;
     padding:70px calc(var(--sideW) + 30px) 88px calc(var(--leftW) + 28px);   /* the gap between the floating panels */
   }
   #canvasSizer{margin:auto; flex:0 0 auto; pointer-events:none; box-shadow:0 0 0 1px var(--line)}
@@ -691,7 +693,7 @@ if (location.hash === '#forget') {
       <div class="mono" style="margin-top:8px">
         Cmd or Ctrl + Z undo &nbsp; Shift + Z redo<br>
         Cmd+C copy &nbsp; Cmd+X cut &nbsp; Cmd+V paste &nbsp; Cmd+S save<br>
-        - and + zoom, or the wheel &nbsp; Space play<br>
+        - and + zoom, or the wheel &nbsp; Shift + wheel or middle drag moves about &nbsp; Space play<br>
         [ and ] step to the cell before or after, on a tilesheet &nbsp; Shift with either selects it
       </div>
       <div style="margin-top:8px">Square: Shift squares the box off, Alt flips outline and filled
@@ -4249,8 +4251,9 @@ function setTool(t) {
   buildTools();
   drawShapeRow();
   $('selHint').style.display = t === 'select' ? 'flex' : 'none';
-  $('canvasWrap').style.cursor = t === 'pick' ? 'copy' : (t === 'select' ? 'cell' : 'crosshair');
+  $('canvasWrap').style.cursor = toolCursor();
 }
+function toolCursor() { return S.tool === 'pick' ? 'copy' : (S.tool === 'select' ? 'cell' : 'crosshair'); }
 function setColor(c) {
   S.color = c.slice();
   var h = rgb2hex(c);
@@ -4270,8 +4273,15 @@ function pxAt(e) {
 var stage = $('canvasWrap');
 stage.addEventListener('pointerdown', function (e) {
   var s = spr(); if (!s) return;
-  // the left button draws and the right rubs out; the middle one and the side ones
-  // have no job here, and used to paint as if they were the left
+  if (e.button === 1) {
+    e.preventDefault();
+    pan = { x: e.clientX, y: e.clientY, sl: stage.scrollLeft, st: stage.scrollTop };
+    stage.style.cursor = 'grabbing';
+    try { stage.setPointerCapture(e.pointerId); } catch (err) { /* the moves still land while over the stage */ }
+    return;
+  }
+  // the left button draws and the right rubs out; the side buttons have no job here,
+  // and used to paint as if they were the left
   if (e.button !== 0 && e.button !== 2) return;
   // a second press while one is held (another finger, a pen beside the mouse) settles
   // the first stroke rather than orphaning it, and its spray timer with it
@@ -4359,6 +4369,11 @@ function snapEnd(x0, y0, x, y) {
 }
 stage.addEventListener('pointermove', function (e) {
   var s = spr(); if (!s) return;
+  if (pan) {
+    stage.scrollLeft = pan.sl - (e.clientX - pan.x);
+    stage.scrollTop = pan.st - (e.clientY - pan.y);
+    return;
+  }
   var p = pxAt(e);
   // the readout names the cell as well as the pixel, because on a sheet the cell is
   // what you are thinking in
@@ -4470,18 +4485,29 @@ function zoomAt(nz, cx, cy) {
   var r2 = sizer.getBoundingClientRect();
   wrap.scrollLeft += (r2.left + px * nz) - cx;
   wrap.scrollTop += (r2.top + py * nz) - cy;
-  redraw();
+  // only the canvas and its zoom label change with the zoom. A whole redraw ran the
+  // checks, the preview and every thumbnail on each notch of the wheel
+  if (canvasRaf) { cancelAnimationFrame(canvasRaf); canvasRaf = 0; }
+  paintCanvas();
 }
 
 // a mouse wheel sends one notch of about 100 per click, a trackpad sends a stream of
 // tiny ones. Stepping on every event made a light two-finger drag jump ten levels, so
 // gather the distance up and only step once a notch's worth has built.
+// Plain scroll zooms at the cursor, on purpose. Shift and scroll moves the picture
+// instead, both ways at once from a trackpad; a pinch arrives as a scroll with Ctrl held
+// and always zooms, Shift or not.
 var wheelAcc = 0, wheelAt = 0;
 stage.addEventListener('wheel', function (e) {
   if (!spr()) return;
   e.preventDefault();
-  var d = e.deltaY;
-  if (e.deltaMode === 1) d *= 33; else if (e.deltaMode === 2) d *= 100;   // lines and pages to pixels
+  var unit = e.deltaMode === 1 ? 33 : (e.deltaMode === 2 ? 100 : 1);   // lines and pages to pixels
+  if (e.shiftKey && !e.ctrlKey) {
+    stage.scrollLeft += e.deltaX * unit;
+    stage.scrollTop += e.deltaY * unit;
+    return;
+  }
+  var d = e.deltaY * unit;
   if (e.timeStamp - wheelAt > 250 || d * wheelAcc < 0) wheelAcc = 0;      // new gesture or turned around
   wheelAt = e.timeStamp;
   wheelAcc += d;
@@ -4491,6 +4517,18 @@ stage.addEventListener('wheel', function (e) {
   if (nz !== S.zoom) zoomAt(nz, e.clientX, e.clientY);
 }, { passive: false });
 stage.addEventListener('scroll', function () { if (spr()) requestCanvas(); }, { passive: true });
+// the middle button drags the picture about, the way it does in most drawing programs.
+// Its mousedown is refused too, or Windows and Linux start their own autoscroll
+var pan = null;
+function endPan() {
+  if (!pan) return;
+  pan = null;
+  stage.style.cursor = toolCursor();
+}
+stage.addEventListener('mousedown', function (e) { if (e.button === 1) e.preventDefault(); });
+stage.addEventListener('pointerup', endPan);
+stage.addEventListener('pointercancel', endPan);
+stage.addEventListener('lostpointercapture', endPan);
 
 // ---------- loading files ----------
 function baseName(n) { return n.replace(/\.[^.]+$/, ''); }

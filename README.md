@@ -348,7 +348,10 @@ see-through pixels. With the rules off it is true alpha blending, and the softne
 kept. Either way a stroke blends each pixel once, so a slow drag does not darken its
 own line.
 
-Zoom with the wheel over the canvas, with `-` and `+`, or with Fit.
+Zoom with the wheel over the canvas (a pinch on a trackpad does the same), with `-` and
+`+`, or with Fit. The zoom holds on the pixel under the pointer. To move about a picture
+bigger than the window, scroll with Shift held (a trackpad goes both ways at once), or
+drag with the middle mouse button.
 
 ## The whole picture
 
@@ -554,8 +557,8 @@ for pixel.
 ## Notes
 
 - Tested in Chrome. Any current browser should work.
-- Large images are fine. The canvas only ever spans the visible window — you scroll
-  the rest — so a 1000 by 2000 picture opens instantly and zooms 1x to 48x like any
+- Large images are fine. The canvas only ever spans the visible window — you move
+  about the rest with Shift and scroll, or a middle-button drag — so a 1000 by 2000 picture opens instantly and zooms 1x to 48x like any
   sprite. Pictures past 4096 a side are refused on open, in plain words. A sprite past
   about a million pixels is too big for the browser's own storage, so it is not kept
   between visits — the corner says so, and saving it to files works as ever. If a bad
