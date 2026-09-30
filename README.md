@@ -354,7 +354,11 @@ the Image menu — works on every frame at once, as one undo step:
   before you press Apply.
 - **Crop to selection** cuts the canvas down to the box you dragged with the Select tool.
 - **Trim to the pixels** cuts it down to what is painted, so the bottom row is the feet.
+  A tilesheet trims to the painted cells instead, so no tile is cut in half.
 - **Flip** left–right or top–bottom, and **rotate** a quarter turn clockwise.
+
+On a tilesheet the grid goes with the picture through all of these: the cells, the cell
+you were on and the board stay on the same tiles after a crop, a turn or a resize.
 
 ## Frames and the walk cycle
 
@@ -474,9 +478,12 @@ fit** takes a number of columns and rows and resizes the canvas to hold exactly 
 adding clear pixels at the right and the bottom so nothing already drawn moves out from
 under its cell. **Clear grid** takes the rule off again and leaves one plain picture.
 
-A PNG opened into the `terrain` folder is ruled on the way in, as is any picture whose
-size reads as a grid of 16s with at least two cells each way. Small pictures are left
-alone unless they are terrain, because a 32 pixel sprite with four frames is not a sheet.
+A PNG opened into the `terrain` folder is ruled on the way in when it holds at least two
+cells of 16 px or more — a 64 by 16 strip is four cells, a single 16 by 16 tile is just a
+tile — as is any picture whose size reads as a grid of 16s with at least two cells each
+way. Small pictures are left alone unless they are terrain, and a file that arrives as
+several frames is never ruled, because a 32 pixel sprite with four frames is one tile and
+its variants, not a sheet.
 The status line says what it decided, and the dialog undoes it in one click.
 
 ### Working a cell at a time
@@ -514,7 +521,8 @@ ways:
   For a sheet of unrelated tiles.
 
 Empty cells are skipped, the sheet itself stays open, and the new sprites land in the list
-right after it, in the `terrain` folder and saving where the sheet saves. They are named
+right after it, in the sheet's folder (`terrain` for a sheet started here) and saving
+where the sheet saves. They are named
 `<sheet>-r<row>` or `<sheet>-c<n>` — rename them before you save, because the game reads
 the name.
 

@@ -1875,6 +1875,9 @@ function growSheet() {
 // a reading of the file, not a change to it, and the dialog undoes it in one click.
 function autoRule(s) {
   if (!s || sheetOf(s)) return null;
+  // frames are a tile's variants, so a file that arrives as several frames (the game's own
+  // four 32 px mountains) is one tile, and a split would only ever cut up the first
+  if (s.frames.length > 1) return null;
   var terrain = s.family === 'terrain';
   if (!terrain && (s.w <= 64 || s.h <= 64)) return null;   // a small PNG is one sprite, not a sheet
   var n = guessCell(s.w, s.h);
@@ -2087,8 +2090,9 @@ function addToSheet(sprites, target) {
     if (grew) fitZoom();
   }
   checkAlpha(); redraw();
-  var rowTxt = sprites.length === 1 ? 'row ' + (row0 + 1)
-    : 'rows ' + (row0 + 1) + '\u2013' + (row0 + sprites.length);
+  // counted from 0, the way the cells, the preview and the split names count them
+  var rowTxt = sprites.length === 1 ? 'row ' + row0
+    : 'rows ' + row0 + '\u2013' + (row0 + sprites.length - 1);
   say('Added ' + sprites.length + (sprites.length === 1 ? ' sprite' : ' sprites') + ' to ' + t.key +
     ' as ' + rowTxt + ', ' + w + ' by ' + h + ' a cell' +
     (target ? '' : '. Split it again when you are done') + '.', 'good');
@@ -2196,7 +2200,7 @@ function drawAddSheetNote() {
     var nw = Math.max(t.w, g.ox + wantC * (g.cw + g.gap) - g.gap);
     var nh = Math.max(t.h, g.oy + (row0 + picked.length) * (g.ch + g.gap) - g.gap);
     txt += ' They go into ' + t.key + ' as ' +
-      (picked.length === 1 ? 'row ' + (row0 + 1) : 'rows ' + (row0 + 1) + '\u2013' + (row0 + picked.length)) +
+      (picked.length === 1 ? 'row ' + row0 : 'rows ' + row0 + '\u2013' + (row0 + picked.length - 1)) +
       (nw !== t.w || nh !== t.h ? ', growing it to ' + nw + ' by ' + nh + '.' : '.');
   }
   $('asNote').textContent = txt;
@@ -2881,7 +2885,7 @@ var RULE_DEFS = [
   { id: 'palette', name: 'Later frames stick to frame 0\u2019s colours' },
   { id: 'bytes', name: 'Opened files under 64 KB' },
   { id: 'tile', name: 'Tile edges meet where they lap', off: true },
-  { id: 'edges', label: 'Sheet edges', name: 'Sheet edges line up' }
+  { id: 'edges', name: 'Sheet edges line up' }
 ];
 // the packer's own family lists (FAMILY_VARIANT_FRAMES and FAMILY_TILE_ANCHORED in
 // pack-art.mjs). Where frames are variants it does not ask for two or hold later frames to
@@ -5166,9 +5170,12 @@ $('bAddRule').onclick = function () {
 };
 $('ruleDraft').onkeydown = function (e) { if (e.key === 'Enter') $('bAddRule').click(); };
 $('bRulesReset').onclick = function () {
-  delete UI.ruleOff; delete UI.ruleGone; delete UI.customRules;
+  delete UI.ruleGone; delete UI.customRules;
+  // as they came, which is not all of them on: a rule marked off starts off again
+  UI.ruleOff = {};
+  RULE_DEFS.forEach(function (r) { if (r.off) UI.ruleOff[r.id] = true; });
   rulesChanged();
-  say('Back to Eldermyr\u2019s rules, every one of them', 'good');
+  say('Back to Eldermyr\u2019s rules, as they came', 'good');
 };
 if (UI.tab === 'Colour' || UI.tab === 'Checks') showTab(UI.tab);
 $('bgCustom').oninput = function () { setBg(this.value); };
