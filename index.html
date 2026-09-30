@@ -2419,22 +2419,27 @@ function thumb(f, w, h, size) {
 }
 // The sprite list and the frames row redrew every thumbnail on every redraw, which on
 // big pictures was most of a redraw. A thumbnail is kept against the frame it was drawn
-// from, keyed on that frame object, the sprite's size, its _rev and anything else the
-// picture depends on. Why that cannot go stale: a frame's pixels change in place without
-// commit() (and so without touched() moving _rev) only while a stroke is held or pixels
+// from, keyed on that frame object, the sprite's size, the undo step's copy of that frame
+// (see snapshot) and anything else the picture depends on. Why that cannot go stale: a
+// frame's pixels change in place without commit() only while a stroke is held or pixels
 // float over it, and those belong to one sprite, drag.s or lift.s. While either is open
 // every thumbnail of that sprite is drawn fresh, and the frame on the canvas always is;
-// once they close, commit has moved _rev. Every other write either makes new frame
-// objects (undo, resize, flip, a nudge of the whole picture) or ends in commit.
+// once they close, commit has given every frame that changed a new copy in the new step,
+// and a frame whose copy is shared with the step before did not change. Every other
+// write either makes new frame objects (undo, resize, flip, a nudge of the whole picture)
+// or ends in commit. Keyed on _rev, as it was, a stroke on one of eight frames drew all
+// eight again: 14 ms of lifting the pen on a 1000 by 2000 picture.
 // The page gets a copy, since one canvas cannot sit in two rows.
 var THUMBS = new WeakMap();
 function keptThumb(kind, s, f, key, draw) {
   var live = (s === spr() && f === s.frames[s.cur]) || (drag && drag.s === s) || (lift && lift.s === s);
   var box = THUMBS.get(f);
   if (live) { if (box) delete box[kind]; return draw(); }
-  var k = key + '|' + s.w + 'x' + s.h + '|' + (s._rev || 0);
+  var step = s.hist && s.hist[s.hi], held = step ? step.frames[s.frames.indexOf(f)] : null;
+  var k = key + '|' + s.w + 'x' + s.h;
   if (!box) { box = {}; THUMBS.set(f, box); }
-  if (!box[kind] || box[kind].k !== k) box[kind] = { k: k, c: draw() };
+  // a frame the step does not hold (not committed yet) is never kept, only drawn
+  if (!held || !box[kind] || box[kind].k !== k || box[kind].held !== held) box[kind] = { k: k, held: held, c: draw() };
   var src = box[kind].c, c = document.createElement('canvas');
   c.width = src.width; c.height = src.height;
   c.getContext('2d').drawImage(src, 0, 0);
