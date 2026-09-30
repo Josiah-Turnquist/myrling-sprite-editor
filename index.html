@@ -4664,6 +4664,9 @@ function setColor(c) {
 }
 
 // ---------- pointer ----------
+// a Mac's secondary click is Control with the one button as often as it is a right button
+var MAC = /Mac/.test(navigator.platform || '') || /Macintosh/.test(navigator.userAgent || '');
+function secondary(e) { return e.button === 2 || (e.button === 0 && e.ctrlKey && MAC); }
 var drag = null;
 var dragPid = null;   // the pointer that started the stroke; another cannot steer or end it
 function pxAt(e) {
@@ -4701,12 +4704,12 @@ stage.addEventListener('pointerdown', function (e) {
     if (clipCellOn()) clipCell = cellRect(s, pc.cx, pc.cy);
   }
   // on a sheet the right button belongs to the cell menu, so it must not also rub out
-  if (e.button === 2 && sheetOf(s)) return;
+  if (secondary(e) && sheetOf(s)) return;
   // a pointer already gone by the time this runs cannot be captured, and throwing here
   // would leave the press drawing nothing at all
   try { stage.setPointerCapture(e.pointerId); } catch (err) { /* the moves still land while over the stage */ }
   if (S.tool === 'pick') { clipCell = null; eyedrop(p.x, p.y); return; }
-  if (S.tool === 'fill') { fill(p.x, p.y, e.button === 2); clipCell = null; commit(); redraw(); return; }
+  if (S.tool === 'fill') { fill(p.x, p.y, secondary(e)); clipCell = null; commit(); redraw(); return; }
   if (S.tool === 'select') {
     if (S.sel && ptInSel(p.x, p.y)) {
       if (!lift) beginLift();
@@ -4727,7 +4730,7 @@ stage.addEventListener('pointerdown', function (e) {
   if (S.tool === 'spray') {
     // no strokeSeen: a spray is meant to land on the same pixel twice and build up
     strokeSeen = null;
-    drag = { s: s, f: frm(), mode: 'spray', erase: e.button === 2, x: p.x, y: p.y };
+    drag = { s: s, f: frm(), mode: 'spray', erase: secondary(e), x: p.x, y: p.y };
     spray(p.x, p.y, drag.erase);
     requestCanvas();
     sprayTimer = setInterval(function () {
@@ -4740,7 +4743,7 @@ stage.addEventListener('pointerdown', function (e) {
   }
   if (S.tool === 'square') {
     drag = {
-      s: s, f: frm(), mode: 'square', erase: e.button === 2, base: frm().slice(),
+      s: s, f: frm(), mode: 'square', erase: secondary(e), base: frm().slice(),
       x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y))
     };
     strokeSeen = new Uint8Array(s.w * s.h);
@@ -4751,7 +4754,7 @@ stage.addEventListener('pointerdown', function (e) {
   if (S.tool === 'line') {
     // anchor the line and keep a clean copy of the frame to redraw it against
     drag = {
-      s: s, f: frm(), mode: 'line', erase: e.button === 2, base: frm().slice(),
+      s: s, f: frm(), mode: 'line', erase: secondary(e), base: frm().slice(),
       x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y))
     };
     strokeSeen = new Uint8Array(s.w * s.h);
@@ -4760,7 +4763,7 @@ stage.addEventListener('pointerdown', function (e) {
     return;
   }
   strokeSeen = new Uint8Array(s.w * s.h);
-  drag = { s: s, f: frm(), mode: 'draw', erase: S.tool === 'eraser' || e.button === 2, lx: p.x, ly: p.y };
+  drag = { s: s, f: frm(), mode: 'draw', erase: S.tool === 'eraser' || secondary(e), lx: p.x, ly: p.y };
   paint(p.x, p.y, drag.erase);
   requestCanvas();
 });
@@ -4910,9 +4913,35 @@ function zoomAt(nz, cx, cy) {
 // instead, both ways at once from a trackpad; a pinch arrives as a scroll with Ctrl held
 // and always zooms, Shift or not.
 var wheelAcc = 0, wheelAt = 0;
+// Safari and the Mac app hand a trackpad pinch over as gesture events rather than the
+// Control-wheel Chrome sends, so without these a pinch did nothing there. The zoom follows
+// the fingers from where the pinch began, on the same steps the wheel takes, about the
+// point between them
+var pinchFrom = 0;
+function zoomStep(z) {
+  z = Math.max(1, Math.min(MAX_ZOOM, z));
+  return z <= 8 ? Math.round(z) : Math.min(MAX_ZOOM, Math.round(z / 4) * 4);
+}
+stage.addEventListener('gesturestart', function (e) {
+  if (!spr()) return;
+  e.preventDefault();
+  pinchFrom = S.zoom;
+});
+stage.addEventListener('gesturechange', function (e) {
+  if (!spr() || !pinchFrom) return;
+  e.preventDefault();
+  var nz = zoomStep(pinchFrom * (e.scale || 1));
+  if (nz !== S.zoom) zoomAt(nz, e.clientX, e.clientY);
+});
+stage.addEventListener('gestureend', function (e) {
+  if (pinchFrom) e.preventDefault();
+  pinchFrom = 0;
+});
 stage.addEventListener('wheel', function (e) {
   if (!spr()) return;
   e.preventDefault();
+  // a browser that sends a pinch both ways must not zoom it twice
+  if (pinchFrom && e.ctrlKey) return;
   var unit = e.deltaMode === 1 ? 33 : (e.deltaMode === 2 ? 100 : 1);   // lines and pages to pixels
   if (e.shiftKey && !e.ctrlKey) {
     stage.scrollLeft += e.deltaX * unit;
@@ -5813,7 +5842,7 @@ function boardPointer(e, down) {
     if (had) setSheetCell(had.cx, had.cy);
     return;
   }
-  var lift = e.button === 2 || (e.buttons & 2) || e.altKey;
+  var lift = secondary(e) || (e.buttons & 2) || e.altKey;
   if (down) { boardDrag = lift ? 2 : 1; boardLast = -1; try { pv.setPointerCapture(e.pointerId); } catch (err) { /* no capture, the move still lands */ } }
   var what = boardDrag === 2 || lift ? null : curCell(s), cols = BOARD_GEO.cols;
   // a quick drag skips squares between one move and the next, so walk the squares between
