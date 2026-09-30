@@ -1078,8 +1078,9 @@ function sameAsHead(s) {
 // frames would otherwise hold half a gigabyte of undo. Two copies is the floor so the
 // last stroke can still be undone; forcing eight would keep 512 MB for a 4k frame.
 var HIST_STEPS = 200, HIST_BYTES = 40 * 1024 * 1024;
-function commit() {
-  var s = spr(); if (!s) return;
+// the sprite can be named, for a stroke that has to land on the sprite it began on
+function commit(s) {
+  s = s || spr(); if (!s) return;
   if (sameAsHead(s)) return;
   s.hist.length = s.hi + 1;
   s.hist.push(snapshot(s));
@@ -1100,9 +1101,14 @@ function restore(snap) {
   touched(s);
 }
 function undo() {
-  var s = spr(); if (!s || s.hi <= 0) return;
+  var s = spr(); if (!s || !s.hist[s.hi]) return;
+  // a change not in the history yet (a paste still floating, pixels nudged before the
+  // key came up) is the step to take back; stepping past it lost two steps at once
+  var loose = !sameAsHead(s);
+  if (!loose && s.hi <= 0) return;
   dropSelection(true);
-  s.hi--; restore(s.hist[s.hi]); scheduleSave(); redraw(); say('Undone');
+  if (!loose) s.hi--;
+  restore(s.hist[s.hi]); scheduleSave(); redraw(); say('Undone');
 }
 function redo() {
   var s = spr(); if (!s || s.hi >= s.hist.length - 1) return;
@@ -1199,12 +1205,13 @@ function squareEnd(x0, y0, x, y, even) {
   var n = Math.max(Math.abs(x - x0), Math.abs(y - y0));
   return { x: x0 + (x < x0 ? -n : n), y: y0 + (y < y0 ? -n : n) };
 }
-function fill(x, y) {
+// erase floods the patch back to clear, for the right button
+function fill(x, y, erase) {
   var s = spr(), f = frm();
   if (!inside(s, x, y)) return;
   var t = get(f, s.w, x, y);
   var want = [S.color[0], S.color[1], S.color[2], 255];
-  if (S.alpha >= 100 && t[3] === want[3] && t[0] === want[0] && t[1] === want[1] && t[2] === want[2]) return;
+  if (erase ? t[3] === 0 : (S.alpha >= 100 && t[3] === want[3] && t[0] === want[0] && t[1] === want[1] && t[2] === want[2])) return;
   var lo = S.sel ? S.sel : { x: 0, y: 0, w: s.w, h: s.h };
   // the flood writes its own pixels rather than going through paint, so the cell has to
   // bound it here as well, or one bucket would run the colour across the whole sheet
@@ -1224,7 +1231,8 @@ function fill(x, y) {
     var i4 = idx * 4;
     if (f[i4 + 3] !== t3) continue;
     if (t3 !== 0 && (f[i4] !== t0 || f[i4 + 1] !== t1 || f[i4 + 2] !== t2)) continue;
-    if (S.alpha >= 100) set(f, w, px, py, want[0], want[1], want[2], 255);
+    if (erase) set(f, w, px, py, 0, 0, 0, 0);
+    else if (S.alpha >= 100) set(f, w, px, py, want[0], want[1], want[2], 255);
     else blendPx(f, w, px, py, S.color, S.alpha / 100);
     if (px + 1 < w && !seen[idx + 1]) { seen[idx + 1] = 1; st[sp++] = idx + 1; }
     if (px > 0 && !seen[idx - 1]) { seen[idx - 1] = 1; st[sp++] = idx - 1; }
@@ -1264,14 +1272,14 @@ function ptInSel(x, y) {
 function beginLift() {
   var s = spr(), f = frm(), b = S.sel;
   var buf = new Uint8ClampedArray(b.w * b.h * 4);
+  var base = f.slice();
+  // a box nudged part way off the edge only holds the pixels still on the picture;
+  // reading past the edge would pick up the far end of the row above
   for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
+    if (!inside(s, b.x + x, b.y + y)) continue;
     var si = ((b.y + y) * s.w + (b.x + x)) * 4, di = (y * b.w + x) * 4;
     buf[di] = f[si]; buf[di + 1] = f[si + 1]; buf[di + 2] = f[si + 2]; buf[di + 3] = f[si + 3];
-  }
-  var base = f.slice();
-  for (var y2 = 0; y2 < b.h; y2++) for (var x2 = 0; x2 < b.w; x2++) {
-    var i = ((b.y + y2) * s.w + (b.x + x2)) * 4;
-    base[i] = 0; base[i + 1] = 0; base[i + 2] = 0; base[i + 3] = 0;
+    base[si] = 0; base[si + 1] = 0; base[si + 2] = 0; base[si + 3] = 0;
   }
   lift = { buf: buf, w: b.w, h: b.h, base: base };
 }
@@ -1295,12 +1303,21 @@ function dropSelection(quiet) {
   $('selHint').style.display = 'none';
 }
 function clearSelection() {
-  var s = spr(), f = frm(), b = S.sel; if (!b) return;
-  for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
-    var i = ((b.y + y) * s.w + (b.x + x)) * 4;
-    f[i] = 0; f[i + 1] = 0; f[i + 2] = 0; f[i + 3] = 0;
+  var s = spr(), f = frm(), b = S.sel; if (!s || !b) return;
+  if (lift) {
+    // pixels on the move are what the box holds: putting back what lay under them takes
+    // them away, and leaves the picture they were floating over alone. Clearing the box
+    // and keeping the lift brought them back on the next nudge.
+    f.set(lift.base);
+    lift = null;
+  } else {
+    for (var y = Math.max(0, b.y); y < Math.min(s.h, b.y + b.h); y++) {
+      for (var x = Math.max(0, b.x); x < Math.min(s.w, b.x + b.w); x++) {
+        var i = (y * s.w + x) * 4;
+        f[i] = 0; f[i + 1] = 0; f[i + 2] = 0; f[i + 3] = 0;
+      }
+    }
   }
-  if (lift) lift.base = f.slice();
   commit(); redraw();
 }
 // Arrows move the pixels inside the box, or the whole picture when there is no box.
@@ -1530,7 +1547,11 @@ function copySel(cut) {
   var s = spr(), f = frm(), b = S.sel;
   if (!s || !b) { say('Nothing selected. Drag a box with the Select tool first.', 'bad'); return; }
   var buf = new Uint8ClampedArray(b.w * b.h * 4);
-  for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
+  // pixels on the move are copied as they float, whole even where the box hangs off the
+  // edge; a box at rest is read from the picture, and never past its edge
+  if (lift && lift.w === b.w && lift.h === b.h) buf.set(lift.buf);
+  else for (var y = 0; y < b.h; y++) for (var x = 0; x < b.w; x++) {
+    if (!inside(s, b.x + x, b.y + y)) continue;
     var si = ((b.y + y) * s.w + (b.x + x)) * 4, di = (y * b.w + x) * 4;
     buf[di] = f[si]; buf[di + 1] = f[si + 1]; buf[di + 2] = f[si + 2]; buf[di + 3] = f[si + 3];
   }
@@ -2157,8 +2178,10 @@ function blit(f, w, h) {
   blitF = f;
   if (off.width !== w) off.width = w;
   if (off.height !== h) off.height = h;
-  var id = octx.createImageData(w, h);
-  id.data.set(f);
+  // wrap the frame's own bytes rather than copying them into a fresh ImageData: on a
+  // 1000 by 2000 picture that was 8 MB of garbage a repaint, twice with onion on
+  var id;
+  try { id = new ImageData(f, w, h); } catch (e) { id = octx.createImageData(w, h); id.data.set(f); }
   octx.putImageData(id, 0, 0);
   return off;
 }
@@ -2685,11 +2708,12 @@ function duplicateSprite(i) {
   say('Duplicated ' + src.key + ' as ' + key + '. Rename it before saving.', 'good');
 }
 var frameDrag = null;   // the frame being dragged along the row, by index
-var FRAME_CLIP = null;  // one copied frame, for pasting here or into another sprite
+var FRAME_CLIP = null;  // one copied frame, for pasting here or into another sprite; `after`
+                        // is the box CLIP of the moment, so Cmd+V can tell which came last
 var frameFocus = false; // a frame tile was clicked last, so copy and paste keys mean frames
 function copyFrame() {
   var s = spr(); if (!s) return;
-  FRAME_CLIP = { w: s.w, h: s.h, px: s.frames[s.cur].slice(), from: s.key, n: s.cur };
+  FRAME_CLIP = { w: s.w, h: s.h, px: s.frames[s.cur].slice(), from: s.key, n: s.cur, after: CLIP };
   drawFrames();
   say('Copied frame ' + s.cur + '. Paste puts it after the current frame, here or in another sprite of the same size.', 'good');
 }
@@ -2713,7 +2737,7 @@ function deleteFrame() {
 function cutFrame() {
   var s = spr(); if (!s) return;
   if (s.frames.length < 2) { say('A sprite needs at least one frame. Copied it instead.', 'bad'); copyFrame(); return; }
-  FRAME_CLIP = { w: s.w, h: s.h, px: s.frames[s.cur].slice(), from: s.key, n: s.cur };
+  FRAME_CLIP = { w: s.w, h: s.h, px: s.frames[s.cur].slice(), from: s.key, n: s.cur, after: CLIP };
   var was = s.cur;
   dropSelection(); s.frames.splice(s.cur, 1); s.cur = Math.min(s.cur, s.frames.length - 1); commit(); checkAlpha(); redraw();
   say('Cut frame ' + was + '. Paste puts it back after the current frame, here or in another sprite.', 'good');
@@ -3671,7 +3695,13 @@ function setPlaying(on) {
   if (playTimer) { clearInterval(playTimer); playTimer = null; }
   if (S.playing) {
     S.playFrame = 0;
-    playTimer = setInterval(function () { S.playFrame++; drawPreview(); }, 1000 / S.fps);
+    playTimer = setInterval(function () {
+      // deleting or undoing down to one frame leaves nothing to run; stop rather than
+      // redraw the same frame at speed behind a button that still says Stop
+      var cur = spr();
+      if (!cur || cur.frames.length < 2) { setPlaying(false); return; }
+      S.playFrame++; drawPreview();
+    }, 1000 / S.fps);
   }
   drawPreview();
 }
@@ -3953,6 +3983,8 @@ function assignKey(raw) {
     else say('Kept as it was');
     return;
   }
+  // 0 is Fit, a key of its own that is not in this list: taking it would bury Fit
+  if (k === '0') { drawKeys(); say('0 fits the picture to the window. Pick another key.', 'bad'); return; }
   var label = '', swapped = null;
   KEY_ACTIONS.forEach(function (a) { if (a[0] === act) label = a[1]; });
   // a key already doing another job swaps, so no two things ever answer to one key
@@ -4010,6 +4042,12 @@ function pxAt(e) {
 var stage = $('canvasWrap');
 stage.addEventListener('pointerdown', function (e) {
   var s = spr(); if (!s) return;
+  // the left button draws and the right rubs out; the middle one and the side ones
+  // have no job here, and used to paint as if they were the left
+  if (e.button !== 0 && e.button !== 2) return;
+  // a second press while one is held (another finger, a pen beside the mouse) settles
+  // the first stroke rather than orphaning it, and its spray timer with it
+  if (drag) endDrag();
   if (frameFocus) { frameFocus = false; $('frames').className = ''; }
   var p = pxAt(e);
   // the press marks the cell it lands in, whatever the tool, and with In cell on it
@@ -4024,14 +4062,14 @@ stage.addEventListener('pointerdown', function (e) {
   if (e.button === 2 && sheetOf(s)) return;
   stage.setPointerCapture(e.pointerId);
   if (S.tool === 'pick') { clipCell = null; eyedrop(p.x, p.y); return; }
-  if (S.tool === 'fill') { fill(p.x, p.y); clipCell = null; commit(); redraw(); return; }
+  if (S.tool === 'fill') { fill(p.x, p.y, e.button === 2); clipCell = null; commit(); redraw(); return; }
   if (S.tool === 'select') {
     if (S.sel && ptInSel(p.x, p.y)) {
       if (!lift) beginLift();
-      drag = { mode: 'move', gx: p.x - S.sel.x, gy: p.y - S.sel.y };
+      drag = { s: s, f: frm(), mode: 'move', gx: p.x - S.sel.x, gy: p.y - S.sel.y };
     } else {
       dropSelection();
-      drag = { mode: 'box', x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y)) };
+      drag = { s: s, f: frm(), mode: 'box', x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y)) };
       S.sel = { x: drag.x0, y: drag.y0, w: 1, h: 1 };
       if (e.altKey && sheetOf(s)) {   // Alt from the first pixel: whole cells at once
         var g0 = cellSpan(s, drag.x0, drag.y0, drag.x0, drag.y0);
@@ -4045,11 +4083,12 @@ stage.addEventListener('pointerdown', function (e) {
   if (S.tool === 'spray') {
     // no strokeSeen: a spray is meant to land on the same pixel twice and build up
     strokeSeen = null;
-    drag = { mode: 'spray', erase: e.button === 2, x: p.x, y: p.y };
+    drag = { s: s, f: frm(), mode: 'spray', erase: e.button === 2, x: p.x, y: p.y };
     spray(p.x, p.y, drag.erase);
     requestCanvas();
     sprayTimer = setInterval(function () {
       if (!drag || drag.mode !== 'spray') return;
+      if (strayDrag()) { endDrag(); return; }
       spray(drag.x, drag.y, drag.erase);
       requestCanvas();
     }, 70);
@@ -4057,7 +4096,7 @@ stage.addEventListener('pointerdown', function (e) {
   }
   if (S.tool === 'square') {
     drag = {
-      mode: 'square', erase: e.button === 2, base: frm().slice(),
+      s: s, f: frm(), mode: 'square', erase: e.button === 2, base: frm().slice(),
       x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y))
     };
     strokeSeen = new Uint8Array(s.w * s.h);
@@ -4068,7 +4107,7 @@ stage.addEventListener('pointerdown', function (e) {
   if (S.tool === 'line') {
     // anchor the line and keep a clean copy of the frame to redraw it against
     drag = {
-      mode: 'line', erase: e.button === 2, base: frm().slice(),
+      s: s, f: frm(), mode: 'line', erase: e.button === 2, base: frm().slice(),
       x0: Math.max(0, Math.min(s.w - 1, p.x)), y0: Math.max(0, Math.min(s.h - 1, p.y))
     };
     strokeSeen = new Uint8Array(s.w * s.h);
@@ -4077,7 +4116,7 @@ stage.addEventListener('pointerdown', function (e) {
     return;
   }
   strokeSeen = new Uint8Array(s.w * s.h);
-  drag = { mode: 'draw', erase: S.tool === 'eraser' || e.button === 2, lx: p.x, ly: p.y };
+  drag = { s: s, f: frm(), mode: 'draw', erase: S.tool === 'eraser' || e.button === 2, lx: p.x, ly: p.y };
   paint(p.x, p.y, drag.erase);
   requestCanvas();
 });
@@ -4099,6 +4138,7 @@ stage.addEventListener('pointermove', function (e) {
   var hc = onIt && sheetOf(s) ? cellAt(s, p.x, p.y) : null;
   $('posLabel').textContent = onIt ? (p.x + ', ' + p.y + (hc ? '  cell ' + hc.cx + ',' + hc.cy : '')) : '\u2014';
   if (!drag) return;
+  if (strayDrag()) { endDrag(); return; }
   if (drag.mode === 'draw') {
     line(drag.lx, drag.ly, p.x, p.y, drag.erase);
     drag.lx = p.x; drag.ly = p.y;
@@ -4130,21 +4170,31 @@ stage.addEventListener('pointermove', function (e) {
       if (gs) { S.sel = gs; setCur(s, nearCell(s, x1, y1).cx, nearCell(s, x1, y1).cy); }
     }
   } else if (drag.mode === 'move') {
-    stampLift(p.x - drag.gx, p.y - drag.gy);
+    if (lift && S.sel) stampLift(p.x - drag.gx, p.y - drag.gy);
   }
   requestCanvas();
 });
+// a stroke belongs to the sprite and the frame it began on. When either is swapped out
+// under a held button (a file landing, a generation arriving), the stroke ends there
+// rather than laying its saved frame over some other picture.
+function strayDrag() {
+  var s = spr();
+  return !!drag && (drag.s !== s || !s || drag.f !== s.frames[s.cur]);
+}
 function endDrag() {
   if (!drag) { clipCell = null; return; }
   if (sprayTimer) { clearInterval(sprayTimer); sprayTimer = null; }
   strokeSeen = null;
   clipCell = null;
-  var was = drag.mode; drag = null;
-  if (was === 'draw' || was === 'move' || was === 'line' || was === 'square' || was === 'spray') commit();
+  var was = drag.mode, on = drag.s; drag = null;
+  if (was === 'draw' || was === 'move' || was === 'line' || was === 'square' || was === 'spray') commit(on);
   redraw();
 }
 stage.addEventListener('pointerup', endDrag);
 stage.addEventListener('pointercancel', endDrag);
+// capture can go without a pointerup (the stage hidden under the press, the window
+// losing the pointer); a stroke left open there kept its spray timer puffing
+stage.addEventListener('lostpointercapture', endDrag);
 // a double click with the Select tool takes exactly the cell under it, which is the
 // move you want a hundred times a sheet
 stage.addEventListener('dblclick', function (e) {
@@ -5369,11 +5419,28 @@ window.addEventListener('drop', function (e) {
 
 // keys
 window.addEventListener('keydown', function (e) {
-  var t = e.target.tagName;
-  if (t === 'INPUT' || t === 'TEXTAREA') return;
+  var el = e.target, t = el.tagName;
+  if (t === 'TEXTAREA' || t === 'SELECT' || el.isContentEditable) return;
+  // a text box keeps every key. A slider, a tick box or a colour well only wants its
+  // own arrows, space and Enter: blocking everything there left Cmd+Z and the tool keys
+  // dead until the canvas was clicked
+  if (t === 'INPUT') {
+    if (!/^(range|checkbox|radio|color|button)$/.test(el.type)) return;
+    if (/^(Arrow|Page|Home$|End$|Enter$| $)/.test(e.key)) return;
+  }
   var meta = e.metaKey || e.ctrlKey;
-  // a keycap in Settings is waiting: this press is the new binding, nothing else
-  if (keyWait) { if (!meta) { e.preventDefault(); assignKey(e.key); return; } keyWait = null; drawKeys(); }
+  var bare = /^(Shift|Alt|Meta|Control|CapsLock|Fn|OS|Dead|Process|Unidentified)$/.test(e.key);
+  // a keycap in Settings is waiting: this press is the new binding, nothing else. Shift
+  // or Alt on their own are a hand on its way to a key, not the key
+  if (keyWait) {
+    if (bare) return;
+    if (!meta) { e.preventDefault(); assignKey(e.key); return; }
+    keyWait = null; drawKeys();
+  }
+  // a key that does something mid-stroke (undo, Esc, a tool, an arrow) lands after the
+  // stroke is set down. Acting under it restored the stroke's saved frame over an undo,
+  // and Esc or a tool key in the middle of moving a box threw on the next move
+  if (drag && !bare) endDrag();
   if (settingsOpen()) {
     if (e.key === 'Escape' || (meta && e.key === ',')) { e.preventDefault(); closeSettings(); }
     return;
@@ -5420,7 +5487,9 @@ window.addEventListener('keydown', function (e) {
   if (meta && e.key.toLowerCase() === 'x') { e.preventDefault(); if (frameFocus || !S.sel) cutFrame(); else copySel(true); return; }
   if (meta && e.key.toLowerCase() === 'v') {
     e.preventDefault();
-    if (frameFocus || (!S.sel && !CLIP && FRAME_CLIP)) pasteFrame(); else pasteClip();
+    // with no box and no frame clicked, whichever was copied last is what comes back:
+    // a frame copied after a box used to lose to the older box
+    if (frameFocus || (!S.sel && FRAME_CLIP && (!CLIP || FRAME_CLIP.after === CLIP))) pasteFrame(); else pasteClip();
     return;
   }
   if (meta && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
@@ -5432,7 +5501,8 @@ window.addEventListener('keydown', function (e) {
   if (!meta && !e.altKey && !e.shiftKey) {
     var k = e.key.toLowerCase();
     for (var i = 0; i < KEY_ACTIONS.length; i++) {
-      if (KEYS[KEY_ACTIONS[i][0]] === k) { e.preventDefault(); KEY_ACTIONS[i][2](); return; }
+      // a held key repeats; for onion and grid that flickered them on and off
+      if (KEYS[KEY_ACTIONS[i][0]] === k) { e.preventDefault(); if (!e.repeat) KEY_ACTIONS[i][2](); return; }
     }
   }
   switch (e.key) {
@@ -5450,7 +5520,7 @@ window.addEventListener('keydown', function (e) {
     case 'ArrowRight': e.preventDefault(); nudge(1, 0); break;
     case 'ArrowUp': e.preventDefault(); nudge(0, -1); break;
     case 'ArrowDown': e.preventDefault(); nudge(0, 1); break;
-    case ' ': e.preventDefault(); setPlaying(!S.playing); break;
+    case ' ': e.preventDefault(); if (!e.repeat) setPlaying(!S.playing); break;
   }
 });
 window.addEventListener('keyup', function (e) {
