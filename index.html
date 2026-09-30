@@ -2445,7 +2445,7 @@ function redraw() {
   if (!s) { drawStrip(); drawPreview(); drawChecks(); drawPalette(); drawPathBar(); drawKept(); return; }
 
   paintCanvas();
-  $('bUndo').disabled = s.hi <= 0;
+  $('bUndo').disabled = s.hi <= 0 && !lift;   // a floating paste can be taken back too
   $('bRedo').disabled = s.hi >= s.hist.length - 1;
   drawStrip(); drawFrames(); drawPathBar(); drawKept();
   if (heavy && !deepCheck) {
@@ -5439,8 +5439,9 @@ window.addEventListener('keydown', function (e) {
   }
   // a key that does something mid-stroke (undo, Esc, a tool, an arrow) lands after the
   // stroke is set down. Acting under it restored the stroke's saved frame over an undo,
-  // and Esc or a tool key in the middle of moving a box threw on the next move
-  if (drag && !bare) endDrag();
+  // and Esc or a tool key in the middle of moving a box threw on the next move. Zoom and
+  // play only change the view, so a stroke carries on through them
+  if (drag && !bare && (meta || !/^[-+=_0 ]$/.test(e.key))) endDrag();
   if (settingsOpen()) {
     if (e.key === 'Escape' || (meta && e.key === ',')) { e.preventDefault(); closeSettings(); }
     return;
