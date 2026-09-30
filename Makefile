@@ -7,19 +7,25 @@
 #   make release VERSION=…  stamps a version, tags it, ready to push
 #   make clean              removes dist
 #
-# The app is built for this machine's architecture and macOS version. There is no
-# Apple Developer account involved: the app is ad-hoc signed, which runs fine on the
-# machine that built it. index.html itself needs no build at all; open it in a browser.
+# The app is built for both Apple silicon and Intel, and for the oldest macOS that
+# mac/Info.plist admits to (LSMinimumSystemVersion) rather than whatever this machine
+# runs: swiftc on its own targets the macOS it is running on, which would quietly
+# raise the bar for everyone who downloads a release. There is no Apple Developer
+# account involved: the app is ad-hoc signed, which runs fine on the machine that
+# built it. index.html itself needs no build at all; open it in a browser.
 #
 # The download other people get is built the same way, by .github/workflows/release.yml
 # on a Mac runner, when a tag is pushed. That is the only place an Apple Developer ID
 # comes into it, and only if the certificate secrets are set; see the workflow.
 
 APP := dist/Myrling.app
+MIN := $(shell /usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' mac/Info.plist)
 
 app:
-	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources"
-	swiftc -O -o "$(APP)/Contents/MacOS/Myrling" mac/main.swift
+	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources" dist/build
+	swiftc -O -target arm64-apple-macos$(MIN) -o dist/build/Myrling-arm64 mac/main.swift
+	swiftc -O -target x86_64-apple-macos$(MIN) -o dist/build/Myrling-x86_64 mac/main.swift
+	lipo -create -output "$(APP)/Contents/MacOS/Myrling" dist/build/Myrling-arm64 dist/build/Myrling-x86_64
 	cp mac/Info.plist "$(APP)/Contents/Info.plist"
 	cp index.html mac/bridge.js mac/AppIcon.icns "$(APP)/Contents/Resources/"
 	codesign --force --sign - "$(APP)"
@@ -35,12 +41,16 @@ icon:
 # docs/ is the GitHub Pages site: the landing page, the editor itself as
 # editor.html, and update.json — the manifest the Mac app reads to find out a
 # newer editor page exists. Run this after editing index.html so the hosted copy
-# keeps up: it gives the page today's version number, copies it across, and
-# writes update.json with the page's sha256 and an Ed25519 signature over both.
+# keeps up: when the page changed, it gives it today's version number, copies it
+# across, and writes update.json with the page's sha256 and an Ed25519 signature
+# over both. When it did not, the published page and its signature stay as they
+# are and only the app half of update.json is refreshed; `python3 tools/publish.py
+# --force` publishes a new version anyway.
 #
 # Signing needs the private key at ~/.myrling/update-key.b64. It lives outside
-# the repository and is never committed or copied into CI. Without it this fails
-# and writes nothing at all: the app refuses an update whose signature does not
+# the repository and is never committed or copied into CI. When a signature is
+# needed and the key is not there, this fails and writes nothing at all: the app
+# refuses an update whose signature does not
 # check out, so an unsigned or stale manifest would quietly stop everybody's
 # updates. Losing the key means no one can be updated again — keep a backup.
 site:

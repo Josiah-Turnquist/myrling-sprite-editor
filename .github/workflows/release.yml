@@ -10,7 +10,8 @@
 # ---------------------------------------------------------------------------
 # Without the secrets below the app is ad-hoc signed, exactly as a local `make
 # app` builds it. It runs fine, but macOS has no way to tell who made it, so the
-# first launch needs right-click -> Open. The release notes say so.
+# first launch has to be allowed by hand (System Settings -> Privacy & Security
+# -> Open Anyway). The release notes say so.
 #
 # With an Apple Developer Program membership ($99/year), add these five
 # repository secrets (Settings -> Secrets and variables -> Actions -> New
@@ -45,8 +46,10 @@
 #   APPLE_API_ISSUER
 #     The Issuer ID shown above the key table on the same page. A UUID.
 #
-# All five have to be present for the signed path to run; if any is missing the
-# workflow falls back to ad-hoc and still publishes a release.
+# All five have to be present for the signed path to run. With none of them the
+# workflow falls back to ad-hoc and still publishes a release; with only some of
+# them it stops, because that is a secret gone missing, and quietly shipping an
+# unsigned build in place of a notarised one would be worse than shipping nothing.
 
 name: Release
 
@@ -72,9 +75,19 @@ jobs:
       - name: Work out the version
         id: version
         run: |
+          set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
+          NUMBER="${TAG#v}"
+          # the app says its own version from mac/Info.plist, so a tag that disagrees
+          # would publish a download under one number that calls itself another
+          PLIST="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' mac/Info.plist)"
+          if [ "$NUMBER" != "$PLIST" ]; then
+            echo "The tag $TAG does not match mac/Info.plist, which says $PLIST." >&2
+            echo 'Cut releases with make release VERSION=..., which keeps the two together.' >&2
+            exit 1
+          fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "number=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
 
       # The secrets context cannot be used in an `if:`, so the later steps test
       # this step's output instead.
@@ -87,13 +100,20 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: |
-          if [ -n "$MACOS_CERT_P12" ] && [ -n "$MACOS_CERT_PASSWORD" ] \
-             && [ -n "$APPLE_API_KEY" ] && [ -n "$APPLE_API_KEY_ID" ] && [ -n "$APPLE_API_ISSUER" ]; then
+          SET=0
+          for v in "$MACOS_CERT_P12" "$MACOS_CERT_PASSWORD" "$APPLE_API_KEY" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER"; do
+            if [ -n "$v" ]; then SET=$((SET + 1)); fi
+          done
+          if [ "$SET" -eq 5 ]; then
             echo 'available=true' >> "$GITHUB_OUTPUT"
             echo 'Developer ID secrets are present: signing and notarising.'
-          else
+          elif [ "$SET" -eq 0 ]; then
             echo 'available=false' >> "$GITHUB_OUTPUT"
             echo 'No Developer ID secrets: ad-hoc signing. See the comments in this file.'
+          else
+            echo "Only $SET of the 5 signing secrets are set. Set all five, or remove them all" >&2
+            echo 'for an ad-hoc build; see the comments at the top of this file.' >&2
+            exit 1
           fi
 
       - name: Import the Developer ID certificate
@@ -137,18 +157,22 @@ jobs:
 
       - name: Sign with Developer ID
         if: steps.signing.outputs.available == 'true'
+        env:
+          IDENTITY: ${{ steps.keychain.outputs.identity }}
         run: |
           set -euo pipefail
           codesign --force --options runtime --timestamp \
-            --sign "${{ steps.keychain.outputs.identity }}" dist/Myrling.app
+            --sign "$IDENTITY" dist/Myrling.app
           codesign --verify --strict --verbose=2 dist/Myrling.app
 
       - name: Zip the app
+        env:
+          NUMBER: ${{ steps.version.outputs.number }}
         run: |
           set -euo pipefail
           # ditto, not zip: it keeps the bundle's symlinks, permissions and
           # extended attributes, which a plain zip quietly drops.
-          ditto -c -k --keepParent dist/Myrling.app "dist/Myrling-${{ steps.version.outputs.number }}.zip"
+          ditto -c -k --keepParent dist/Myrling.app "dist/Myrling-$NUMBER.zip"
 
       - name: Notarise and staple
         if: steps.signing.outputs.available == 'true'
@@ -205,13 +229,16 @@ jobs:
           echo '## Getting it' >> notes.md
           echo '' >> notes.md
           echo 'Download the zip below, unzip it, and drag Myrling into Applications.' >> notes.md
+          MIN="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' mac/Info.plist)"
+          echo "It runs on macOS $MIN or later, on Apple silicon and Intel alike." >> notes.md
           if [ "$SIGNED" != 'true' ]; then
             echo '' >> notes.md
-            echo 'This build is not signed with an Apple Developer ID yet, so the first' >> notes.md
+            echo 'This build is not signed with an Apple Developer ID, so the first' >> notes.md
             echo 'time you open it macOS will say it cannot check it for malicious' >> notes.md
-            echo 'software. **Right-click the app and choose Open**, then Open again in' >> notes.md
-            echo 'the box that appears. macOS remembers, and every launch after that is' >> notes.md
-            echo 'an ordinary double-click.' >> notes.md
+            echo 'software. Close that box, open **System Settings -> Privacy & Security**,' >> notes.md
+            echo 'and press **Open Anyway** beside Myrling. (Before macOS 15 you can instead' >> notes.md
+            echo 'right-click the app and choose Open.) macOS remembers, and every launch' >> notes.md
+            echo 'after that is an ordinary double-click.' >> notes.md
           fi
           echo '' >> notes.md
           echo 'The editor page inside the app updates itself: it checks GitHub on' >> notes.md

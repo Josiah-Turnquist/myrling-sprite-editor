@@ -18,8 +18,24 @@ import CryptoKit
 
 final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
   private var files: [String: URL] = [:]     // handle id -> the file it stands for
-  private var dropped: [String: URL] = [:]   // name -> file, from the last drop onto the window
-  private var nextId = 0
+  private var dirs: [String: URL] = [:]      // handle id -> a folder the user chose to save into
+  private var dropped: [String: [URL]] = [:]  // name -> the files of that name in the last drop
+  private var twice = Set<String>()            // names the last drop carried more than once
+
+  // the page sees nothing bigger than a sheet of sprites; far past that is not a picture
+  private static let mostBytes = 64 * 1024 * 1024
+
+  // ids are random so nothing can write through a handle it was never given by guessing
+  // its number
+  private func newId(_ kind: String) -> String { kind + UUID().uuidString }
+
+  // a new page starts with no grants: handles belong to the page they were handed to
+  func forget() {
+    files = [:]
+    dirs = [:]
+    dropped = [:]
+    twice = []
+  }
 
   // where the work is: every panel opens here, and lands here again next launch
   private let lastDirKey = "myrlingLastDir"
@@ -39,14 +55,49 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
     if let d = lastDir { panel.directoryURL = d }
   }
 
-  // the native drop layer saw these before the page did; the page claims them by name
+  // the native drop layer saw these before the page did; the page claims them by name.
+  // Only this drop counts: a name left over from an earlier drop would hand the page a
+  // handle onto the wrong file, and Save over would then write into it.
   func noteDrop(_ urls: [URL]) {
-    for u in urls { dropped[u.lastPathComponent] = u }
+    dropped = [:]
+    twice = []
+    for u in urls {
+      if dropped[u.lastPathComponent] != nil { twice.insert(u.lastPathComponent) }
+      dropped[u.lastPathComponent, default: []].append(u)
+    }
     if let first = urls.first { notePlace(first) }
+  }
+
+  // Two files of one name from two folders: the page's File says which it is by its size
+  // and its modification time. One that still cannot be told apart gets no handle at all.
+  private static func same(_ url: URL, _ body: [String: Any]) -> Bool {
+    guard let v = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) else { return false }
+    if let size = body["size"] as? Double, Double(v.fileSize ?? -1) != size { return false }
+    if let ms = body["modified"] as? Double, let date = v.contentModificationDate,
+       abs(date.timeIntervalSince1970 * 1000 - ms) >= 1000 { return false }
+    return true
+  }
+
+  // one plain .png name for a file inside a chosen folder: nothing that climbs out of it,
+  // hides in it, or carries characters no one would type
+  static func plainName(_ name: String) -> Bool {
+    return !name.isEmpty && name.utf8.count <= 255 && !name.hasPrefix(".")
+      && name.lowercased().hasSuffix(".png") && !name.contains("/")
+      && !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
+  }
+
+  private static func bytes(_ body: [String: Any]) -> Data? {
+    guard let b64 = body["bytes"] as? String, b64.utf8.count <= mostBytes / 3 * 4 + 4 else { return nil }
+    return Data(base64Encoded: b64)
   }
 
   func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage,
                              replyHandler: @escaping (Any?, String?) -> Void) {
+    // only the editor page itself drives the bridge: not a frame inside it, and not
+    // anything the window might have been led away to
+    guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.protocol == "file" else {
+      replyHandler(nil, "Only the editor page can do that"); return
+    }
     guard let body = message.body as? [String: Any], let op = body["op"] as? String else {
       replyHandler(nil, "The message from the page made no sense"); return
     }
@@ -73,8 +124,7 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
       var out: [[String: Any]] = []
       for url in panel.urls {
         guard let data = try? Data(contentsOf: url) else { continue }
-        self.nextId += 1
-        let id = "f\(self.nextId)"
+        let id = self.newId("f")
         self.files[id] = url
         out.append(["id": id, "name": url.lastPathComponent, "bytes": data.base64EncodedString(),
                     "dir": url.deletingLastPathComponent().path])
@@ -84,9 +134,12 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
   }
 
   private func claim(_ body: [String: Any], _ reply: @escaping (Any?, String?) -> Void) {
-    guard let name = body["name"] as? String, let url = dropped[name] else { reply([:], nil); return }
-    nextId += 1
-    let id = "f\(nextId)"
+    guard let name = body["name"] as? String, var list = dropped[name] else { reply([:], nil); return }
+    if twice.contains(name) { list = list.filter { BridgeHandler.same($0, body) } }
+    guard list.count == 1, let url = list.first else { reply([:], nil); return }
+    // each file is handed out once
+    dropped[name]?.removeAll { $0 == url }
+    let id = newId("f")
     files[id] = url
     reply(["id": id, "dir": url.deletingLastPathComponent().path], nil)
   }
@@ -101,18 +154,16 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
     panel.begin { resp in
       guard resp == .OK, let url = panel.urls.first else { reply(["cancelled": true], nil); return }
       self.notePlace(url, isDirectory: true)
-      self.nextId += 1
-      let id = "d\(self.nextId)"
-      self.files[id] = url
+      let id = self.newId("d")
+      self.dirs[id] = url
       reply(["id": id, "name": url.lastPathComponent, "path": url.path], nil)
     }
   }
 
   private func writeTo(_ body: [String: Any], _ reply: @escaping (Any?, String?) -> Void) {
-    guard let dirId = body["dir"] as? String, let dir = files[dirId],
-          let name = body["name"] as? String, !name.isEmpty,
-          !name.contains("/"), !name.contains(".."),
-          let b64 = body["bytes"] as? String, let data = Data(base64Encoded: b64) else {
+    guard let dirId = body["dir"] as? String, let dir = dirs[dirId],
+          let name = body["name"] as? String, BridgeHandler.plainName(name),
+          let data = BridgeHandler.bytes(body) else {
       reply(nil, "Nothing to write"); return
     }
     do {
@@ -124,9 +175,14 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
   }
 
   // the page's PixelLab calls travel natively so WebKit's cross-origin wall never
-  // matters. Pinned to api.pixellab.ai and its generate paths; this is not a proxy.
+  // matters. Pinned to api.pixellab.ai and its generate paths; this is not a proxy. The
+  // path is plain letters and dashes, so no escaped dots or query can steer it to another
+  // endpoint with the key, and a redirect is never followed, so the prompt and the pictures
+  // sent with it go to PixelLab or nowhere.
+  private lazy var pixellabSession = URLSession(configuration: .ephemeral, delegate: NoRedirects(), delegateQueue: nil)
   private func pixellab(_ body: [String: Any], _ reply: @escaping (Any?, String?) -> Void) {
-    guard let path = body["path"] as? String, path.hasPrefix("/generate-image"), !path.contains(".."),
+    guard let path = body["path"] as? String,
+          path.range(of: "^/generate-image[a-z0-9-]*$", options: .regularExpression) != nil,
           let key = body["key"] as? String, !key.isEmpty,
           let json = body["body"] as? String,
           let url = URL(string: "https://api.pixellab.ai/v1" + path) else {
@@ -138,7 +194,7 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
     req.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
     req.httpBody = json.data(using: .utf8)
-    URLSession.shared.dataTask(with: req) { data, resp, err in
+    pixellabSession.dataTask(with: req) { data, resp, err in
       DispatchQueue.main.async {
         if let err = err { reply(nil, err.localizedDescription); return }
         guard let data = data, let text = String(data: data, encoding: .utf8) else {
@@ -153,7 +209,7 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
 
   private func write(_ body: [String: Any], _ reply: @escaping (Any?, String?) -> Void) {
     guard let id = body["id"] as? String, let url = files[id],
-          let b64 = body["bytes"] as? String, let data = Data(base64Encoded: b64) else {
+          let data = BridgeHandler.bytes(body) else {
       reply(nil, "Nothing to write"); return
     }
     do { try data.write(to: url, options: .atomic); reply(["ok": true], nil) }
@@ -161,15 +217,24 @@ final class BridgeHandler: NSObject, WKScriptMessageHandlerWithReply {
   }
 }
 
+// a redirect answered with nothing: the task finishes on the 3xx itself
+final class NoRedirects: NSObject, URLSessionTaskDelegate {
+  func urlSession(_ s: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                  newRequest: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+    completionHandler(nil)
+  }
+}
+
 // WebKit gives the page the dropped files but never their places on disk, so this
-// subclass notes the real URLs on the way past and the bridge hands them to the page
+// subclass notes the real URLs on the way past and the bridge hands them to the page.
+// Every drop is reported, even one with no files on disk in it (a picture dragged out
+// of a browser), so the names from an earlier drop never stand in for it.
 final class DropCatchingWebView: WKWebView {
   var onFileDrop: (([URL]) -> Void)?
   override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-    if let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self],
-        options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
-      onFileDrop?(urls)
-    }
+    let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self],
+        options: [.urlReadingFileURLsOnly: true]) as? [URL]
+    onFileDrop?(urls ?? [])
     return super.performDragOperation(sender)
   }
 }
@@ -193,10 +258,11 @@ func pageVersion(of file: URL) -> String? {
 }
 
 // Versions are dotted numbers. Compare them piece by piece as numbers, so 2026.9.22.10
-// beats 2026.9.22.9 the way a plain string compare would not; a missing piece is zero.
+// beats 2026.9.22.9 the way a plain string compare would not; a missing piece is zero,
+// an empty one too, so 2026..1 is 2026.0.1 and not 2026.1.
 func versionIsNewer(_ a: String, than b: String) -> Bool {
-  let mine = a.split(separator: ".").map { Int($0) ?? 0 }
-  let theirs = b.split(separator: ".").map { Int($0) ?? 0 }
+  let mine = a.split(separator: ".", omittingEmptySubsequences: false).map { Int($0) ?? 0 }
+  let theirs = b.split(separator: ".", omittingEmptySubsequences: false).map { Int($0) ?? 0 }
   for i in 0..<max(mine.count, theirs.count) {
     let x = i < mine.count ? mine[i] : 0
     let y = i < theirs.count ? theirs[i] : 0
@@ -362,12 +428,15 @@ final class Updater: NSObject, URLSessionTaskDelegate {
   }
 
   // A new app cannot install itself from in here, so the most this does is point at the
-  // release page. Pinned to https at GitHub, which is the only place Myrling is released.
+  // release page. Pinned to https and this project's own releases on GitHub, which is the
+  // only place Myrling is released: this half of the manifest is not signed, so it must
+  // not be able to send anyone to somebody else's download.
+  private static let releases = "/josiah-turnquist/myrling-sprite-editor/releases"
   private static func appNews(from app: [String: Any]?) -> AppNews? {
     guard let app = app, let version = app["version"] as? String,
           let text = app["url"] as? String, let url = URL(string: text),
-          url.scheme == "https", let host = url.host,
-          host == "github.com" || host.hasSuffix(".github.com"),
+          url.scheme == "https", url.host == "github.com", url.port == nil,
+          url.path.lowercased() == releases || url.path.lowercased().hasPrefix(releases + "/"),
           let mine = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
           versionIsNewer(version, than: mine) else { return nil }
     return AppNews(version: version, url: url, notes: app["notes"] as? String)
@@ -379,6 +448,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   var webView: DropCatchingWebView!
   let store = PageStore()
   lazy var updater = Updater(store: store)
+  let bridge = BridgeHandler()
+  // the one page this window is for; set by load(), and the only place it may navigate
+  private var page: URL?
   private let autoKey = "myrlingAutoUpdate"
   private let toldKey = "myrlingToldAboutApp"
 
@@ -390,7 +462,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     Tool(id: "redo", label: "Redo", symbol: "arrow.uturn.forward", tip: "Redo (Shift+Z)", js: "EDITOR.redo()"),
     Tool(id: "size", label: "Canvas size", symbol: "arrow.up.left.and.arrow.down.right", tip: "Grow, shrink or scale the canvas", js: "EDITOR.image.size()"),
     Tool(id: "crop", label: "Crop", symbol: "crop", tip: "Crop to the selected box", js: "EDITOR.image.crop()"),
-    Tool(id: "trim", label: "Trim", symbol: "rectangle.dashed", tip: "Trim the canvas to the painted pixels", js: "EDITOR.image.trim()"),
+    Tool(id: "trim", label: "Trim", symbol: "rectangle.dashed", tip: "Trim away the empty edges", js: "EDITOR.image.trim()"),
     Tool(id: "flipH", label: "Flip", symbol: "arrow.left.and.right", tip: "Flip left to right", js: "EDITOR.image.flipH()"),
     Tool(id: "flipV", label: "Flip vertical", symbol: "arrow.up.and.down", tip: "Flip top to bottom", js: "EDITOR.image.flipV()"),
     Tool(id: "rotate", label: "Rotate", symbol: "rotate.right", tip: "Rotate a quarter turn clockwise", js: "EDITOR.image.rotate()"),
@@ -431,11 +503,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
        let src = try? String(contentsOf: bridge, encoding: .utf8) {
       ucc.addUserScript(WKUserScript(source: src, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     }
-    let bridge = BridgeHandler()
     ucc.addScriptMessageHandler(bridge, contentWorld: .page, name: "eldermyr")
 
     webView = DropCatchingWebView(frame: .zero, configuration: config)
-    webView.onFileDrop = { bridge.noteDrop($0) }
+    webView.onFileDrop = { [bridge] in bridge.noteDrop($0) }
     webView.navigationDelegate = self
     webView.uiDelegate = self
 
@@ -458,8 +529,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     window.makeKeyAndOrderFront(nil)
 
     // always the copy in Application Support, never the one sealed inside the bundle
-    let page = store.livePage()
-    webView.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent())
+    load(store.livePage())
     NSApp.activate(ignoringOtherApps: true)
 
     // the update can wait: the window is up and drawable first, and nothing about
@@ -499,11 +569,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   }
 
   // the page has a status line of its own, so a quiet check speaks through that and
-  // nowhere else. An older page that has no say() must not throw here.
+  // nowhere else. An older page that has no say() must not throw here. The words go in
+  // as an argument, never pasted into the script, so nothing in them can run.
   private func sayInPage(_ words: String) {
-    let safe = words.replacingOccurrences(of: "\\", with: "\\\\")
-                    .replacingOccurrences(of: "'", with: "\\'")
-    webView.evaluateJavaScript("if (typeof say === 'function') say('" + safe + "','good')")
+    webView.callAsyncJavaScript("if (typeof say === 'function') say(words, 'good')",
+                                arguments: ["words": words], in: nil, in: .page, completionHandler: nil)
   }
 
   private func tell(_ head: String, _ body: String) {
@@ -523,8 +593,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     alert.addButton(withTitle: "Reload Now")
     alert.addButton(withTitle: "Later")
     guard alert.runModal() == .alertFirstButtonReturn else { return }
-    let page = store.file
-    webView.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent())
+    load(store.file)
+  }
+
+  private func load(_ url: URL) {
+    page = url
+    webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
   }
 
   // the app around the page has to be replaced by hand, so this only points the way.
@@ -546,6 +620,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
+  func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
+
+  // The page writes its kept work half a second after each change, and quitting takes
+  // WebKit down without the beforeunload a browser tab would get, so a stroke made just
+  // before Cmd+Q, or before the window was closed, was lost. Hand the page that event
+  // first: its own handler writes only when something is waiting to be written.
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard let webView = webView else { return .terminateNow }
+    var answered = false
+    // run loop timers, not the main queue: AppKit waits for the answer in a modal run
+    // loop, and when the quit began inside a main-queue block that queue cannot drain
+    func after(_ seconds: TimeInterval) {
+      RunLoop.main.add(Timer(timeInterval: seconds, repeats: false) { _ in
+        guard !answered else { return }
+        answered = true
+        sender.reply(toApplicationShouldTerminate: true)
+      }, forMode: .common)
+    }
+    // and a moment after the page answers, for WebKit to carry what was written to disk
+    webView.evaluateJavaScript("window.dispatchEvent(new Event('beforeunload')); true") { _, _ in after(0.3) }
+    // a page that never answers must not keep the app from quitting
+    after(3)
+    return .terminateLater
+  }
+
+  // a fresh page starts without the old page's file grants
+  func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { bridge.forget() }
+
+  // if WebKit's page process dies (memory, a crash), the window would sit blank until
+  // relaunched; the kept work is in the page's store, so loading it again brings it back
+  // (once in a while: a page that takes its process down as it loads must not loop)
+  private var lastRevival = Date.distantPast
+  func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+    NSLog("Myrling: the page's process ended")
+    guard let page = page, Date().timeIntervalSince(lastRevival) > 30 else { return }
+    lastRevival = Date()
+    load(page)
+  }
 
   // the plain <input type=file>, the page's fallback when the bridge is missing
   func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
@@ -563,10 +675,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
   }
 
-  // Export frames clicks <a download> links; WebKit hands those over as downloads
+  // Export frames clicks <a download> links; WebKit hands those over as downloads.
+  // Otherwise the window only ever shows the editor page: anywhere else a link or a
+  // stray drop might lead would get the bridge and every file the page was granted, so
+  // web links open in the browser instead and anything else goes nowhere.
   func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-    decisionHandler(navigationAction.shouldPerformDownload ? .download : .allow)
+    if navigationAction.shouldPerformDownload { decisionHandler(.download); return }
+    guard navigationAction.targetFrame?.isMainFrame ?? true, let url = navigationAction.request.url else {
+      decisionHandler(.allow); return
+    }
+    if url.isFileURL, let page = page, url.standardizedFileURL.path == page.standardizedFileURL.path {
+      decisionHandler(.allow); return
+    }
+    if ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") { NSWorkspace.shared.open(url) }
+    decisionHandler(.cancel)
   }
   func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
     download.delegate = self
@@ -576,23 +699,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     let dir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
     var url = dir.appendingPathComponent(suggestedFilename)
     let base = url.deletingPathExtension().lastPathComponent
-    let ext = url.pathExtension
+    let ext = url.pathExtension.isEmpty ? "" : "." + url.pathExtension
     var n = 1
     while FileManager.default.fileExists(atPath: url.path) {
-      url = dir.appendingPathComponent("\(base) (\(n)).\(ext)")
+      url = dir.appendingPathComponent("\(base) (\(n))\(ext)")
       n += 1
     }
     completionHandler(url)
   }
 
   // the menu bar drives the page: each item just presses the page's own controls
-  private func pageItem(_ menu: NSMenu, _ title: String, _ js: String, _ key: String = "") {
+  private func pageItem(_ menu: NSMenu, _ title: String, _ js: String, _ key: String = "",
+                        pageHasKey: Bool = false) {
     let item = NSMenuItem(title: title, action: #selector(runPageAction(_:)), keyEquivalent: key)
     item.target = self
     item.representedObject = js
+    item.tag = pageHasKey ? 1 : 0
     menu.addItem(item)
   }
+  // The page answers =, - and 0 itself, with Cmd or without, and lets the key go on
+  // past it, so WebKit hands it to the menu as well and one press used to zoom two
+  // steps. For those items the menu stands aside when its own key equivalent is what
+  // chose it, and acts when it was chosen any other way.
   @objc func runPageAction(_ sender: NSMenuItem) {
+    if sender.tag == 1, let ev = NSApp.currentEvent, ev.type == .keyDown, ev.modifierFlags.contains(.command),
+       ev.charactersIgnoringModifiers == sender.keyEquivalent { return }
     if let js = sender.representedObject as? String { webView.evaluateJavaScript(js) }
   }
 
@@ -630,7 +761,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     let image = NSMenu(title: "Image")
     pageItem(image, "Canvas Size…", "EDITOR.image.size()")
     pageItem(image, "Crop to Selection", "EDITOR.image.crop()")
-    pageItem(image, "Trim to Pixels", "EDITOR.image.trim()")
+    pageItem(image, "Trim Empty Edges", "EDITOR.image.trim()")
     image.addItem(.separator())
     pageItem(image, "Flip Left–Right", "EDITOR.image.flipH()")
     pageItem(image, "Flip Top–Bottom", "EDITOR.image.flipV()")
@@ -646,9 +777,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     pageItem(view, "Guides", "document.getElementById('bGuides').click()")
     pageItem(view, "Onion Skin", "document.getElementById('bOnion').click()")
     view.addItem(.separator())
-    pageItem(view, "Zoom In", "document.getElementById('zIn').click()", "=")
-    pageItem(view, "Zoom Out", "document.getElementById('zOut').click()", "-")
-    pageItem(view, "Fit", "EDITOR.fitView()", "0")
+    pageItem(view, "Zoom In", "document.getElementById('zIn').click()", "=", pageHasKey: true)
+    pageItem(view, "Zoom Out", "document.getElementById('zOut').click()", "-", pageHasKey: true)
+    pageItem(view, "Fit", "EDITOR.fitView()", "0", pageHasKey: true)
     viewItem.submenu = view
     return main
   }

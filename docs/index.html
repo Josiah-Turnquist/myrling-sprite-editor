@@ -1,3 +1,8 @@
+<!DOCTYPE html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A pixel editor for tiny game creatures in one HTML file, with a native Mac app around it. Saves straight back over your PNGs.">
 <title>Myrling</title>
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
@@ -235,7 +240,7 @@
     </div>
     <p class="dim">Unzip it and drag Myrling into Applications. It is signed with an
     Apple Developer ID and notarised by Apple, so it opens with an ordinary
-    double-click.</p>
+    double-click, and runs on macOS 11.3 or later, Apple silicon or Intel.</p>
     <p>It keeps itself current. On launch it asks GitHub whether the editor page has
     moved on, and takes the new one if it has — so a fix lands in your copy without you
     downloading anything. Every page is signed with an Ed25519 key, checked before it is
@@ -246,7 +251,7 @@
     <pre><code>git clone https://github.com/Josiah-Turnquist/myrling-sprite-editor
 cd myrling-sprite-editor
 make run    <span class="c"># builds dist/Myrling.app and opens it</span></code></pre>
-    <p class="dim">Built for your machine, ad-hoc signed — all a local tool needs. The
+    <p class="dim">Ad-hoc signed — all a local tool needs. The
     Dock icon is itself a 16-pixel sprite, drawn by a hundred lines of dependency-free
     Python.</p>
   </section>
