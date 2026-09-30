@@ -4337,8 +4337,8 @@ function openFiles(files) {
 
     // name-0.png and name-1.png become one sprite with two frames. Grouped by the name
     // the sprite will carry, so Grass-0.png and grass-1.png do not open as two grasses
-    var groups = new Map(), open = {};
-    S.sprites.forEach(function (x) { open[x.key] = 1; });
+    var groups = new Map(), already = {};
+    S.sprites.forEach(function (x) { already[x.key] = 1; });
     good.forEach(function (d) {
       var m = /^(.*[^-])-(\d+)$/.exec(d.name);
       var key = cleanName(m ? m[1] : d.name) || 'sprite', idx = m ? parseInt(m[2], 10) : 0;
@@ -4348,7 +4348,7 @@ function openFiles(files) {
     });
     var made = 0, split = 0, renumbered = [], ruled = [], again = [];
     groups.forEach(function (g, key) {
-      if (open[key]) again.push(key);
+      if (already[key]) again.push(key);
       g.sort(function (a, b) { return a.idx - b.idx; });
       var w = g[0].d.w, h = g[0].d.h;
       var same = g.filter(function (e) { return e.d.w === w && e.d.h === h; });
